@@ -30,14 +30,23 @@ def token_before(value: str, cursor: int) -> str:
 class CompleteInput(Input):
     """An Input whose current word can be completed from a Completer.
 
-    kind: "macro" (dt-bindings macros) or "label" (node labels).
+    kind: "macro" (dt-bindings macros), "label" (node labels) or "name" (a property
+    name for /chosen).
     context: words that say which macros fit (see macros.rank).
+    whole: complete the whole value, not just the word being typed.
     """
 
-    def __init__(self, *args, kind: str = "macro", context: set[str] | None = None, **kwargs):
+    def __init__(self, *args, kind: str = "macro", context: set[str] | None = None,
+                 whole: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.kind = kind
         self.context = context or set()
+        self.whole = whole
+
+    def token(self) -> str:
+        if self.whole:
+            return self.value[:self.cursor_position]
+        return token_before(self.value, self.cursor_position)
 
 
 class Completer(OptionList):
@@ -63,8 +72,7 @@ class Completer(OptionList):
 
     def update_choices(self) -> None:
         t = self.target
-        items = self.provider(token_before(t.value, t.cursor_position), t)[:self.LIMIT] \
-            if t is not None else []
+        items = self.provider(t.token(), t)[:self.LIMIT] if t is not None else []
         self.clear_options()
         self._inserts = [i for i, _ in items]
         self.add_options([Option(d) for _, d in items])
@@ -89,7 +97,7 @@ class Completer(OptionList):
         if t is None or not 0 <= index < len(self._inserts):
             return
         before, after = t.value[:t.cursor_position], t.value[t.cursor_position:]
-        new = before[:len(before) - len(token_before(before, len(before)))] + self._inserts[index]
+        new = before[:len(before) - len(t.token())] + self._inserts[index]
         t.value = new + after
         t.cursor_position = len(new)
         t.focus()

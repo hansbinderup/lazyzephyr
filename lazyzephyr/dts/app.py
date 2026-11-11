@@ -7,6 +7,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 
 from rich.markup import escape
 from rich.text import Text
@@ -23,7 +24,7 @@ from . import catalog, macros, specifiers, values
 from .catalog import BindingInfo
 from .editors import CompleteInput, Completer, SpecifierEditor, SpecRow, macro_choice
 from .model import import_edtlib
-from .session import EditResult, Session
+from .session import REF_NODES, EditResult, Session
 from .state import TargetChoice, save_choice
 from ..view import COMMON_CSS, ForwardActions, View
 from .workspace import (Board, DtInputs, Workspace, find_board, find_boards, find_build_dirs,
@@ -335,11 +336,19 @@ class EditScreen(ModalScreen[EditResult | None]):
         Binding("ctrl+t", "toggle_text", "Type as text", priority=True),
     ]
 
-    def __init__(self, session: Session, node_path: str, name: str, base: Path):
+    def __init__(self, session: Session, node_path: str, name: str | None, base: Path,
+                 chosen_names: set[str] | None = None):
+        """name None: a new /chosen or /aliases entry, named in the dialog."""
         super().__init__()
         self.session, self.node_path, self.prop, self.base = session, node_path, name, base
+        self.chosen_names = chosen_names or set()
         node = session.node(node_path)
-        self.spec = session.spec(node, name)
+        if node_path in REF_NODES:
+            self.spec = SimpleNamespace(type="path", description=self._ref_description(),
+                                        required=False, enum=None, const=None, default=None,
+                                        deprecated=False)
+        else:
+            self.spec = session.spec(node, name)
         self.space: str | None = None
         self.ctrls: list[specifiers.Controller] = []
         if self.spec.type == "phandle-array":
@@ -350,10 +359,15 @@ class EditScreen(ModalScreen[EditResult | None]):
         s, spec, m = self.session, self.spec, self.session.model
         node = s.node(self.node_path)
         with VerticalScroll(id="edit-dialog", classes="panel dialog") as dialog:
-            dialog.border_title = f"{self.prop}  ({spec.type})"
+            what = "chosen" if self.node_path == "/chosen" else "alias"
+            dialog.border_title = f"{self.prop or 'new ' + what}  ({spec.type})"
             yield Static(self._info(node), classes="hint")
-            sources = m.prop_sources(self.node_path, self.prop)
-            eff = s.effective(self.node_path, self.prop)
+            if self.prop is None:
+                yield Static("Name", classes="label")
+                yield CompleteInput(placeholder="e.g. zephyr,console" if what == "chosen"
+                                    else "e.g. led0", id="edit-name", kind="name", whole=True)
+            sources = m.prop_sources(self.node_path, self.prop) if self.prop else []
+            eff = s.effective(self.node_path, self.prop) if self.prop else None
             if sources:
                 lines = []
                 for f, stmt in sources:
@@ -377,6 +391,8 @@ class EditScreen(ModalScreen[EditResult | None]):
                 yield Select(opts, value=cur if cur in [o[1] for o in opts] else Select.BLANK,
                              id="edit-value", prompt="pick a value")
             else:
+                if self.prop is None:
+                    yield Static("Value", classes="label")
                 yield self._value_widget(current, structured=True)
             yield Completer(self._choices, id="edit-complete")
             files = s.write_files(self.node_path)
@@ -388,6 +404,8 @@ class EditScreen(ModalScreen[EditResult | None]):
 
     def on_mount(self) -> None:
         self._update_keys()
+        if self.prop is None:
+            self.query_one("#edit-name").focus()
 
     def _value_widget(self, text: str | None, structured: bool):
         type_ = self.spec.type
@@ -403,9 +421,17 @@ class EditScreen(ModalScreen[EditResult | None]):
                                  context=self._macro_context())
         return Input(value=value, placeholder=self._placeholder(), id="edit-value")
 
+    def _ref_description(self) -> str:
+        if self.node_path == "/chosen":
+            what = (f"DT_CHOSEN({self.prop.replace(',', '_').replace('-', '_')})"
+                    if self.prop else "DT_CHOSEN()")
+            return f"The node Zephyr uses for this purpose; code reads it with {what}."
+        what = f"DT_ALIAS({self.prop.replace('-', '_')})" if self.prop else "DT_ALIAS()"
+        return f"Another name for a node; code reads it with {what}."
+
     def _macro_context(self) -> set[str]:
         node = self.session.node(self.node_path)
-        return macros.context_words(self.prop, self.space, *node.compats[:1], *node.buses,
+        return macros.context_words(self.prop or "", self.space, *node.compats[:1], *node.buses,
                                     *node.on_buses)
 
     def _update_keys(self) -> None:
@@ -424,6 +450,8 @@ class EditScreen(ModalScreen[EditResult | None]):
         m = self.session.model
         if target.kind == "label":
             return self._label_choices(token)
+        if target.kind == "name":
+            return self._name_choices(token)
         if token[:1].isdigit():
             return []
         return [macro_choice(x) for x in macros.rank(m.macros, token, target.context)]
@@ -447,9 +475,27 @@ class EditScreen(ModalScreen[EditResult | None]):
                 t.append(f"  {node.compats[0]}", style="cyan")
             if node is not None and node.status != "okay":
                 t.append(f"  {node.status}", style="bright_black italic")
-            out.append((not low.startswith(want), f"&{label}", t))
-        out.sort(key=lambda c: c[0])
-        return [(ins, t) for _, ins, t in out]
+            has_compat = node is not None and bool(node.compats)
+            out.append((not low.startswith(want), not has_compat, f"&{label}", t))
+        out.sort(key=lambda c: c[:2])
+        return [(ins, t) for *_, ins, t in out]
+
+    def _name_choices(self, token: str) -> list:
+        if self.node_path != "/chosen":
+            return []
+        node = self.session.node(self.node_path)
+        used = set(node._node.props) if node else set()
+        want = token.lower()
+        out = []
+        for name in sorted(self.chosen_names | used):
+            if want and want not in name:
+                continue
+            t = Text(name, style="bold" if name not in used else "bright_black")
+            if name in used:
+                t.append("  already set", style="bright_black italic")
+            out.append((name in used, not name.startswith(want), name, t))
+        out.sort(key=lambda c: c[:2])
+        return [(name, t) for *_, name, t in out]
 
     def _current_raw(self, sources, eff) -> str | None:
         for f, stmt in reversed(sources):
@@ -514,7 +560,10 @@ class EditScreen(ModalScreen[EditResult | None]):
     @on(Input.Submitted)
     def submitted(self, event: Input.Submitted) -> None:
         event.stop()
-        self.action_apply()
+        if event.input.id == "edit-name":
+            self.query_one("#edit-value").focus()
+        else:
+            self.action_apply()
 
     @on(Input.Changed)
     def changed(self, event: Input.Changed) -> None:
@@ -583,23 +632,29 @@ class EditScreen(ModalScreen[EditResult | None]):
     def action_apply(self) -> None:
         widget = self.query_one("#edit-value")
         file = self.query_one("#edit-file", Select).value
+        name = self.prop
+        if name is None:
+            name = self.query_one("#edit-name", Input).value.strip()
+            if not name:
+                self._error("give it a name")
+                return
         if self.spec.type == "boolean":
             delete = widget.value == "false"
-            result = self.session.set_property(self.node_path, self.prop, None, file,
+            result = self.session.set_property(self.node_path, name, None, file,
                                                delete=delete)
         elif isinstance(widget, SpecifierEditor):
             entries = widget.entries()
             if err := specifiers.check(entries, self.ctrls):
                 self._error(err)
                 return
-            result = self.session.set_property(self.node_path, self.prop,
+            result = self.session.set_property(self.node_path, name,
                                                specifiers.compose(entries), file)
         else:
             value = widget.value
             if not isinstance(value, str):
                 self._error("pick a value")
                 return
-            result = self.session.set_property(self.node_path, self.prop, str(value), file)
+            result = self.session.set_property(self.node_path, name, str(value), file)
         if result.ok:
             self.dismiss(result)
         else:
@@ -953,6 +1008,7 @@ class DtsView(View):
         self.session: Session | None = None
         self.bindings_catalog: list[BindingInfo] = []
         self.drivers: set[str] = set()
+        self.chosen_names: set[str] = set()
         self.write_file: Path | None = None
         self.node_index: dict[str, TreeNode[str]] = {}
         self.filter_text = ""
@@ -1027,12 +1083,15 @@ class DtsView(View):
     @work(thread=True, exclusive=True, group="catalog")
     def load_catalog(self) -> None:
         session = self.session
-        drivers = catalog.driver_tokens(catalog.driver_roots(self.ws))
+        roots = catalog.driver_roots(self.ws)
+        drivers = catalog.driver_tokens(roots)
         bindings = catalog.scan_bindings(session.inputs.bindings_dirs, drivers)
-        self.call_from_thread(self._catalog_loaded, drivers, bindings)
+        chosen = catalog.chosen_names(roots)
+        self.call_from_thread(self._catalog_loaded, drivers, bindings, chosen)
 
-    def _catalog_loaded(self, drivers: set[str], bindings: list[BindingInfo]) -> None:
-        self.drivers, self.bindings_catalog = drivers, bindings
+    def _catalog_loaded(self, drivers: set[str], bindings: list[BindingInfo],
+                        chosen: set[str]) -> None:
+        self.drivers, self.bindings_catalog, self.chosen_names = drivers, bindings, chosen
         self.show_node()
 
     def action_pick_target(self) -> None:
@@ -1188,9 +1247,37 @@ class DtsView(View):
         details.update(t)
         self.fill_props(node)
 
+    def fill_ref_props(self, node) -> None:
+        """/chosen and /aliases: each entry points at a node."""
+        props = self.query_one("#props", PropList)
+        names = list(node._node.props)
+        width = min(max([len(n) for n in names] or [10]), 32)
+        rows = []
+        for name, prop in node._node.props.items():
+            t = Text()
+            t.append(name.ljust(width), style="bold")
+            t.append("  ")
+            try:
+                target = prop.to_path()
+                labels = target.labels
+                t.append(f"&{labels[0]}" if labels else target.path, style="yellow")
+            except Exception:  # DTError: not a path or reference
+                t.append(raw_value(prop))
+            eff = self.session.effective(node.path, name)
+            if eff:
+                t.append(f"  {eff[0].name}:{eff[1]}", style="bright_black")
+            rows.append(Option(t, id=name))
+        what = "chosen" if node.path == "/chosen" else "alias"
+        rows.append(Option(Text(f"+ add {what}…", style="green"), id="new:"))
+        props.add_options(rows)
+        props.border_title = "Chosen" if node.path == "/chosen" else "Aliases"
+
     def fill_props(self, node) -> None:
         s = self.session
         props = self.query_one("#props", PropList)
+        if node.path in REF_NODES:
+            self.fill_ref_props(node)
+            return
         editable = s.editable_props(node)
         rows = []
         width = max([len(n) for n in [*editable, *node._node.props]] or [10])
@@ -1393,11 +1480,12 @@ class DtsView(View):
         if not s.write_files(path):
             self.notify("no editable file for this node", severity="warning")
             return
-        self.push_screen(EditScreen(s, path, name, self.ws.topdir), self.report)
+        self.push_screen(EditScreen(s, path, None if name == "new:" else name, self.ws.topdir,
+                                    self.chosen_names), self.report)
 
     def action_delete_prop(self) -> None:
         s, path, name = self.session, self.current_path, self._prop_name()
-        if not s or not path or not name or name.startswith("ro:"):
+        if not s or not path or not name or name.startswith("ro:") or name == "new:":
             return
         if s.effective(path, name) is None:
             self.notify(f"{name} is not set")

@@ -148,6 +148,8 @@ def format_value(type_: str, text: str, enum: list | None = None,
         if text.startswith("&"):
             _check_labels([text[1:]], labels)
             return text
+        if _IDENT.match(text) and labels is not None and text in labels:
+            return "&" + text
         if len(text) >= 2 and text[0] == text[-1] == '"':
             text = text[1:-1]
         if not text.startswith("/"):

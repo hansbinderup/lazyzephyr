@@ -103,32 +103,53 @@ def scan_bindings(bindings_dirs: list[Path], drivers: set[str] | None = None) ->
     return sorted(out, key=lambda b: (b.compatible, b.on_bus or ""))
 
 
+def _grep(roots: list[Path], patterns: list[str]) -> str:
+    """Every match of the (POSIX extended) `patterns` in C code and Kconfig under `roots`."""
+    roots = [r for r in roots if r.is_dir()]
+    grep = shutil.which("rg") or shutil.which("grep")
+    if not roots or not grep:
+        return ""
+    if grep.endswith("rg"):
+        cmd = [grep, "--no-filename", "-o", "-g", "*.{c,h,cpp,cc}", "-g", "Kconfig*"]
+    else:
+        cmd = [grep, "-rhoE", "--include=*.c", "--include=*.h", "--include=*.cpp",
+               "--include=*.cc", "--include=Kconfig*"]
+    for p in patterns:
+        cmd += ["-e", p]
+    try:
+        return subprocess.run(cmd + [str(r) for r in roots], capture_output=True, text=True,
+                              timeout=60).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
 def driver_tokens(roots: list[Path]) -> set[str]:
     """Compatibles (as tokens) that some C code or Kconfig in `roots` uses."""
-    roots = [r for r in roots if r.is_dir()]
-    if not roots:
-        return set()
-    text = ""
-    grep = shutil.which("rg") or shutil.which("grep")
-    if grep:
-        pattern = r"(DT_DRV_COMPAT|DT_HAS_COMPAT_STATUS_OKAY|DT_FOREACH_STATUS_OKAY)"
-        if grep.endswith("rg"):
-            cmd = [grep, "--no-filename", "-o", "-e", pattern + r"[\s(]*\w+", "-e", r"DT_HAS_\w+_ENABLED",
-                   "-g", "*.{c,h,cpp,cc}", "-g", "Kconfig*", *map(str, roots)]
-        else:
-            cmd = [grep, "-rhoE", "--include=*.c", "--include=*.h", "--include=*.cpp",
-                   "--include=*.cc", "--include=Kconfig*",
-                   "-e", pattern + r"[[:space:](]*[A-Za-z0-9_]+",
-                   "-e", r"DT_HAS_[A-Za-z0-9_]+_ENABLED", *map(str, roots)]
-        try:
-            text = subprocess.run(cmd, capture_output=True, text=True, timeout=60).stdout
-        except (OSError, subprocess.TimeoutExpired):
-            text = ""
+    text = _grep(roots, [r"(DT_DRV_COMPAT|DT_HAS_COMPAT_STATUS_OKAY|DT_FOREACH_STATUS_OKAY)"
+                         r"[[:space:](]*[A-Za-z0-9_]+", r"DT_HAS_[A-Za-z0-9_]+_ENABLED"])
     tokens = set()
     for m in _DRIVER_RE.finditer(text):
         token = next(g for g in m.groups() if g)
         tokens.add(token.lower())
     return tokens
+
+
+_CHOSEN_RE = re.compile(r"CHOSEN\(\s*(\w+)|:=\s*([\w.-]+,[\w.,-]+)")
+
+
+def chosen_names(roots: list[Path]) -> set[str]:
+    """/chosen properties that code in `roots` reads: DT_CHOSEN(zephyr_console) in C,
+    DT_CHOSEN_Z_CONSOLE := zephyr,console in Kconfig."""
+    text = _grep(roots, [r"DT_(HAS_)?CHOSEN\([[:space:]]*[A-Za-z0-9_]+",
+                         r"DT_CHOSEN_[A-Za-z0-9_]+[[:space:]]*:=[[:space:]]*[A-Za-z0-9_.,-]+"])
+    names = set()
+    for m in _CHOSEN_RE.finditer(text):
+        if m.group(2):
+            names.add(m.group(2))
+        elif "_" in m.group(1):
+            vendor, _, rest = m.group(1).lower().partition("_")
+            names.add(f"{vendor},{rest.replace('_', '-')}")
+    return names
 
 
 def driver_roots(ws) -> list[Path]:

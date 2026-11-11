@@ -113,3 +113,45 @@ async def test_edit_property_dialog(workspace, tmp_path, monkeypatch):
         await pilot.press("ctrl+s")
         await wait_for(lambda: "gpios = <&gpio0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;"
                        in overlay.read_text())
+
+
+async def test_chosen_and_label_choices(workspace, tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    ws = find_workspace(workspace)
+    app = LazyDtsApp(AppConfig(cwd=workspace / "app", workspace=ws,
+                               choice=TargetChoice(board="native_sim/native",
+                                                   app=str(workspace / "app")),
+                               work_dir=tmp_path / "work"))
+    overlay = workspace / "app" / "boards" / "native_sim.overlay"
+    async with app.run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: "/chosen" in app.node_index)
+        await wait_for(lambda: app.chosen_names)
+        app.tree.move_cursor(app.node_index["/chosen"])
+        props = app.query_one("#props")
+        await wait_for(lambda: props.option_count and app.current_path == "/chosen")
+        ids = [props.get_option_at_index(i).id for i in range(props.option_count)]
+        assert "zephyr,console" in ids and ids[-1] == "new:"
+        props.focus()
+        props.highlighted = ids.index("new:")
+        await pilot.press("enter")
+        await pilot.pause()
+        screen = app.screen
+        # The name offers chosen entries from Zephyr's code.
+        await pilot.press(*"shell-u")
+        await pilot.pause()
+        assert screen.completer.display
+        await pilot.press("down", "enter")
+        name = screen.query_one("#edit-name", Input)
+        assert name.value == "zephyr,shell-uart"
+        # The value offers node labels.
+        await pilot.press("enter")
+        value = screen.query_one("#edit-value", Input)
+        assert screen.focused is value
+        await pilot.press(*"uart")
+        await pilot.pause()
+        assert screen.completer.target is value and screen.completer.display
+        await pilot.press("down", "enter")
+        assert value.value.startswith("&uart")
+        chosen = value.value
+        await pilot.press("ctrl+s")
+        await wait_for(lambda: f"zephyr,shell-uart = {chosen};" in overlay.read_text())

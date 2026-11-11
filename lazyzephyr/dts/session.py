@@ -7,6 +7,7 @@ result doesn't parse. The UI only talks to this class, so it is easy to test.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,13 @@ from .workspace import DtInputs, Workspace
 # Properties that every node gets from the base binding and that the editor
 # writes itself (compatible on add) or that make no sense to edit by hand.
 READ_ONLY = {"compatible", "phandle"}
+
+# Nodes without a binding whose properties each point at a node (`&label`), with
+# the names they allow.
+REF_NODES = {
+    "/chosen": re.compile(r"^[a-z0-9][a-z0-9,._+-]*$"),
+    "/aliases": re.compile(r"^[a-z0-9][a-z0-9-]*$"),
+}
 
 
 @dataclass
@@ -82,7 +90,10 @@ class Session:
         return binding.prop2specs.get(name) if binding else None
 
     def editable_props(self, node) -> list[str]:
-        """Properties the binding allows, in binding order."""
+        """Properties the binding allows, in binding order (for /chosen and
+        /aliases: the ones that are set)."""
+        if node is not None and node.path in REF_NODES:
+            return list(node._node.props)
         binding = getattr(node, "_binding", None)
         if not binding:
             return []
@@ -189,9 +200,15 @@ class Session:
         node = self.node(node_path)
         if node is None:
             return EditResult(False, f"no node {node_path}")
-        spec = self.spec(node, name)
-        if spec is None or name not in self.editable_props(node):
-            return EditResult(False, f"{name} is not a property of this node's binding")
+        if node_path in REF_NODES:
+            type_, enum = "path", None
+            if not REF_NODES[node_path].match(name):
+                return EditResult(False, f"invalid name for {node_path[1:]}: {name}")
+        else:
+            spec = self.spec(node, name)
+            if spec is None or name not in self.editable_props(node):
+                return EditResult(False, f"{name} is not a property of this node's binding")
+            type_, enum = spec.type, spec.enum
         if err := self._check_file(file, node_path):
             return EditResult(False, err)
         try:
@@ -211,12 +228,11 @@ class Session:
                 new = dtsedit.delete_property(sf, node_path, labels, name)
                 what = f"deleted {name} in {file.name}"
         else:
-            if spec.type == "boolean":
+            if type_ == "boolean":
                 value = None
             else:
                 try:
-                    value = values.format_value(spec.type, text or "", spec.enum,
-                                                self.model.labels)
+                    value = values.format_value(type_, text or "", enum, self.model.labels)
                 except ValueError as exc:
                     return EditResult(False, str(exc))
             new = dtsedit.set_property(sf, node_path, labels, name, value)

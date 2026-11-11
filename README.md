@@ -89,6 +89,12 @@ Tests.
   `dt-bindings` headers the tree includes are listed (`GPIO_ACTIVE_LOW`,
   `I2C_BITRATE_FAST`…), the ones that fit the property first. `↓` moves into the list,
   `enter` puts the macro in, so `GPIO_ACTIVE_LOW | GPIO_PULL_UP` takes a few keys.
+- **Pick nodes from a list**: `phandle`, `phandles` and `path` values list the labels in
+  the tree (with the node's path, compatible and status) as you type.
+- **`/chosen` and `/aliases`** are editable: change where an entry points, remove it, or
+  `+ add` a new one. Names for `chosen` are suggested from what Zephyr's code reads
+  (`DT_CHOSEN(zephyr_console)` and Kconfig's `DT_CHOSEN_*` symbols), e.g.
+  `zephyr,shell-uart`.
 - **Add a node** (`a`): a searchable list of every binding, limited to the ones that fit
   the selected node (e.g. I2C devices under an I2C bus). `✓` marks bindings a driver uses.
   It then asks for `reg` (the `@unit-address` comes from it), a label, the required
