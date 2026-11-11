@@ -9,7 +9,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import dtsedit
+from . import checks, dtsedit
 from . import macros as dtmacros
 from .workspace import DtInputs, Workspace
 
@@ -80,6 +80,8 @@ class Model:
     # Files #included inside a node -> that node's path.
     _roots: dict[Path, str] | None = None
     _macros: list[dtmacros.Macro] | None = None
+    _references: dict[str, list[checks.Ref]] | None = None
+    _problems: list[checks.Problem] | None = None
 
     @property
     def labels(self) -> set[str]:
@@ -112,6 +114,19 @@ class Model:
         if self._macros is None:
             self._macros = dtmacros.scan([p for p in self.deps if dtmacros.is_binding_header(p)])
         return self._macros
+
+    @property
+    def references(self) -> dict[str, list[checks.Ref]]:
+        """Node path -> the properties that point at it."""
+        if self._references is None:
+            self._references = checks.references(self.edt)
+        return self._references
+
+    @property
+    def problems(self) -> list[checks.Problem]:
+        if self._problems is None:
+            self._problems = checks.problems(self.edt, self.macros, self.references)
+        return self._problems
 
     def dts_files(self) -> list[Path]:
         """Devicetree sources (not headers) in include order."""

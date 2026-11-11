@@ -77,6 +77,14 @@ Tests.
 - **See the final tree**: labels, status, compatible, the binding, the bus, and whether a
   driver in the workspace uses the compatible. Details list every file and line that
   defines or overrides the node, across `.dts`, `.dtsi` and overlays.
+- **Referenced by**: the details list every node that points at the selected one, and
+  how (`&led0  gpios  pin=13 flags=1`), plus its aliases and chosen entries. Worth a look
+  before you disable or delete a node.
+- **Problems** (`p`): things that parse but won't work, marked `✖` / `⚠` in the tree:
+  a pin used by two enabled nodes (GPIOs, and pinctrl on nRF, STM32 and Ambiq Apollo),
+  two devices at one address on a bus, two enabled bus controllers sharing one register
+  block (nRF `spi0` + `i2c0`), overlapping flash partitions, enabled nodes or chosen
+  entries that point at a disabled node, and deprecated properties. `enter` jumps to it.
 - **Edit only what the bindings allow**: the properties panel lists the binding's
   properties, with their values and where each is set. Values are checked by type, enum
   and label, then the whole tree is parsed again with Zephyr's own `edtlib`. If it no
@@ -115,6 +123,7 @@ Tests.
 | `d` | delete the node, or in Properties remove the value |
 | `enter` / `e` | in Properties: edit the value |
 | `o` | open `$EDITOR` where the node or value is set |
+| `p` | list problems; `enter` goes to the node |
 | `w` / `t` | pick the file edits go to / pick another target |
 | `u` / `r` | undo the last edit / reload |
 | `z` / `?` | maximise the focused panel / help |

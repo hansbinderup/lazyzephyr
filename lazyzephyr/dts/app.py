@@ -20,7 +20,7 @@ from textual.widgets import Footer, Input, OptionList, Select, Static, Tree
 from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 
-from . import catalog, macros, specifiers, values
+from . import catalog, checks, macros, specifiers, values
 from .catalog import BindingInfo
 from .editors import CompleteInput, Completer, SpecifierEditor, SpecRow, macro_choice
 from .model import import_edtlib
@@ -171,6 +171,8 @@ class HelpScreen(ModalScreen[None]):
   o                  open where the value is set
 
 [b]Anywhere[/b]
+  p                  problems: pins used twice, two devices at one address,
+                     overlapping partitions, enabled nodes needing disabled ones
   w                  pick the file edits go to
   t                  pick another target
   u                  undo the last edit
@@ -189,6 +191,45 @@ again. If it no longer parses, the file is put back and the error is shown.
 
     def action_dismiss_help(self) -> None:
         self.dismiss(None)
+
+
+class ProblemsScreen(ModalScreen[checks.Problem | None]):
+    """Everything that parses but looks wrong; enter goes to the node."""
+
+    BINDINGS = [Binding("escape,q,p", "cancel", "Close")]
+
+    def __init__(self, problems: list[checks.Problem]):
+        super().__init__()
+        self.problems = problems
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="problems-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = f"Problems ({len(self.problems)})"
+            dialog.border_subtitle = "enter: go to the node · esc: close"
+            if not self.problems:
+                yield Static("Nothing found: no pin is used twice, no two devices share an "
+                             "address, partitions don't overlap and no enabled node needs a "
+                             "disabled one.", classes="hint")
+                return
+            yield OptionList(*[Option(problem_text(p), id=str(i))
+                               for i, p in enumerate(self.problems)], id="problems-list")
+
+    @on(OptionList.OptionSelected, "#problems-list")
+    def picked(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(self.problems[event.option_index])
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+def problem_text(p: checks.Problem) -> Text:
+    t = Text()
+    if p.severity == "error":
+        t.append("✖ ", style="red")
+    else:
+        t.append("⚠ ", style="yellow")
+    t.append(p.message)
+    return t
 
 
 class FileScreen(ModalScreen[Path | None]):
@@ -959,7 +1000,9 @@ DTS_CSS = """
     DtsView #statusbar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
     .dialog { width: 100; max-width: 95%; height: auto; max-height: 90%; padding: 1 2; }
     ConfirmScreen, HelpScreen, FileScreen, TargetScreen, EditScreen, AddScreen,
-    NodeFormScreen { align: center middle; }
+    NodeFormScreen, ProblemsScreen { align: center middle; }
+    #problems-dialog { width: 130; height: auto; max-height: 80%; }
+    #problems-list { height: auto; max-height: 30; margin-top: 1; }
     #dts-confirm-dialog { width: 70; }
     #target-dialog, #add-dialog { height: 90%; }
     #add-dialog { width: 140; }
@@ -995,6 +1038,7 @@ class DtsView(View):
         Binding("slash", "filter", "Filter"),
         Binding("w", "pick_file", "Write to"),
         Binding("t", "pick_target", "Target"),
+        Binding("p", "problems", "Problems"),
         Binding("u", "undo", "Undo"),
         Binding("r", "reload", "Reload"),
         Binding("z", "maximize", "Zoom", show=False),
@@ -1011,6 +1055,7 @@ class DtsView(View):
         self.chosen_names: set[str] = set()
         self.write_file: Path | None = None
         self.node_index: dict[str, TreeNode[str]] = {}
+        self.problem_marks: dict[str, str] = {}  # node path -> worst severity
         self.filter_text = ""
         self.message = ""
 
@@ -1118,6 +1163,10 @@ class DtsView(View):
             text.append(f"  {node.compats[0]}", style="cyan" if node._binding else "red")
         if node.status != "okay":
             text.append(f"  {node.status}", style="bright_black italic")
+        mark = self.problem_marks.get(node.path)
+        if mark:
+            text.append("  ✖" if mark == "error" else "  ⚠",
+                        style="red" if mark == "error" else "yellow")
         return text
 
     def _matches(self, node) -> bool:
@@ -1134,6 +1183,11 @@ class DtsView(View):
         tree.clear()
         self.node_index = {}
         edt = self.session.model.edt
+        self.problem_marks = {}
+        for p in self.session.model.problems:
+            for path in p.paths:
+                if self.problem_marks.get(path) != "error":
+                    self.problem_marks[path] = p.severity
         root = edt.get_node("/")
         visible = None
         if self.filter_text:
@@ -1162,19 +1216,21 @@ class DtsView(View):
             if visible is not None or path in expanded:
                 item.expand()
         if cursor:
-            # Reveal the cursor's node even inside collapsed parents.
-            path = cursor
-            while path not in self.node_index and path != "/":
-                path = path.rsplit("/", 1)[0] or "/"
-            item = self.node_index.get(path)
-            if item:
-                p = item.parent
-                while p is not None:
-                    p.expand()
-                    p = p.parent
-                self.call_after_refresh(tree.move_cursor, item)
+            self.reveal(cursor)
         self.show_node()
         self.update_status()
+
+    def reveal(self, path: str) -> None:
+        """Move the cursor to `path` (or its nearest shown parent), unfolding parents."""
+        while path not in self.node_index and path != "/":
+            path = path.rsplit("/", 1)[0] or "/"
+        item = self.node_index.get(path)
+        if item:
+            p = item.parent
+            while p is not None:
+                p.expand()
+                p = p.parent
+            self.call_after_refresh(self.tree.move_cursor, item)
 
     @property
     def current_path(self) -> str | None:
@@ -1234,6 +1290,31 @@ class DtsView(View):
         if chosen:
             t.append("chosen: ", style="bright_black")
             t.append(", ".join(chosen) + "\n", style="magenta")
+        if node.aliases:
+            t.append("aliases: ", style="bright_black")
+            t.append(", ".join(node.aliases) + "\n", style="magenta")
+        for p in s.model.problems:
+            if path in p.paths:
+                t.append("\n")
+                t.append_text(problem_text(p))
+                t.append("\n")
+        refs = [r for r in s.model.references.get(path, [])
+                if r.source not in ("/chosen", "/aliases")]
+        if refs:
+            t.append(f"\nreferenced by ({len(refs)})\n", style="bold")
+            for r in refs[:40]:
+                src = s.node(r.source)
+                name = f"&{src.labels[0]}" if src is not None and src.labels else r.source
+                off = src is not None and not checks.enabled(src)
+                t.append(f"  {name}", style="bright_black" if off else "yellow")
+                t.append(f"  {r.prop}", style="bright_black" if off else "")
+                if r.detail:
+                    t.append(f"  {r.detail}", style="bright_black")
+                if off:
+                    t.append("  disabled", style="bright_black italic")
+                t.append("\n")
+            if len(refs) > 40:
+                t.append(f"  … {len(refs) - 40} more\n", style="bright_black")
         sources = s.model.node_sources(path)
         if sources:
             t.append("\nsources\n", style="bold")
@@ -1246,6 +1327,8 @@ class DtsView(View):
             t.append("\n" + " ".join(node.description.split()), style="bright_black")
         details.update(t)
         self.fill_props(node)
+        self._props_path = path
+        self._focus_pending_prop()
 
     def fill_ref_props(self, node) -> None:
         """/chosen and /aliases: each entry points at a node."""
@@ -1330,6 +1413,9 @@ class DtsView(View):
             parts.append(f"{len(s.undo_stack)} edit(s), u: undo")
         if self.filter_text:
             parts.append(f"filter: {self.filter_text}")
+        if s and s.model and s.model.problems:
+            n = len(s.model.problems)
+            parts.append(f"{n} problem{'s' if n > 1 else ''}, p: list")
         if self.message:
             parts.append(self.message)
         self.query_one("#statusbar", Static).update("  ·  ".join(parts))
@@ -1396,6 +1482,35 @@ class DtsView(View):
             self.update_status("reloaded")
         elif self.session:
             self.notify(self.session.error or "", severity="error", timeout=10)
+
+    def action_problems(self) -> None:
+        if self.session and self.session.model:
+            self._show_problems()
+
+    @work(exclusive=True, group="problems")
+    async def _show_problems(self) -> None:
+        # Waits until the dialog is gone, so focusing a property sticks.
+        problem = await self.app.push_screen_wait(ProblemsScreen(self.session.model.problems))
+        if problem is None:
+            return
+        if self.filter_text and problem.path not in self.node_index:
+            self.action_clear_filter()
+        self._pending_prop = (problem.path, problem.prop) if problem.prop else None
+        self.reveal(problem.path)
+        self.call_after_refresh(self._focus_pending_prop)
+
+    def _focus_pending_prop(self) -> None:
+        """Highlight the property a problem is about, once its node is shown."""
+        pending = getattr(self, "_pending_prop", None)
+        if not pending or getattr(self, "_props_path", None) != pending[0]:
+            return  # the properties panel doesn't show that node yet
+        self._pending_prop = None
+        props = self.query_one("#props", PropList)
+        for i in range(props.option_count):
+            if props.get_option_at_index(i).id in (pending[1], f"ro:{pending[1]}"):
+                props.highlighted = i
+                props.focus()
+                return
 
     def action_undo(self) -> None:
         if self.session:
