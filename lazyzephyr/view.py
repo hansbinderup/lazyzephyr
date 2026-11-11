@@ -51,6 +51,22 @@ class View(Vertical):
     def activated(self) -> None:
         """Called when the View's tab is shown (also the first time)."""
 
+    def is_shown(self) -> bool:
+        """True when this View's tab is the active one (always, outside tabs)."""
+        from textual.widgets import TabbedContent, TabPane
+        pane = next((a for a in self.ancestors if isinstance(a, TabPane)), None)
+        if pane is None:
+            return True
+        tabs = next((a for a in pane.ancestors if isinstance(a, TabbedContent)), None)
+        return tabs is None or tabs.active == pane.id
+
+    def focus_here(self, widget) -> None:
+        """Focus `widget`, but only while this View's tab is shown: focusing a
+        widget in a hidden tab makes the app switch to that tab. A View focuses
+        its widgets again in activated()."""
+        if self.is_shown():
+            widget.focus()
+
 
 class ForwardActions:
     """Mixin for widgets inside a View: `action_x` the widget lacks runs on the View.

@@ -19,7 +19,7 @@ from .kconfig.app import KCONFIG_CSS, KconfigView
 from .kconfig.app import AppConfig as KconfigConfig
 from .view import COMMON_CSS, View
 
-TABS = ("build", "dts", "tests", "kconfig")
+TABS = ("build", "dts", "kconfig", "tests")
 
 
 class LazyZephyrApp(App):
@@ -38,8 +38,8 @@ class LazyZephyrApp(App):
         Binding("left_square_bracket", "cycle_tab(-1)", "Prev tab", show=False),
         Binding("f1", "show_tab('build')", show=False),
         Binding("f2", "show_tab('dts')", show=False),
-        Binding("f3", "show_tab('tests')", show=False),
-        Binding("f4", "show_tab('kconfig')", show=False),
+        Binding("f3", "show_tab('kconfig')", show=False),
+        Binding("f4", "show_tab('tests')", show=False),
     ]
 
     def __init__(self, twister: TwisterConfig, dts: DtsConfig | None, tab: str = "build",
@@ -65,8 +65,6 @@ class LazyZephyrApp(App):
                 else:
                     yield Static(f"Devicetree unavailable: {self.dts_error}",
                                  classes="tab-error")
-            with TabPane("Tests", id="tests"):
-                yield TwisterView(self.twister_config, id="twister")
             with TabPane("Kconfig", id="kconfig"):
                 if self.dts_config is not None:
                     choice = self.dts_config.choice
@@ -76,6 +74,8 @@ class LazyZephyrApp(App):
                                       id="kconfig-view")
                 else:
                     yield Static(f"Kconfig unavailable: {self.dts_error}", classes="tab-error")
+            with TabPane("Tests", id="tests"):
+                yield TwisterView(self.twister_config, id="twister")
         yield Footer()
 
     def on_mount(self) -> None:

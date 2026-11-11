@@ -617,7 +617,7 @@ class TwisterView(View):
     async def on_mount(self) -> None:
         self.main_screen = self
         self.apply_layout()
-        self.tree.focus()
+        self.focus_here(self.tree)
         self.update_status()
         self.set_interval(0.15, self._tick)
         if self.config.pick_folders:
@@ -701,7 +701,7 @@ class TwisterView(View):
         screen.set_class(self.compact, "-compact")
         # Hidden panels can't keep focus.
         if self.compact and self.focused is not None and self.focused.id == "details-panel":
-            self.tree.focus()
+            self.focus_here(self.tree)
         self.refresh_jobs()
 
     def on_resize(self, event) -> None:

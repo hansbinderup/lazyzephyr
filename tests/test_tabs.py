@@ -38,7 +38,12 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
     async with app.run_test(size=(180, 50)) as pilot:
         twister = app.twister
         await wait_for(lambda: "s:demo.one" in twister.node_index)
+        # The other tabs load in the background without taking over the screen.
+        dts_view = app.view("dts")
+        await wait_for(lambda: dts_view.session is not None)
+        await pilot.pause(0.3)
         assert app.tabs.active == "build"
+        assert app.focused is not None and app.view("build") in app.focused.ancestors
         await pilot.press("right_square_bracket")
         await wait_for(lambda: app.tabs.active == "dts")
         view = app.view("dts")
@@ -52,8 +57,13 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
         await wait_for(lambda: app.tabs.active == "build")
         build = app.view("build")
         await wait_for(lambda: app.focused is not None and build in app.focused.ancestors)
-        await pilot.press("f3")
+        await pilot.press("f4")
         await wait_for(lambda: app.tabs.active == "tests")
         await wait_for(lambda: app.focused is not None and twister in app.focused.ancestors)
         await pilot.press("q")
         await wait_for(lambda: not app.is_running)
+
+
+def test_tab_order():
+    from lazyzephyr.app import TABS
+    assert TABS == ("build", "dts", "kconfig", "tests")

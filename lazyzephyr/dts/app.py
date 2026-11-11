@@ -978,7 +978,7 @@ class DtsView(View):
         self.query_one("#left").border_title = f"Devicetree · {inputs.description}"
         self.rebuild_tree()
         self.load_catalog()
-        self.tree.focus()
+        self.focus_here(self.tree)
 
     @work(thread=True, exclusive=True, group="catalog")
     def load_catalog(self) -> None:

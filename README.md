@@ -6,10 +6,10 @@ A lazygit-style terminal UI for Zephyr work in a **west** workspace, with one ta
   runner, probe…) to build, flash, menuconfig and more with a keypress.
 - **Devicetree**: browse a target's devicetree and edit it, limited to what the bindings
   allow, with a searchable menu to add any node.
-- **Tests**: run **twister** tests: see every scenario, queue runs with a keypress, keep
-  the results and jump to the assert that failed. (This was lazytwister.)
 - **Kconfig**: a build's options: search them, see why each has its value, what it
   depends on and what selects it, and switch them on in your `prj.conf`.
+- **Tests**: run **twister** tests: see every scenario, queue runs with a keypress, keep
+  the results and jump to the assert that failed. (This was lazytwister.)
 
 Zephyr only; not Linux devicetrees.
 
@@ -23,7 +23,7 @@ Zephyr only; not Linux devicetrees.
 | Key | Action |
 | --- | --- |
 | `]` / `[` | next / previous tab |
-| `F1` / `F2` / `F3` / `F4` | Build / Devicetree / Tests / Kconfig |
+| `F1` / `F2` / `F3` / `F4` | Build / Devicetree / Kconfig / Tests |
 | `q` | quit (asks first if a twister job is running or queued) |
 
 Every other key belongs to the tab you are in, and the footer shows them. It starts in

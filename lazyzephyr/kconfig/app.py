@@ -398,7 +398,7 @@ class KconfigView(View):
         self.current = None
         self.history = []
         self.rebuild_tree()
-        self.tree.focus()
+        self.focus_here(self.tree)
         if self.tree.cursor_node is None and self.tree.root.children:
             self.call_after_refresh(self.tree.move_cursor, self.tree.root.children[0])
 
