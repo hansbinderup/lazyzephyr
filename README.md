@@ -81,6 +81,14 @@ Tests.
   properties, with their values and where each is set. Values are checked by type, enum
   and label, then the whole tree is parsed again with Zephyr's own `edtlib`. If it no
   longer parses, the file is put back and the error is shown.
+- **`gpios`, `pwms`, `io-channels` and other phandle-arrays** are edited as rows: pick the
+  controller from the nodes that can serve it, then fill in its named cells (`pin`,
+  `flags`, `channel`…). Pins are checked against the controller's `ngpios`. `ctrl+n` /
+  `ctrl+r` add / remove an entry, `ctrl+t` switches to plain text and back.
+- **Macro suggestions**: while you type a cell or a number, the macros from the
+  `dt-bindings` headers the tree includes are listed (`GPIO_ACTIVE_LOW`,
+  `I2C_BITRATE_FAST`…), the ones that fit the property first. `↓` moves into the list,
+  `enter` puts the macro in, so `GPIO_ACTIVE_LOW | GPIO_PULL_UP` takes a few keys.
 - **Add a node** (`a`): a searchable list of every binding, limited to the ones that fit
   the selected node (e.g. I2C devices under an I2C bus). `✓` marks bindings a driver uses.
   It then asks for `reg` (the `@unit-address` comes from it), a label, the required

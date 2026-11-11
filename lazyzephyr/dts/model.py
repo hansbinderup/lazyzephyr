@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import dtsedit
+from . import macros as dtmacros
 from .workspace import DtInputs, Workspace
 
 
@@ -78,6 +79,7 @@ class Model:
     _sources: dict[Path, dtsedit.SourceFile | None] = field(default_factory=dict)
     # Files #included inside a node -> that node's path.
     _roots: dict[Path, str] | None = None
+    _macros: list[dtmacros.Macro] | None = None
 
     @property
     def labels(self) -> set[str]:
@@ -103,6 +105,13 @@ class Model:
         matches = [c for c in node.children.values()
                    if c.name.split("@")[0] == base]
         return matches[0].path if len(matches) == 1 else path
+
+    @property
+    def macros(self) -> list[dtmacros.Macro]:
+        """Macros from the dt-bindings headers this tree includes."""
+        if self._macros is None:
+            self._macros = dtmacros.scan([p for p in self.deps if dtmacros.is_binding_header(p)])
+        return self._macros
 
     def dts_files(self) -> list[Path]:
         """Devicetree sources (not headers) in include order."""

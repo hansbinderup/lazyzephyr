@@ -19,8 +19,9 @@ from textual.widgets import Footer, Input, OptionList, Select, Static, Tree
 from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 
-from . import catalog, values
+from . import catalog, macros, specifiers, values
 from .catalog import BindingInfo
+from .editors import CompleteInput, Completer, SpecifierEditor, SpecRow, macro_choice
 from .model import import_edtlib
 from .session import EditResult, Session
 from .state import TargetChoice, save_choice
@@ -318,12 +319,20 @@ class TargetScreen(ModalScreen[TargetChoice | None]):
         self.dismiss(None)
 
 
+# Types whose values name other nodes, and types whose cells can use macros.
+LABEL_TYPES = {"phandle", "phandles", "path"}
+MACRO_TYPES = {"int", "array", "phandle-array", "compound"}
+
+
 class EditScreen(ModalScreen[EditResult | None]):
     """Edit one property, limited to what its binding allows."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
         Binding("ctrl+s", "apply", "Apply", priority=True),
+        Binding("ctrl+n", "add_entry", "Add entry", priority=True),
+        Binding("ctrl+r", "remove_entry", "Remove entry", priority=True),
+        Binding("ctrl+t", "toggle_text", "Type as text", priority=True),
     ]
 
     def __init__(self, session: Session, node_path: str, name: str, base: Path):
@@ -331,13 +340,17 @@ class EditScreen(ModalScreen[EditResult | None]):
         self.session, self.node_path, self.prop, self.base = session, node_path, name, base
         node = session.node(node_path)
         self.spec = session.spec(node, name)
+        self.space: str | None = None
+        self.ctrls: list[specifiers.Controller] = []
+        if self.spec.type == "phandle-array":
+            self.space = specifiers.space(name, self.spec)
+            self.ctrls = specifiers.controllers(session.model.edt, self.space)
 
     def compose(self) -> ComposeResult:
         s, spec, m = self.session, self.spec, self.session.model
         node = s.node(self.node_path)
         with VerticalScroll(id="edit-dialog", classes="panel dialog") as dialog:
             dialog.border_title = f"{self.prop}  ({spec.type})"
-            dialog.border_subtitle = "enter: apply · esc: cancel"
             yield Static(self._info(node), classes="hint")
             sources = m.prop_sources(self.node_path, self.prop)
             eff = s.effective(self.node_path, self.prop)
@@ -364,15 +377,79 @@ class EditScreen(ModalScreen[EditResult | None]):
                 yield Select(opts, value=cur if cur in [o[1] for o in opts] else Select.BLANK,
                              id="edit-value", prompt="pick a value")
             else:
-                value = values.to_input(spec.type, current) if current is not None else ""
-                yield Input(value=value, placeholder=self._placeholder(),
-                            id="edit-value")
+                yield self._value_widget(current, structured=True)
+            yield Completer(self._choices, id="edit-complete")
             files = s.write_files(self.node_path)
             default = s.default_write_file(self.node_path, self.prop)
             yield Static("Write to", classes="label")
             yield Select(file_options(files, self.base, s.inputs.user_files), value=default,
                          allow_blank=False, id="edit-file")
             yield Static("", id="edit-error")
+
+    def on_mount(self) -> None:
+        self._update_keys()
+
+    def _value_widget(self, text: str | None, structured: bool):
+        type_ = self.spec.type
+        if type_ == "phandle-array" and structured and self.ctrls:
+            entries = specifiers.parse(text, self.ctrls)
+            if entries is not None:
+                return SpecifierEditor(self.ctrls, entries, self._macro_context(),
+                                       id="edit-value")
+        value = values.to_input(type_, text) if text is not None else ""
+        if type_ in LABEL_TYPES or type_ in MACRO_TYPES:
+            return CompleteInput(value=value, placeholder=self._placeholder(), id="edit-value",
+                                 kind="label" if type_ in LABEL_TYPES else "macro",
+                                 context=self._macro_context())
+        return Input(value=value, placeholder=self._placeholder(), id="edit-value")
+
+    def _macro_context(self) -> set[str]:
+        node = self.session.node(self.node_path)
+        return macros.context_words(self.prop, self.space, *node.compats[:1], *node.buses,
+                                    *node.on_buses)
+
+    def _update_keys(self) -> None:
+        keys = ["enter: apply"]
+        widget = self.query_one("#edit-value")
+        if isinstance(widget, SpecifierEditor):
+            keys += ["ctrl+n/r: add/remove entry", "ctrl+t: as text"]
+        elif self.spec.type == "phandle-array" and self.ctrls:
+            keys.append("ctrl+t: fields")
+        if isinstance(widget, CompleteInput) or isinstance(widget, SpecifierEditor):
+            keys.append("↓: choices")
+        keys.append("esc: cancel")
+        self.query_one("#edit-dialog").border_subtitle = " · ".join(keys)
+
+    def _choices(self, token: str, target: CompleteInput) -> list:
+        m = self.session.model
+        if target.kind == "label":
+            return self._label_choices(token)
+        if token[:1].isdigit():
+            return []
+        return [macro_choice(x) for x in macros.rank(m.macros, token, target.context)]
+
+    def _label_choices(self, token: str) -> list:
+        edt = self.session.model.edt
+        labels = edt._dt.label2node
+        want = token.lstrip("&").lower()
+        if want and want in {k.lower() for k in labels}:
+            want = ""  # a complete label: offer all of them, to change it
+        out = []
+        for label in sorted(labels, key=str.lower):
+            low = label.lower()
+            if want and want not in low:
+                continue
+            node = self.session.node(labels[label].path)
+            t = Text()
+            t.append(f"&{label}", style="yellow")
+            t.append(f"  {labels[label].path}", style="bright_black")
+            if node is not None and node.compats:
+                t.append(f"  {node.compats[0]}", style="cyan")
+            if node is not None and node.status != "okay":
+                t.append(f"  {node.status}", style="bright_black italic")
+            out.append((not low.startswith(want), f"&{label}", t))
+        out.sort(key=lambda c: c[0])
+        return [(ins, t) for _, ins, t in out]
 
     def _current_raw(self, sources, eff) -> str | None:
         for f, stmt in reversed(sources):
@@ -409,36 +486,99 @@ class EditScreen(ModalScreen[EditResult | None]):
             facts.append(f"default: {escape(str(spec.default))}")
         if spec.deprecated:
             facts.append("[yellow]deprecated[/yellow]")
-        if spec.type == "phandle-array" and spec.specifier_space:
-            facts.append(self._cells_hint(spec.specifier_space))
+        if self.space is not None:
+            facts.append(self._cells_hint())
         if facts:
             parts.append(" · ".join(facts))
         return "\n".join(parts) or "(no description in the binding)"
 
-    def _cells_hint(self, space: str) -> str:
-        """`gpios: <&controller pin flags>` from the controllers in the tree."""
-        cells = {}
-        for n in self.session.model.edt.nodes:
-            b = n._binding
-            if b and space in b.specifier2cells and n.labels:
-                cells.setdefault(tuple(b.specifier2cells[space]), []).append(n.labels[0])
-        if not cells:
-            return f"cells: <&controller {space}-cells…>"
+    def _cells_hint(self) -> str:
+        """`<&controller pin flags>` from the controllers in the tree."""
+        if not self.ctrls:
+            return escape(f"no node in the tree has #{self.space}-cells")
+        cells: dict[tuple[str, ...], list[str]] = {}
+        for c in self.ctrls:
+            cells.setdefault(tuple(c.cells), []).append(c.ref)
         hints = []
-        for names, labels in list(cells.items())[:3]:
-            shown = ", ".join("&" + label for label in labels[:4])
+        for names, refs in list(cells.items())[:3]:
+            shown = ", ".join(refs[:4]) + (", …" if len(refs) > 4 else "")
             hints.append(f"<&ctrl {' '.join(names)}> for {shown}")
         return escape("; ".join(hints))
 
-    @on(Input.Submitted, "#edit-value")
-    def submitted(self) -> None:
+    # -- events ----------------------------------------------------------
+
+    @property
+    def completer(self) -> Completer:
+        return self.query_one("#edit-complete", Completer)
+
+    @on(Input.Submitted)
+    def submitted(self, event: Input.Submitted) -> None:
+        event.stop()
         self.action_apply()
 
+    @on(Input.Changed)
+    def changed(self, event: Input.Changed) -> None:
+        if event.input is self.completer.target:
+            self.completer.update_choices()
+
+    def on_descendant_focus(self, event) -> None:
+        widget, completer = event.widget, self.completer
+        if widget is not completer:
+            completer.attach(widget if isinstance(widget, CompleteInput) else None)
+
     def on_key(self, event) -> None:
-        if event.key == "enter" and not isinstance(self.focused, Input) and \
+        completer = self.completer
+        if event.key == "down" and isinstance(self.focused, CompleteInput) and \
+                completer.display and completer.option_count:
+            event.stop()
+            completer.focus()
+            completer.highlighted = 0
+        elif event.key == "enter" and not isinstance(self.focused, (Input, OptionList)) and \
                 not (isinstance(self.focused, Select) and self.focused.expanded):
             event.stop()
             self.action_apply()
+
+    # -- actions ---------------------------------------------------------
+
+    def _error(self, message: str) -> None:
+        self.query_one("#edit-error", Static).update(f"[red]{escape(message)}[/red]")
+
+    async def action_add_entry(self) -> None:
+        widget = self.query_one("#edit-value")
+        if isinstance(widget, SpecifierEditor):
+            await widget.add_row()
+
+    async def action_remove_entry(self) -> None:
+        widget = self.query_one("#edit-value")
+        if not isinstance(widget, SpecifierEditor):
+            return
+        focused = self.focused
+        row = next((a for a in focused.ancestors_with_self if isinstance(a, SpecRow)),
+                   None) if focused else None
+        if not await widget.remove_row(row or widget.rows[-1]):
+            self._error("can't remove the only entry; remove the property instead (d)")
+
+    async def action_toggle_text(self) -> None:
+        widget = self.query_one("#edit-value")
+        if self.spec.type != "phandle-array" or not self.ctrls:
+            return
+        if isinstance(widget, SpecifierEditor):
+            text = specifiers.compose([e for e in widget.entries() if e[0]])
+            new = self._value_widget(text, structured=False)
+        else:
+            text = widget.value.strip()
+            if text and "<" not in text:
+                text = f"<{text}>"
+            if specifiers.parse(text, self.ctrls) is None:
+                self._error("can't split this into controllers and cells; edit it as text")
+                return
+            new = self._value_widget(text, structured=True)
+        self._error("")
+        await widget.remove()
+        await self.query_one("#edit-dialog").mount(new, before=self.completer)
+        self._update_keys()
+        (new.query(Input).first() if isinstance(new, SpecifierEditor) and new.query(Input)
+         else new.query_one(Select) if isinstance(new, SpecifierEditor) else new).focus()
 
     def action_apply(self) -> None:
         widget = self.query_one("#edit-value")
@@ -447,16 +587,23 @@ class EditScreen(ModalScreen[EditResult | None]):
             delete = widget.value == "false"
             result = self.session.set_property(self.node_path, self.prop, None, file,
                                                delete=delete)
+        elif isinstance(widget, SpecifierEditor):
+            entries = widget.entries()
+            if err := specifiers.check(entries, self.ctrls):
+                self._error(err)
+                return
+            result = self.session.set_property(self.node_path, self.prop,
+                                               specifiers.compose(entries), file)
         else:
             value = widget.value
             if not isinstance(value, str):
-                self.query_one("#edit-error", Static).update("[red]pick a value[/red]")
+                self._error("pick a value")
                 return
             result = self.session.set_property(self.node_path, self.prop, str(value), file)
         if result.ok:
             self.dismiss(result)
         else:
-            self.query_one("#edit-error", Static).update(f"[red]{escape(result.message)}[/red]")
+            self._error(result.message)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -772,6 +919,13 @@ DTS_CSS = """
     .label { margin-top: 1; }
     .sources { margin-top: 1; }
     #edit-error, #form-error { margin-top: 1; }
+    #edit-complete { height: auto; max-height: 10; margin-top: 1;
+                     border: round $panel-lighten-2; background: $surface; }
+    #edit-complete:focus { border: round $success; }
+    SpecifierEditor { height: auto; }
+    .spec-row { height: auto; }
+    .spec-ctrl { width: 45; }
+    .spec-cell { width: 1fr; }
 
     DtsView.-portrait #main { layout: vertical; }
     DtsView.-portrait #left, DtsView.-portrait #right { width: 100%; min-width: 0; }

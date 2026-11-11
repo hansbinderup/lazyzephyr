@@ -2,7 +2,10 @@
 
 import asyncio
 
+from textual.widgets import Input
+
 from lazyzephyr.dts.app import AppConfig, LazyDtsApp
+from lazyzephyr.dts.editors import SpecifierEditor
 from lazyzephyr.dts.state import TargetChoice
 from lazyzephyr.dts.workspace import find_workspace
 
@@ -76,8 +79,37 @@ async def test_edit_property_dialog(workspace, tmp_path, monkeypatch):
         props.highlighted = ids.index("gpios")
         await pilot.press("enter")
         await pilot.pause()
-        field = app.screen.query_one("#edit-value")
-        assert field.value == "<&gpio0 0 0>"
-        field.value = "&gpio0 3 1"
+        # gpios is edited as rows of controller + named cells.
+        screen = app.screen
+        editor = screen.query_one("#edit-value", SpecifierEditor)
+        assert editor.entries() == [("&gpio0", ["0", "0"])]
+        pin, flags = editor.query(".spec-cell").results(Input)
+        assert pin.placeholder.startswith("pin") and flags.placeholder == "flags"
+        pin.value = "3"
+        # Flags offer the dt-bindings GPIO macros; down + enter puts one in.
+        flags.focus()
+        flags.value = "GPIO_ACTIVE_L"
+        flags.cursor_position = len(flags.value)
+        await pilot.pause()
+        assert screen.completer.display and screen.completer.target is flags
+        await pilot.press("down", "enter")
+        assert flags.value == "GPIO_ACTIVE_LOW" and screen.focused is flags
+        flags.value += " | GPIO_PULL_UP"
+        # A second entry, then remove it again.
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+        assert len(editor.rows) == 2 and editor.rows[1].ref == "&gpio0"
+        await pilot.press("ctrl+r")
+        await pilot.pause()
+        assert len(editor.rows) == 1
+        # Switch to text and back keeps the value.
+        await pilot.press("ctrl+t")
+        await pilot.pause()
+        field = screen.query_one("#edit-value", Input)
+        assert field.value == "<&gpio0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>"
+        await pilot.press("ctrl+t")
+        await pilot.pause()
+        editor = screen.query_one("#edit-value", SpecifierEditor)
         await pilot.press("ctrl+s")
-        await wait_for(lambda: "gpios = <&gpio0 3 1>;" in overlay.read_text())
+        await wait_for(lambda: "gpios = <&gpio0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;"
+                       in overlay.read_text())
