@@ -38,7 +38,7 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
     async with app.run_test(size=(180, 50)) as pilot:
         twister = app.twister
         await wait_for(lambda: "s:demo.one" in twister.node_index)
-        assert app.tabs.active == "tests"
+        assert app.tabs.active == "build"
         await pilot.press("right_square_bracket")
         await wait_for(lambda: app.tabs.active == "dts")
         view = app.view("dts")
@@ -48,11 +48,11 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
         await pilot.press("slash")
         assert app.focused is view.query_one("#filter")
         await pilot.press("escape")
-        await pilot.press("f3")
+        await pilot.press("f1")
         await wait_for(lambda: app.tabs.active == "build")
         build = app.view("build")
         await wait_for(lambda: app.focused is not None and build in app.focused.ancestors)
-        await pilot.press("f1")
+        await pilot.press("f3")
         await wait_for(lambda: app.tabs.active == "tests")
         await wait_for(lambda: app.focused is not None and twister in app.focused.ancestors)
         await pilot.press("q")

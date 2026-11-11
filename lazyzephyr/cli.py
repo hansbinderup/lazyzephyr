@@ -24,8 +24,8 @@ def build_parser(prog: str = "lazyzephyr") -> argparse.ArgumentParser:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--tab", choices=["tests", "dts", "build"],
-                        help="tab to start in (default: tests, or dts with -b/-d)")
+    parser.add_argument("--tab", choices=["build", "dts", "tests"],
+                        help="tab to start in (default: build, or dts with -b/-d)")
     twister_cli.add_arguments(parser.add_argument_group("tests tab (twister)"))
     dts = parser.add_argument_group("devicetree tab")
     dts.add_argument("-b", "--board", help="board target, e.g. native_sim/native/64")
@@ -73,7 +73,7 @@ def run(args: argparse.Namespace, extra: list[str]) -> None:
                                pick_target=args.pick_target or choice is None)
     except LookupError as exc:
         dts_error = f"{exc}. Run inside a west workspace or set ZEPHYR_BASE."
-    tab = args.tab or ("dts" if args.board or args.build_dir else "tests")
+    tab = args.tab or ("dts" if args.board or args.build_dir else "build")
     LazyZephyrApp(twister_config, dts_config, tab, dts_error).run()
 
 

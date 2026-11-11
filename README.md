@@ -2,12 +2,12 @@
 
 A lazygit-style terminal UI for Zephyr work in a **west** workspace, with one tab per tool:
 
-- **Tests**: run **twister** tests: see every scenario, queue runs with a keypress, keep
-  the results and jump to the assert that failed. (This was lazytwister.)
-- **Devicetree**: browse a target's devicetree and edit it, limited to what the bindings
-  allow, with a searchable menu to add any node.
 - **Build**: saved build configs (app, board, revision, shields, snippets, sysbuild,
   runner, probe…) to build, flash, menuconfig and more with a keypress.
+- **Devicetree**: browse a target's devicetree and edit it, limited to what the bindings
+  allow, with a searchable menu to add any node.
+- **Tests**: run **twister** tests: see every scenario, queue runs with a keypress, keep
+  the results and jump to the assert that failed. (This was lazytwister.)
 
 Zephyr only; not Linux devicetrees.
 
@@ -21,11 +21,87 @@ Zephyr only; not Linux devicetrees.
 | Key | Action |
 | --- | --- |
 | `]` / `[` | next / previous tab |
-| `F1` / `F2` / `F3` | Tests / Devicetree / Build |
+| `F1` / `F2` / `F3` | Build / Devicetree / Tests |
 | `q` | quit (asks first if a twister job is running or queued) |
 
-Every other key belongs to the tab you are in, and the footer shows them. `--tab dts`
-starts in the Devicetree tab, as does giving `-b` or `-d`; `--tab build` starts in Build.
+Every other key belongs to the tab you are in, and the footer shows them. It starts in
+the Build tab; `--tab dts` (or giving `-b` / `-d`) starts in Devicetree, `--tab tests` in
+Tests.
+
+## Build tab
+
+### Features
+
+- **Saved configs**: an app, a board target (searchable list of every board in the
+  workspace) and its revision, shields and snippets (picked from the ones that exist),
+  sysbuild on/off, a build directory, extra Kconfig files and overlays, more CMake
+  arguments, the flash runner and the probe's serial number. Configs are saved per
+  workspace in `~/.cache/lazyzephyr/builds.json`, and the list shows how each last run went.
+- **Existing builds** show up under "found builds": `enter` imports one as a config,
+  using the `west build` command it was made with (also for sysbuild).
+- **Actions**: build, pristine build, flash, build then flash, flash with `--erase`, run
+  (native_sim, qemu), menuconfig, guiconfig, hardenconfig, RAM / ROM reports, debug,
+  attach, debugserver, RTT, delete the build directory, and open the build in the
+  Devicetree tab. Output streams into the Output panel; menuconfig, debug, attach and RTT
+  take over the terminal until they exit.
+- **Runners** come from the build's `runners.yaml` once built, before that from the
+  board's `board.cmake`. **Probes** (J-Link, ST-Link, CMSIS-DAP, MCU-Link…) are read from
+  USB, so you can pick the serial number of the one to flash.
+- The details panel shows the exact `west build` and `west flash` commands.
+- The default build directory is `build-<app>-<board>` in the workspace, or west's
+  `build.dir-fmt` if you set one.
+
+### Keys
+
+| Key | Action |
+| --- | --- |
+| `enter` / `space` | all actions for the selected config (imports a found build) |
+| `b` / `B` | build / pristine build |
+| `f` / `F` | flash / build, then flash |
+| `m` / `t` | menuconfig / open the build in the Devicetree tab |
+| `n` / `e` / `c` / `d` | new / edit / copy / delete config |
+| `x` | stop the running command |
+| `L` / `z` / `?` | clear the output / maximize the focused panel / help |
+
+## Devicetree tab
+
+### Features
+
+- **Pick a target**: an existing build directory (exact: it uses the build's
+  `build_info.yml`), or any board in the workspace, with your app's overlays and shields.
+  Press `t` to switch. The last target is remembered per directory.
+- **See the final tree**: labels, status, compatible, the binding, the bus, and whether a
+  driver in the workspace uses the compatible. Details list every file and line that
+  defines or overrides the node, across `.dts`, `.dtsi` and overlays.
+- **Edit only what the bindings allow**: the properties panel lists the binding's
+  properties, with their values and where each is set. Values are checked by type, enum
+  and label, then the whole tree is parsed again with Zephyr's own `edtlib`. If it no
+  longer parses, the file is put back and the error is shown.
+- **Add a node** (`a`): a searchable list of every binding, limited to the ones that fit
+  the selected node (e.g. I2C devices under an I2C bus). `✓` marks bindings a driver uses.
+  It then asks for `reg` (the `@unit-address` comes from it), a label, the required
+  properties and the file to write to.
+- **Edits go to the right place**: into the node's existing block in that file, or a new
+  `&label { };` block. `w` picks the file. Files in Zephyr itself and in third-party
+  modules are never edited. If a later file overrides your change, you are told.
+- Edits are written straight to your source files: `u` undoes the last one, and
+  `git diff` shows them all. The tree reloads by itself when the files change.
+
+### Keys
+
+| Key | Action |
+| --- | --- |
+| `/` | filter by name, label or compatible |
+| `a` | add a node under the selected node |
+| `s` | toggle status okay / disabled |
+| `d` | delete the node, or in Properties remove the value |
+| `enter` / `e` | in Properties: edit the value |
+| `o` | open `$EDITOR` where the node or value is set |
+| `w` / `t` | pick the file edits go to / pick another target |
+| `u` / `r` | undo the last edit / reload |
+| `z` / `?` | maximise the focused panel / help |
+
+A C preprocessor (`gcc` or `clang`) must be on `PATH`, as for any Zephyr build.
 
 ## Tests tab
 
@@ -167,81 +243,6 @@ To free up space:
 Clearing only removes files lazyzephyr creates (`run*` build folders and `results.json`),
 and never follows symlinks.
 
-
-## Devicetree tab
-
-### Features
-
-- **Pick a target**: an existing build directory (exact: it uses the build's
-  `build_info.yml`), or any board in the workspace, with your app's overlays and shields.
-  Press `t` to switch. The last target is remembered per directory.
-- **See the final tree**: labels, status, compatible, the binding, the bus, and whether a
-  driver in the workspace uses the compatible. Details list every file and line that
-  defines or overrides the node, across `.dts`, `.dtsi` and overlays.
-- **Edit only what the bindings allow**: the properties panel lists the binding's
-  properties, with their values and where each is set. Values are checked by type, enum
-  and label, then the whole tree is parsed again with Zephyr's own `edtlib`. If it no
-  longer parses, the file is put back and the error is shown.
-- **Add a node** (`a`): a searchable list of every binding, limited to the ones that fit
-  the selected node (e.g. I2C devices under an I2C bus). `✓` marks bindings a driver uses.
-  It then asks for `reg` (the `@unit-address` comes from it), a label, the required
-  properties and the file to write to.
-- **Edits go to the right place**: into the node's existing block in that file, or a new
-  `&label { };` block. `w` picks the file. Files in Zephyr itself and in third-party
-  modules are never edited. If a later file overrides your change, you are told.
-- Edits are written straight to your source files: `u` undoes the last one, and
-  `git diff` shows them all. The tree reloads by itself when the files change.
-
-### Keys
-
-| Key | Action |
-| --- | --- |
-| `/` | filter by name, label or compatible |
-| `a` | add a node under the selected node |
-| `s` | toggle status okay / disabled |
-| `d` | delete the node, or in Properties remove the value |
-| `enter` / `e` | in Properties: edit the value |
-| `o` | open `$EDITOR` where the node or value is set |
-| `w` / `t` | pick the file edits go to / pick another target |
-| `u` / `r` | undo the last edit / reload |
-| `z` / `?` | maximise the focused panel / help |
-
-A C preprocessor (`gcc` or `clang`) must be on `PATH`, as for any Zephyr build.
-
-## Build tab
-
-### Features
-
-- **Saved configs**: an app, a board target (searchable list of every board in the
-  workspace) and its revision, shields and snippets (picked from the ones that exist),
-  sysbuild on/off, a build directory, extra Kconfig files and overlays, more CMake
-  arguments, the flash runner and the probe's serial number. Configs are saved per
-  workspace in `~/.cache/lazyzephyr/builds.json`, and the list shows how each last run went.
-- **Existing builds** show up under "found builds": `enter` imports one as a config,
-  using the `west build` command it was made with (also for sysbuild).
-- **Actions**: build, pristine build, flash, build then flash, flash with `--erase`, run
-  (native_sim, qemu), menuconfig, guiconfig, hardenconfig, RAM / ROM reports, debug,
-  attach, debugserver, RTT, delete the build directory, and open the build in the
-  Devicetree tab. Output streams into the Output panel; menuconfig, debug, attach and RTT
-  take over the terminal until they exit.
-- **Runners** come from the build's `runners.yaml` once built, before that from the
-  board's `board.cmake`. **Probes** (J-Link, ST-Link, CMSIS-DAP, MCU-Link…) are read from
-  USB, so you can pick the serial number of the one to flash.
-- The details panel shows the exact `west build` and `west flash` commands.
-- The default build directory is `build-<app>-<board>` in the workspace, or west's
-  `build.dir-fmt` if you set one.
-
-### Keys
-
-| Key | Action |
-| --- | --- |
-| `enter` / `space` | all actions for the selected config (imports a found build) |
-| `b` / `B` | build / pristine build |
-| `f` / `F` | flash / build, then flash |
-| `m` / `t` | menuconfig / open the build in the Devicetree tab |
-| `n` / `e` / `c` / `d` | new / edit / copy / delete config |
-| `x` | stop the running command |
-| `L` / `z` / `?` | clear the output / maximize the focused panel / help |
 
 ## Install
 

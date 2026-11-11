@@ -15,7 +15,7 @@ from .twister.app import AppConfig as TwisterConfig
 from .dts.state import TargetChoice
 from .view import COMMON_CSS, View
 
-TABS = ("tests", "dts", "build")
+TABS = ("build", "dts", "tests")
 
 
 class LazyZephyrApp(App):
@@ -32,36 +32,36 @@ class LazyZephyrApp(App):
         Binding("q", "request_quit", "Quit"),
         Binding("right_square_bracket", "cycle_tab(1)", "Next tab"),
         Binding("left_square_bracket", "cycle_tab(-1)", "Prev tab", show=False),
-        Binding("f1", "show_tab('tests')", show=False),
+        Binding("f1", "show_tab('build')", show=False),
         Binding("f2", "show_tab('dts')", show=False),
-        Binding("f3", "show_tab('build')", show=False),
+        Binding("f3", "show_tab('tests')", show=False),
     ]
 
-    def __init__(self, twister: TwisterConfig, dts: DtsConfig | None, tab: str = "tests",
+    def __init__(self, twister: TwisterConfig, dts: DtsConfig | None, tab: str = "build",
                  dts_error: str | None = None, build: BuildView | None = None):
         super().__init__()
         self.twister_config, self.dts_config = twister, dts
         self.build_view = build
         if self.build_view is None and dts is not None:
             self.build_view = BuildView(dts.workspace, dts.cwd, id="builder")
-        self.initial_tab = tab if tab in TABS else "tests"
+        self.initial_tab = tab if tab in TABS else TABS[0]
         self.dts_error = dts_error
 
     def compose(self) -> ComposeResult:
         with TabbedContent(initial=self.initial_tab, id="tabs"):
-            with TabPane("Tests", id="tests"):
-                yield TwisterView(self.twister_config, id="twister")
+            with TabPane("Build", id="build"):
+                if self.build_view is not None:
+                    yield self.build_view
+                else:
+                    yield Static(f"Build unavailable: {self.dts_error}", classes="tab-error")
             with TabPane("Devicetree", id="dts"):
                 if self.dts_config is not None:
                     yield DtsView(self.dts_config, id="devicetree")
                 else:
                     yield Static(f"Devicetree unavailable: {self.dts_error}",
                                  classes="tab-error")
-            with TabPane("Build", id="build"):
-                if self.build_view is not None:
-                    yield self.build_view
-                else:
-                    yield Static(f"Build unavailable: {self.dts_error}", classes="tab-error")
+            with TabPane("Tests", id="tests"):
+                yield TwisterView(self.twister_config, id="twister")
         yield Footer()
 
     def on_mount(self) -> None:
