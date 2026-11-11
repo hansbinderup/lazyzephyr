@@ -24,7 +24,7 @@ def build_parser(prog: str = "lazyzephyr") -> argparse.ArgumentParser:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--tab", choices=["tests", "dts"],
+    parser.add_argument("--tab", choices=["tests", "dts", "build"],
                         help="tab to start in (default: tests, or dts with -b/-d)")
     twister_cli.add_arguments(parser.add_argument_group("tests tab (twister)"))
     dts = parser.add_argument_group("devicetree tab")

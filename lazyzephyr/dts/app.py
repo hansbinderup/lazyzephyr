@@ -449,7 +449,7 @@ class EditScreen(ModalScreen[EditResult | None]):
                                                delete=delete)
         else:
             value = widget.value
-            if value is Select.BLANK or value is None:
+            if not isinstance(value, str):
                 self.query_one("#edit-error", Static).update("[red]pick a value[/red]")
                 return
             result = self.session.set_property(self.node_path, self.prop, str(value), file)
@@ -719,7 +719,7 @@ class NodeFormScreen(ModalScreen[EditResult | None]):
                 continue
             widget = self.query_one(f"#prop-{pname}")
             value = widget.value
-            if value is Select.BLANK or value in (None, ""):
+            if not isinstance(value, str) or not value:
                 self._error(f"{pname} is required")
                 return
             try:

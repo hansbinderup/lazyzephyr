@@ -21,7 +21,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 lazyzephyr = "lazyzephyr.launcher:main"
 
 [tool.setuptools]
-packages = ["lazyzephyr", "lazyzephyr.dts", "lazyzephyr.twister"]
+packages = ["lazyzephyr", "lazyzephyr.builder", "lazyzephyr.dts", "lazyzephyr.twister"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

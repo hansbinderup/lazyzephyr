@@ -33,6 +33,7 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
     dts = DtsConfig(cwd=workspace / "app", workspace=find_workspace(workspace),
                     choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
                     work_dir=tmp_path / "work")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     app = LazyZephyrApp(twister_config(tmp_path, [tmp_path / "tests"]), dts)
     async with app.run_test(size=(180, 50)) as pilot:
         twister = app.twister
@@ -47,6 +48,10 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
         await pilot.press("slash")
         assert app.focused is view.query_one("#filter")
         await pilot.press("escape")
+        await pilot.press("f3")
+        await wait_for(lambda: app.tabs.active == "build")
+        build = app.view("build")
+        await wait_for(lambda: app.focused is not None and build in app.focused.ancestors)
         await pilot.press("f1")
         await wait_for(lambda: app.tabs.active == "tests")
         await wait_for(lambda: app.focused is not None and twister in app.focused.ancestors)

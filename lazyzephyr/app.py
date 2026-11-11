@@ -7,22 +7,24 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import Footer, Static, TabbedContent, TabPane
 
+from .builder.app import BUILD_CSS, BuildView
 from .dts.app import DTS_CSS, DtsView
 from .dts.app import AppConfig as DtsConfig
 from .twister.app import TWISTER_CSS, TwisterView
 from .twister.app import AppConfig as TwisterConfig
+from .dts.state import TargetChoice
 from .view import COMMON_CSS, View
 
-TABS = ("tests", "dts")
+TABS = ("tests", "dts", "build")
 
 
 class LazyZephyrApp(App):
     TITLE = "lazyzephyr"
-    CSS = COMMON_CSS + TWISTER_CSS + DTS_CSS + """
+    CSS = COMMON_CSS + TWISTER_CSS + DTS_CSS + BUILD_CSS + """
     #tabs { height: 1fr; }
     #tabs > ContentSwitcher { height: 1fr; }
     #tabs TabPane { padding: 0; height: 1fr; }
-    TwisterView, DtsView { height: 1fr; }
+    TwisterView, DtsView, BuildView { height: 1fr; }
     .tab-error { padding: 1 2; color: $error; }
     """
 
@@ -32,12 +34,16 @@ class LazyZephyrApp(App):
         Binding("left_square_bracket", "cycle_tab(-1)", "Prev tab", show=False),
         Binding("f1", "show_tab('tests')", show=False),
         Binding("f2", "show_tab('dts')", show=False),
+        Binding("f3", "show_tab('build')", show=False),
     ]
 
     def __init__(self, twister: TwisterConfig, dts: DtsConfig | None, tab: str = "tests",
-                 dts_error: str | None = None):
+                 dts_error: str | None = None, build: BuildView | None = None):
         super().__init__()
         self.twister_config, self.dts_config = twister, dts
+        self.build_view = build
+        if self.build_view is None and dts is not None:
+            self.build_view = BuildView(dts.workspace, dts.cwd, id="builder")
         self.initial_tab = tab if tab in TABS else "tests"
         self.dts_error = dts_error
 
@@ -51,6 +57,11 @@ class LazyZephyrApp(App):
                 else:
                     yield Static(f"Devicetree unavailable: {self.dts_error}",
                                  classes="tab-error")
+            with TabPane("Build", id="build"):
+                if self.build_view is not None:
+                    yield self.build_view
+                else:
+                    yield Static(f"Build unavailable: {self.dts_error}", classes="tab-error")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -87,3 +98,12 @@ class LazyZephyrApp(App):
     def action_request_quit(self) -> None:
         # Asks first while twister jobs are running, whichever tab is shown.
         self.twister.action_request_quit()
+
+    def open_in_dts(self, build_dir) -> None:
+        """Show an existing build in the Devicetree tab (used by the Build tab)."""
+        view = self.view("dts")
+        if view is None:
+            self.notify("the Devicetree tab is unavailable", severity="error")
+            return
+        self.tabs.active = "dts"
+        view.open_target(TargetChoice(build_dir=str(build_dir)))
