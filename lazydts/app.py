@@ -1,0 +1,1301 @@
+"""The lazydts Textual application."""
+
+from __future__ import annotations
+
+import os
+import shlex
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from rich.markup import escape
+from rich.text import Text
+from textual import on, work
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.screen import ModalScreen
+from textual.widgets import Footer, Input, OptionList, Select, Static, Tree
+from textual.widgets.option_list import Option
+from textual.widgets.tree import TreeNode
+
+from . import catalog, values
+from .catalog import BindingInfo
+from .model import import_edtlib
+from .session import EditResult, Session
+from .state import TargetChoice, save_choice
+from .workspace import (Board, DtInputs, Workspace, find_board, find_boards, find_build_dirs,
+                        inputs_for_board, inputs_from_build)
+
+
+@dataclass
+class AppConfig:
+    cwd: Path
+    workspace: Workspace
+    choice: TargetChoice | None = None
+    work_dir: Path | None = None
+    # Open the target picker on start.
+    pick_target: bool = False
+    extra: dict = field(default_factory=dict)
+
+
+def resolve_choice(ws: Workspace, choice: TargetChoice) -> DtInputs:
+    """Raises LookupError."""
+    if choice.build_dir:
+        return inputs_from_build(Path(choice.build_dir))
+    board = find_board(ws, choice.board or "")
+    return inputs_for_board(ws, board, Path(choice.app) if choice.app else None,
+                            list(choice.shields))
+
+
+def raw_value(prop) -> str:
+    """A dtlib property's value as DTS text, e.g. `<0x1>`."""
+    text = str(prop).strip().rstrip(";")
+    _, eq, value = text.partition("=")
+    return " ".join(value.split()) if eq else "true"
+
+
+def rel(path: Path | str, base: Path) -> str:
+    try:
+        return str(Path(path).relative_to(base))
+    except ValueError:
+        return str(path)
+
+
+# --------------------------------------------------------------------------
+# Widgets
+# --------------------------------------------------------------------------
+
+
+class NodeTree(Tree[str]):
+    BINDINGS = [
+        Binding("a", "app.add_node", "Add node"),
+        Binding("s", "app.toggle_status", "okay/disabled"),
+        Binding("d", "app.delete_node", "Delete"),
+        Binding("o", "app.open_editor", "Open"),
+        Binding("j", "cursor_down", show=False),
+        Binding("k", "cursor_up", show=False),
+        Binding("l,right", "expand", show=False),
+        Binding("h,left", "collapse", show=False),
+    ]
+
+    def action_expand(self) -> None:
+        node = self.cursor_node
+        if node is None:
+            return
+        if node.allow_expand and not node.is_expanded:
+            node.expand()
+        elif node.children:
+            self.move_cursor(node.children[0])
+
+    def action_collapse(self) -> None:
+        node = self.cursor_node
+        if node is None:
+            return
+        if node.is_expanded:
+            node.collapse()
+        elif node.parent is not None and node.parent is not self.root:
+            self.move_cursor(node.parent)
+
+
+class PropList(OptionList):
+    BINDINGS = [
+        Binding("enter,e", "app.edit_prop", "Edit"),
+        Binding("d", "app.delete_prop", "Remove"),
+        Binding("o", "app.open_editor", "Open"),
+        Binding("j", "cursor_down", show=False),
+        Binding("k", "cursor_up", show=False),
+    ]
+
+
+class Panel(Vertical):
+    ALLOW_MAXIMIZE = True
+
+
+class ScrollPanel(VerticalScroll):
+    ALLOW_MAXIMIZE = True
+
+
+class FilterInput(Input):
+    BINDINGS = [Binding("escape", "app.clear_filter", "Clear filter")]
+
+
+# --------------------------------------------------------------------------
+# Dialogs
+# --------------------------------------------------------------------------
+
+
+def file_options(files: list[Path], base: Path, user: list[Path]) -> list[tuple[str, Path]]:
+    return [(rel(f, base) + ("  (app)" if f in user else ""), f) for f in files]
+
+
+class ConfirmScreen(ModalScreen[bool]):
+    BINDINGS = [
+        Binding("y,enter", "answer(True)", "Yes"),
+        Binding("n,escape", "answer(False)", "No"),
+    ]
+
+    def __init__(self, title: str, message: str):
+        super().__init__()
+        self.title_text, self.message = title, message
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="confirm-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = self.title_text
+            dialog.border_subtitle = "y: yes · n: no"
+            yield Static(self.message)
+
+    def action_answer(self, value: bool) -> None:
+        self.dismiss(value)
+
+
+class HelpScreen(ModalScreen[None]):
+    BINDINGS = [Binding("escape,q,question_mark", "dismiss_help", "Close")]
+
+    TEXT = """\
+[b]Tree[/b]
+  j/k, h/l, arrows   move, fold
+  /                  filter by name, label or compatible
+  a                  add a node under the selected node
+  s                  toggle status okay / disabled
+  d                  delete the node
+  o                  open the source in $EDITOR
+  tab                go to the properties
+
+[b]Properties[/b]
+  enter, e           edit (only properties from the node's binding)
+  d                  remove the value (falls back to the earlier one)
+  o                  open where the value is set
+
+[b]Anywhere[/b]
+  w                  pick the file edits go to
+  t                  pick another target
+  u                  undo the last edit
+  r                  reload
+  z                  maximize the focused panel
+  q                  quit
+
+Edits are written straight to the source file, then the devicetree is parsed
+again. If it no longer parses, the file is put back and the error is shown.
+"""
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="help-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = "lazydts help"
+            yield Static(self.TEXT)
+
+    def action_dismiss_help(self) -> None:
+        self.dismiss(None)
+
+
+class FileScreen(ModalScreen[Path | None]):
+    """Pick the file edits go to."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, files: list[Path], current: Path | None, base: Path, user: list[Path]):
+        super().__init__()
+        self.files, self.current, self.base, self.user = files, current, base, user
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="file-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = "Write edits to"
+            dialog.border_subtitle = "enter: pick · esc: cancel"
+            yield Static("Files that come later override earlier ones. Zephyr's own and "
+                         "third-party module files are not offered.", classes="hint")
+            opts = [Option(("● " if f == self.current else "  ") + label, id=str(f))
+                    for label, f in file_options(self.files, self.base, self.user)]
+            yield OptionList(*opts, id="file-list")
+
+    def on_mount(self) -> None:
+        lst = self.query_one(OptionList)
+        if self.current in self.files:
+            lst.highlighted = self.files.index(self.current)
+
+    @on(OptionList.OptionSelected)
+    def picked(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(Path(event.option.id))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class TargetScreen(ModalScreen[TargetChoice | None]):
+    """Pick an existing build directory or a board."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, ws: Workspace, cwd: Path, current: TargetChoice | None):
+        super().__init__()
+        self.ws, self.cwd, self.current = ws, cwd, current
+        self.builds: list[Path] = []
+        self.boards: list[Board] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="target-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = "Target"
+            dialog.border_subtitle = "type to filter · enter: pick · esc: cancel"
+            yield Static("A build directory is exact (uses its build_info.yml). A board "
+                         "uses the app and shields below.", classes="hint")
+            yield Input(placeholder="filter boards and builds", id="target-filter")
+            yield OptionList(id="target-list")
+            with Horizontal(id="target-extra"):
+                app = self.current.app if self.current and self.current.app else (
+                    str(self.cwd) if (self.cwd / "CMakeLists.txt").is_file() else "")
+                yield Input(value=app, placeholder="app directory (optional)",
+                            id="target-app")
+                yield Input(value=", ".join(self.current.shields if self.current else []),
+                            placeholder="shields, comma separated", id="target-shields")
+
+    def on_mount(self) -> None:
+        self.query_one("#target-list", OptionList).loading = True
+        self.load()
+
+    @work(thread=True)
+    def load(self) -> None:
+        builds = find_build_dirs(self.ws, self.cwd)
+        boards = find_boards(self.ws)
+        self.app.call_from_thread(self._loaded, builds, boards)
+
+    def _loaded(self, builds: list[Path], boards: list[Board]) -> None:
+        self.builds, self.boards = builds, boards
+        lst = self.query_one("#target-list", OptionList)
+        lst.loading = False
+        self.refill()
+        self.query_one("#target-filter", Input).focus()
+
+    @on(Input.Changed, "#target-filter")
+    def refill(self, _=None) -> None:
+        words = self.query_one("#target-filter", Input).value.lower().split()
+        lst = self.query_one("#target-list", OptionList)
+        lst.clear_options()
+        opts = []
+        for b in self.builds:
+            text = rel(b, self.ws.topdir)
+            if all(w in text.lower() or w in "build" for w in words):
+                label = Text.assemble(("build  ", "magenta"), text)
+                opts.append(Option(label, id=f"build:{b}"))
+        for board in self.boards:
+            hay = f"{board.target} {board.vendor or ''} {board.full_name or ''}".lower()
+            if all(w in hay for w in words):
+                label = Text.assemble(("board  ", "cyan"), board.target,
+                                      (f"  {board.full_name or ''}", "bright_black"))
+                opts.append(Option(label, id=f"board:{board.target}"))
+            if len(opts) > 400:
+                break
+        lst.add_options(opts)
+        if opts:
+            lst.highlighted = 0
+
+    @on(Input.Submitted, "#target-filter")
+    def submit_filter(self) -> None:
+        lst = self.query_one("#target-list", OptionList)
+        if lst.highlighted is not None:
+            self._pick(lst.get_option_at_index(lst.highlighted).id)
+
+    def key_down(self) -> None:
+        if self.focused is self.query_one("#target-filter"):
+            self.query_one("#target-list").focus()
+
+    @on(OptionList.OptionSelected, "#target-list")
+    def picked(self, event: OptionList.OptionSelected) -> None:
+        self._pick(event.option.id)
+
+    def _pick(self, option_id: str) -> None:
+        kind, _, value = option_id.partition(":")
+        if kind == "build":
+            self.dismiss(TargetChoice(build_dir=value))
+            return
+        app = self.query_one("#target-app", Input).value.strip()
+        shields = [s.strip() for s in self.query_one("#target-shields", Input).value.split(",")
+                   if s.strip()]
+        if app:
+            app = str((self.cwd / app).resolve())
+        self.dismiss(TargetChoice(board=value, app=app or None, shields=shields))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class EditScreen(ModalScreen[EditResult | None]):
+    """Edit one property, limited to what its binding allows."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("ctrl+s", "apply", "Apply", priority=True),
+    ]
+
+    def __init__(self, session: Session, node_path: str, name: str, base: Path):
+        super().__init__()
+        self.session, self.node_path, self.name, self.base = session, node_path, name, base
+        node = session.node(node_path)
+        self.spec = session.spec(node, name)
+
+    def compose(self) -> ComposeResult:
+        s, spec, m = self.session, self.spec, self.session.model
+        node = s.node(self.node_path)
+        with VerticalScroll(id="edit-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = f"{self.name}  ({spec.type})"
+            dialog.border_subtitle = "enter: apply · esc: cancel"
+            yield Static(self._info(node), classes="hint")
+            sources = m.prop_sources(self.node_path, self.name)
+            eff = s.effective(self.node_path, self.name)
+            if sources:
+                lines = []
+                for f, stmt in sources:
+                    mark = "→" if eff == (f, stmt.line) else " "
+                    text = (f"/delete-property/" if stmt.kind == "delete-property"
+                            else (f"= {stmt.value}" if stmt.value is not None else "(set)"))
+                    lines.append(f"{mark} {escape(rel(f, self.base))}:{stmt.line}  "
+                                 f"{escape(text)}")
+                yield Static("[b]Set in[/b]\n" + "\n".join(lines), classes="sources")
+            current = self._current_raw(sources, eff)
+            if spec.type == "boolean":
+                yield Select([("true", "true"), ("false (remove)", "false")],
+                             value="true" if node.props.get(self.name)
+                             and node.props[self.name].val else "false",
+                             allow_blank=False, id="edit-value")
+            elif spec.enum and spec.type in ("int", "string"):
+                opts = [(str(v), str(v)) for v in spec.enum]
+                cur = values.to_input(spec.type, current) if current else None
+                if cur is None and spec.default is not None:
+                    cur = str(spec.default)
+                yield Select(opts, value=cur if cur in [o[1] for o in opts] else Select.BLANK,
+                             id="edit-value", prompt="pick a value")
+            else:
+                value = values.to_input(spec.type, current) if current is not None else ""
+                yield Input(value=value, placeholder=self._placeholder(),
+                            id="edit-value")
+            files = s.write_files(self.node_path)
+            default = s.default_write_file(self.node_path, self.name)
+            yield Static("Write to", classes="label")
+            yield Select(file_options(files, self.base, s.inputs.user_files), value=default,
+                         allow_blank=False, id="edit-file")
+            yield Static("", id="edit-error")
+
+    def _current_raw(self, sources, eff) -> str | None:
+        for f, stmt in reversed(sources):
+            if eff == (f, stmt.line) and stmt.kind == "set":
+                return stmt.value
+        return None
+
+    def _placeholder(self) -> str:
+        return {
+            "int": "e.g. 100, 0x20 or MACRO(1)",
+            "array": "e.g. 1 2 3",
+            "uint8-array": "hex bytes, e.g. 00 1f a0",
+            "string": "text (no quotes needed)",
+            "string-array": "comma separated, e.g. a, b",
+            "phandle": "node label, e.g. &gpio0",
+            "phandles": "node labels, e.g. &dma0 &dma1",
+            "phandle-array": "e.g. <&gpio0 5 GPIO_ACTIVE_LOW>",
+            "path": "&label or /path/to/node",
+        }.get(self.spec.type, "value")
+
+    def _info(self, node) -> str:
+        spec = self.spec
+        parts = []
+        if spec.description:
+            parts.append(escape(" ".join(spec.description.split())))
+        facts = []
+        if spec.required:
+            facts.append("[red]required[/red]")
+        if spec.enum:
+            facts.append("one of: " + escape(", ".join(map(str, spec.enum))))
+        if spec.const is not None:
+            facts.append(f"const: {escape(str(spec.const))}")
+        if spec.default is not None:
+            facts.append(f"default: {escape(str(spec.default))}")
+        if spec.deprecated:
+            facts.append("[yellow]deprecated[/yellow]")
+        if spec.type == "phandle-array" and spec.specifier_space:
+            facts.append(self._cells_hint(spec.specifier_space))
+        if facts:
+            parts.append(" · ".join(facts))
+        return "\n".join(parts) or "(no description in the binding)"
+
+    def _cells_hint(self, space: str) -> str:
+        """`gpios: <&controller pin flags>` from the controllers in the tree."""
+        cells = {}
+        for n in self.session.model.edt.nodes:
+            b = n._binding
+            if b and space in b.specifier2cells and n.labels:
+                cells.setdefault(tuple(b.specifier2cells[space]), []).append(n.labels[0])
+        if not cells:
+            return f"cells: <&controller {space}-cells…>"
+        hints = []
+        for names, labels in list(cells.items())[:3]:
+            shown = ", ".join("&" + label for label in labels[:4])
+            hints.append(f"<&ctrl {' '.join(names)}> for {shown}")
+        return escape("; ".join(hints))
+
+    @on(Input.Submitted, "#edit-value")
+    def submitted(self) -> None:
+        self.action_apply()
+
+    def on_key(self, event) -> None:
+        if event.key == "enter" and not isinstance(self.focused, Input) and \
+                not (isinstance(self.focused, Select) and self.focused.expanded):
+            event.stop()
+            self.action_apply()
+
+    def action_apply(self) -> None:
+        widget = self.query_one("#edit-value")
+        file = self.query_one("#edit-file", Select).value
+        if self.spec.type == "boolean":
+            delete = widget.value == "false"
+            result = self.session.set_property(self.node_path, self.name, None, file,
+                                               delete=delete)
+        else:
+            value = widget.value
+            if value is Select.BLANK or value is None:
+                self.query_one("#edit-error", Static).update("[red]pick a value[/red]")
+                return
+            result = self.session.set_property(self.node_path, self.name, str(value), file)
+        if result.ok:
+            self.dismiss(result)
+        else:
+            self.query_one("#edit-error", Static).update(f"[red]{escape(result.message)}[/red]")
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class AddScreen(ModalScreen[BindingInfo | None]):
+    """Search every binding, pick one to add under the selected node."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("ctrl+f", "toggle_fit", "Fits here only"),
+        Binding("ctrl+d", "toggle_driver", "With driver only"),
+    ]
+
+    def __init__(self, bindings: list[BindingInfo], parent_path: str, parent_buses: list[str]):
+        super().__init__()
+        self.bindings = bindings
+        self.parent_path = parent_path
+        self.buses = parent_buses
+        self.fit_only = True
+        self.driver_only = False
+        self.shown: list[BindingInfo] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="add-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = f"Add under {self.parent_path}"
+            dialog.border_subtitle = ("enter: pick · ctrl+f: fits here only · "
+                                      "ctrl+d: with driver only · esc: cancel")
+            yield Static("", id="add-mode", classes="hint")
+            yield Input(placeholder="search compatibles and descriptions", id="add-filter")
+            with Horizontal(id="add-body"):
+                yield OptionList(id="add-list")
+                yield VerticalScroll(Static("", id="add-info"), id="add-info-panel")
+
+    def on_mount(self) -> None:
+        self.refill()
+        self.query_one("#add-filter", Input).focus()
+
+    def _fits(self, b: BindingInfo) -> bool:
+        if self.buses:
+            return b.on_bus in self.buses
+        return b.on_bus is None
+
+    @on(Input.Changed, "#add-filter")
+    def refill(self, _=None) -> None:
+        words = self.query_one("#add-filter", Input).value.lower().split()
+        mode = []
+        if self.fit_only:
+            mode.append(f"only bindings for a {'/'.join(self.buses)} bus" if self.buses
+                        else "only bindings that are not on a bus")
+        if self.driver_only:
+            mode.append("only with a driver")
+        self.query_one("#add-mode", Static).update(
+            ("Showing " + ", ".join(mode) if mode else "Showing all bindings")
+            + f"  ·  ✓ = a driver uses it")
+        shown = []
+        for b in self.bindings:
+            if self.fit_only and not self._fits(b):
+                continue
+            if self.driver_only and not b.has_driver:
+                continue
+            hay = f"{b.compatible} {b.summary}".lower()
+            if all(w in hay for w in words):
+                shown.append(b)
+        # Exact/prefix matches on the compatible first.
+        if words:
+            shown.sort(key=lambda b: (not b.compatible.lower().startswith(words[0])
+                                      and words[0] not in b.compatible.split(",")[-1],
+                                      b.compatible))
+        self.shown = shown[:500]
+        lst = self.query_one("#add-list", OptionList)
+        lst.clear_options()
+        lst.add_options([self._option(i, b) for i, b in enumerate(self.shown)])
+        if self.shown:
+            lst.highlighted = 0
+            self._describe(self.shown[0])
+        else:
+            self.query_one("#add-info", Static).update("No matching bindings.")
+
+    def _option(self, i: int, b: BindingInfo) -> Option:
+        label = Text()
+        label.append("✓ " if b.has_driver else "  ", style="green")
+        label.append(b.compatible)
+        if b.on_bus:
+            label.append(f" [{b.on_bus}]", style="cyan")
+        label.append(f"  {b.summary[:60]}", style="bright_black")
+        return Option(label, id=str(i))
+
+    def _describe(self, b: BindingInfo) -> None:
+        text = Text()
+        text.append(b.compatible + "\n", style="bold")
+        text.append(f"{b.path.name}" + (f" · on {b.on_bus} bus" if b.on_bus else "")
+                    + (" · provides " + "/".join(b.buses) + " bus" if b.buses else "")
+                    + "\n", style="bright_black")
+        text.append("driver found\n\n" if b.has_driver else "no driver found in the "
+                    "workspace\n\n", style="green" if b.has_driver else "yellow")
+        text.append(b.description.strip())
+        self.query_one("#add-info", Static).update(text)
+
+    @on(OptionList.OptionHighlighted, "#add-list")
+    def highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        if event.option and event.option.id is not None:
+            self._describe(self.shown[int(event.option.id)])
+
+    @on(Input.Submitted, "#add-filter")
+    def submit_filter(self) -> None:
+        lst = self.query_one("#add-list", OptionList)
+        if lst.highlighted is not None and self.shown:
+            self.dismiss(self.shown[lst.highlighted])
+
+    def key_down(self) -> None:
+        if self.focused is self.query_one("#add-filter"):
+            self.query_one("#add-list").focus()
+
+    @on(OptionList.OptionSelected, "#add-list")
+    def picked(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(self.shown[int(event.option.id)])
+
+    def action_toggle_fit(self) -> None:
+        self.fit_only = not self.fit_only
+        self.refill()
+
+    def action_toggle_driver(self) -> None:
+        self.driver_only = not self.driver_only
+        self.refill()
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class NodeFormScreen(ModalScreen[EditResult | None]):
+    """Name, label, reg and required properties for a new node."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("ctrl+s", "apply", "Add", priority=True),
+    ]
+
+    # Written by the form itself, or with sensible defaults.
+    SKIP = {"compatible", "reg", "status", "phandle"}
+
+    def __init__(self, session: Session, parent_path: str, info: BindingInfo, base: Path):
+        super().__init__()
+        self.session, self.parent_path, self.info, self.base = session, parent_path, info, base
+        edtlib = import_edtlib(session.ws.zephyr_base)
+        m = session.model
+        self.binding = edtlib.Binding(str(info.path), m.edt._binding_fname2path,
+                                      require_description=False)
+        parent = session.node(parent_path)
+        self.addr_cells = parent._node.props["#address-cells"].to_num() \
+            if "#address-cells" in parent._node.props else 2
+        self.size_cells = parent._node.props["#size-cells"].to_num() \
+            if "#size-cells" in parent._node.props else 1
+        specs = self.binding.prop2specs
+        self.has_reg = "reg" in specs
+        self.reg_required = self.has_reg and specs["reg"].required
+        self.required = [n for n, s in specs.items()
+                         if s.required and n not in self.SKIP and s.type in values.EDITABLE]
+
+    def _default_name(self) -> str:
+        name = self.info.compatible.split(",")[-1]
+        return name
+
+    def _default_label(self, name: str) -> str:
+        base = name.replace("-", "_").replace(".", "_")
+        labels = self.session.model.labels
+        if base not in labels:
+            return base
+        i = 0
+        while f"{base}{i}" in labels:
+            i += 1
+        return f"{base}{i}"
+
+    def compose(self) -> ComposeResult:
+        s = self.session
+        name = self._default_name()
+        with VerticalScroll(id="form-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = f"New {self.info.compatible} under {self.parent_path}"
+            dialog.border_subtitle = "ctrl+s / enter on the last field: add · esc: cancel"
+            yield Static("Node name", classes="label")
+            yield Input(value=name, id="form-name")
+            yield Static("Label (for &references; empty for none)", classes="label")
+            yield Input(value=self._default_label(name), id="form-label")
+            if self.has_reg:
+                cells = (f"{self.addr_cells} address cell(s)"
+                         + (f" + {self.size_cells} size cell(s)" if self.size_cells else ""))
+                req = "" if self.reg_required else " (optional)"
+                yield Static(f"reg{req}: {cells}. The unit address (@…) is taken from it.",
+                             classes="label")
+                hint = {"i2c": "e.g. 0x76", "spi": "chip select, e.g. 0",
+                        "i3c": "e.g. 0x48 0x0 0x0"}.get(self.info.on_bus or "", "e.g. 0x1000 0x100")
+                yield Input(placeholder=hint, id="form-reg")
+            for name in self.required:
+                spec = self.binding.prop2specs[name]
+                desc = " ".join((spec.description or "").split())
+                yield Static(f"{name} ({spec.type}, required)"
+                             + (f": {escape(desc[:120])}" if desc else ""), classes="label")
+                if spec.type == "boolean":
+                    yield Static("  (set to true)", classes="hint")
+                elif spec.enum and spec.type in ("int", "string"):
+                    yield Select([(str(v), str(v)) for v in spec.enum], id=f"prop-{name}",
+                                 prompt="pick a value")
+                else:
+                    yield Input(id=f"prop-{name}", placeholder=spec.type)
+            yield Static("Write to", classes="label")
+            files = s.write_files(self.parent_path)
+            yield Select(file_options(files, self.base, s.inputs.user_files),
+                         value=s.default_write_file(self.parent_path), allow_blank=False,
+                         id="form-file")
+            yield Static("", id="form-error")
+
+    def on_mount(self) -> None:
+        if self.has_reg:
+            self.query_one("#form-reg", Input).focus()
+
+    @on(Input.Submitted)
+    def submitted(self, event: Input.Submitted) -> None:
+        inputs = list(self.query(Input))
+        if event.input is inputs[-1]:
+            self.action_apply()
+        else:
+            self.focus_next()
+
+    def _error(self, msg: str) -> None:
+        self.query_one("#form-error", Static).update(f"[red]{escape(msg)}[/red]")
+
+    def action_apply(self) -> None:
+        name = self.query_one("#form-name", Input).value.strip()
+        label = self.query_one("#form-label", Input).value.strip() or None
+        props: list[tuple[str, str | None]] = [("compatible", f'"{self.info.compatible}"')]
+        if self.has_reg:
+            raw = self.query_one("#form-reg", Input).value.strip()
+            if raw:
+                try:
+                    reg = values.format_value("array", raw)
+                except ValueError as exc:
+                    self._error(f"reg: {exc}")
+                    return
+                cells = reg[1:-1].split()
+                if len(cells) % (self.addr_cells + self.size_cells or 1):
+                    self._error(f"reg needs {self.addr_cells + self.size_cells} cells per entry")
+                    return
+                if "@" not in name:
+                    addr = cells[:self.addr_cells]
+                    try:
+                        unit = ",".join(f"{int(c, 0):x}" for c in addr)
+                    except ValueError:
+                        self._error("give the unit address in the name (name@addr) when reg "
+                                    "uses macros")
+                        return
+                    name = f"{name}@{unit}"
+                props.append(("reg", reg))
+            elif self.reg_required:
+                self._error("reg is required")
+                return
+        for pname in self.required:
+            spec = self.binding.prop2specs[pname]
+            if spec.type == "boolean":
+                props.append((pname, None))
+                continue
+            widget = self.query_one(f"#prop-{pname}")
+            value = widget.value
+            if value is Select.BLANK or value in (None, ""):
+                self._error(f"{pname} is required")
+                return
+            try:
+                props.append((pname, values.format_value(spec.type, str(value), spec.enum,
+                                                         self.session.model.labels)))
+            except ValueError as exc:
+                self._error(f"{pname}: {exc}")
+                return
+        file = self.query_one("#form-file", Select).value
+        result = self.session.add_node(self.parent_path, name, label, props, file)
+        if result.ok:
+            self.dismiss(result)
+        else:
+            self._error(result.message)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+# --------------------------------------------------------------------------
+# App
+# --------------------------------------------------------------------------
+
+
+class LazyDtsApp(App):
+    TITLE = "lazydts"
+    CSS = """
+    Screen { layout: vertical; }
+    #main { layout: horizontal; height: 1fr; }
+    .panel {
+        border: round $panel-lighten-2;
+        border-title-color: $text-muted;
+        border-subtitle-color: $text-muted;
+        background: $surface;
+    }
+    .panel:focus, .panel:focus-within {
+        border: round $success;
+        border-title-color: $success;
+        border-title-style: bold;
+    }
+    #left { width: 45%; min-width: 40; }
+    #right { width: 1fr; }
+    #tree { border: none; background: $surface; padding: 0; }
+    #filter { display: none; border: none; height: 1; padding: 0 1; }
+    #filter.visible { display: block; }
+    #details-panel { height: 45%; padding: 0 1; }
+    #props { height: 1fr; border: round $panel-lighten-2; background: $surface; }
+    #props:focus { border: round $success; }
+    #statusbar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
+    .dialog { width: 100; max-width: 95%; height: auto; max-height: 90%; padding: 1 2; }
+    ConfirmScreen, HelpScreen, FileScreen, TargetScreen, EditScreen, AddScreen,
+    NodeFormScreen { align: center middle; }
+    #confirm-dialog { width: 70; }
+    #target-dialog, #add-dialog { height: 90%; }
+    #add-dialog { width: 140; }
+    #target-list, #file-list { height: 1fr; margin: 1 0; min-height: 5; }
+    #file-list { height: auto; max-height: 20; }
+    #target-extra { height: 3; }
+    #target-extra Input { width: 1fr; }
+    #add-body { height: 1fr; margin-top: 1; }
+    #add-list { width: 60%; }
+    #add-info-panel { width: 1fr; padding: 0 1; }
+    .hint { color: $text-muted; }
+    .label { margin-top: 1; }
+    .sources { margin-top: 1; }
+    #edit-error, #form-error { margin-top: 1; }
+
+    Screen.-portrait #main { layout: vertical; }
+    Screen.-portrait #left, Screen.-portrait #right { width: 100%; min-width: 0; }
+    Screen.-portrait #left { height: 45%; }
+    """
+
+    BINDINGS = [
+        Binding("q", "quit", "Quit"),
+        Binding("question_mark", "help", "Help"),
+        Binding("slash", "filter", "Filter"),
+        Binding("w", "pick_file", "Write to"),
+        Binding("t", "pick_target", "Target"),
+        Binding("u", "undo", "Undo"),
+        Binding("r", "reload", "Reload"),
+        Binding("z", "maximize", "Zoom", show=False),
+    ]
+
+    def __init__(self, config: AppConfig):
+        super().__init__()
+        self.config = config
+        self.ws = config.workspace
+        self.choice = config.choice
+        self.session: Session | None = None
+        self.bindings_catalog: list[BindingInfo] = []
+        self.drivers: set[str] = set()
+        self.write_file: Path | None = None
+        self.node_index: dict[str, TreeNode[str]] = {}
+        self.filter_text = ""
+        self.message = ""
+
+    # -- layout ----------------------------------------------------------
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="main"):
+            with Panel(id="left", classes="panel") as left:
+                left.border_title = "Devicetree"
+                yield FilterInput(placeholder="filter: name, label or compatible", id="filter")
+                tree = NodeTree("/", id="tree")
+                tree.show_root = False
+                yield tree
+            with Vertical(id="right"):
+                with ScrollPanel(id="details-panel", classes="panel") as details:
+                    details.border_title = "Node"
+                    yield Static("", id="details")
+                props = PropList(id="props")
+                props.border_title = "Properties"
+                yield props
+        yield Static("", id="statusbar")
+        yield Footer()
+
+    @property
+    def tree(self) -> NodeTree:
+        return self.query_one("#tree", NodeTree)
+
+    def on_resize(self, event) -> None:
+        self.screen.set_class(event.size.width < 110, "-portrait")
+
+    def on_mount(self) -> None:
+        self.set_interval(1.0, self._poll_changes)
+        if self.choice and not self.config.pick_target:
+            self.open_target(self.choice)
+        else:
+            self.action_pick_target()
+
+    # -- target ----------------------------------------------------------
+
+    def open_target(self, choice: TargetChoice) -> None:
+        try:
+            inputs = resolve_choice(self.ws, choice)
+        except LookupError as exc:
+            self.notify(str(exc), severity="error", timeout=8)
+            self.action_pick_target()
+            return
+        session = Session(self.ws, inputs, self.config.work_dir)
+        if not session.reload():
+            self.notify(session.error or "parse failed", title="Devicetree does not parse",
+                        severity="error", timeout=15)
+            if self.session is None:
+                self.action_pick_target()
+            return
+        self.choice = choice
+        self.session = session
+        save_choice(self.config.cwd, choice)
+        self.write_file = session.model.default_write_file()
+        self.query_one("#left").border_title = f"Devicetree · {inputs.description}"
+        self.rebuild_tree()
+        self.load_catalog()
+        self.tree.focus()
+
+    @work(thread=True, exclusive=True, group="catalog")
+    def load_catalog(self) -> None:
+        session = self.session
+        drivers = catalog.driver_tokens(catalog.driver_roots(self.ws))
+        bindings = catalog.scan_bindings(session.inputs.bindings_dirs, drivers)
+        self.call_from_thread(self._catalog_loaded, drivers, bindings)
+
+    def _catalog_loaded(self, drivers: set[str], bindings: list[BindingInfo]) -> None:
+        self.drivers, self.bindings_catalog = drivers, bindings
+        self.show_node()
+
+    def action_pick_target(self) -> None:
+        def done(choice: TargetChoice | None) -> None:
+            if choice:
+                self.open_target(choice)
+            elif self.session is None:
+                self.exit()
+        self.push_screen(TargetScreen(self.ws, self.config.cwd, self.choice), done)
+
+    # -- tree ------------------------------------------------------------
+
+    def _node_label(self, node) -> Text:
+        text = Text()
+        if node.status == "okay":
+            text.append("● ", style="green" if node._binding else "bright_black")
+        else:
+            text.append("○ ", style="bright_black")
+        for label in node.labels:
+            text.append(f"{label}: ", style="yellow")
+        text.append(node.name, style="bold" if node.status == "okay" else "bright_black")
+        if node.compats:
+            text.append(f"  {node.compats[0]}", style="cyan" if node._binding else "red")
+        if node.status != "okay":
+            text.append(f"  {node.status}", style="bright_black italic")
+        return text
+
+    def _matches(self, node) -> bool:
+        words = self.filter_text.lower().split()
+        hay = " ".join([node.path, *node.labels, *node.compats]).lower()
+        return all(w in hay for w in words)
+
+    def rebuild_tree(self, keep: str | None = None) -> None:
+        if self.session is None or self.session.model is None:
+            return
+        tree = self.tree
+        cursor = keep or (tree.cursor_node.data if tree.cursor_node else None)
+        expanded = {p for p, n in self.node_index.items() if n.is_expanded}
+        tree.clear()
+        self.node_index = {}
+        edt = self.session.model.edt
+        root = edt.get_node("/")
+        visible = None
+        if self.filter_text:
+            visible = set()
+            for n in edt.nodes:
+                if self._matches(n):
+                    p = n
+                    while p is not None:
+                        visible.add(p.path)
+                        p = p.parent
+
+        def add(parent: TreeNode[str], node) -> None:
+            for child in node.children.values():
+                if visible is not None and child.path not in visible:
+                    continue
+                item = parent.add(self._node_label(child), data=child.path,
+                                  allow_expand=bool(child.children))
+                self.node_index[child.path] = item
+                add(item, child)
+
+        top = tree.root.add(self._node_label(root), data="/", allow_expand=True)
+        self.node_index["/"] = top
+        add(top, root)
+        top.expand()
+        for path, item in self.node_index.items():
+            if visible is not None or path in expanded:
+                item.expand()
+        if cursor:
+            # Reveal the cursor's node even inside collapsed parents.
+            path = cursor
+            while path not in self.node_index and path != "/":
+                path = path.rsplit("/", 1)[0] or "/"
+            item = self.node_index.get(path)
+            if item:
+                p = item.parent
+                while p is not None:
+                    p.expand()
+                    p = p.parent
+                self.call_after_refresh(tree.move_cursor, item)
+        self.show_node()
+        self.update_status()
+
+    @property
+    def current_path(self) -> str | None:
+        node = self.tree.cursor_node
+        return node.data if node else None
+
+    @on(Tree.NodeHighlighted, "#tree")
+    def _highlighted(self) -> None:
+        self.show_node()
+
+    @on(Tree.NodeSelected, "#tree")
+    def _selected(self, event) -> None:
+        if not event.node.allow_expand:
+            self.query_one("#props").focus()
+
+    # -- details ---------------------------------------------------------
+
+    def show_node(self) -> None:
+        details = self.query_one("#details", Static)
+        props = self.query_one("#props", PropList)
+        s = self.session
+        path = self.current_path
+        node = s.node(path) if s and path else None
+        props.clear_options()
+        if node is None:
+            details.update("")
+            return
+        base = self.ws.topdir
+        t = Text()
+        t.append(node.path + "\n", style="bold")
+        if node.labels:
+            t.append("labels: ", style="bright_black")
+            t.append(", ".join(node.labels) + "\n", style="yellow")
+        if node.compats:
+            t.append("compatible: ", style="bright_black")
+            t.append(", ".join(node.compats) + "\n", style="cyan")
+        t.append("status: ", style="bright_black")
+        t.append(node.status + "\n", style="green" if node.status == "okay" else "bright_black")
+        if node._binding:
+            t.append("binding: ", style="bright_black")
+            t.append(rel(node.binding_path or "", base) + "\n")
+            for compat in node.compats[:1]:
+                if self.drivers:
+                    has = catalog.compat_token(compat) in self.drivers
+                    t.append("driver: ", style="bright_black")
+                    t.append("found\n" if has else "none found in the workspace\n",
+                             style="green" if has else "yellow")
+        elif node.compats:
+            t.append("no binding found for this compatible\n", style="red")
+        if node.on_buses:
+            t.append("on bus: ", style="bright_black")
+            t.append(", ".join(node.on_buses) + "\n")
+        if node.buses:
+            t.append("provides bus: ", style="bright_black")
+            t.append(", ".join(node.buses) + "\n")
+        chosen = [k for k, v in s.model.edt.chosen_nodes.items() if v is node]
+        if chosen:
+            t.append("chosen: ", style="bright_black")
+            t.append(", ".join(chosen) + "\n", style="magenta")
+        sources = s.model.node_sources(path)
+        if sources:
+            t.append("\nsources\n", style="bold")
+            writable = set(s.model.writable_files())
+            for f, block in sources:
+                style = "" if f in writable else "bright_black"
+                t.append(f"  {rel(f, base)}:{block.line}", style=style)
+                t.append(f"  {block.header}\n", style="bright_black")
+        if node._binding and node.description:
+            t.append("\n" + " ".join(node.description.split()), style="bright_black")
+        details.update(t)
+        self.fill_props(node)
+
+    def fill_props(self, node) -> None:
+        s = self.session
+        props = self.query_one("#props", PropList)
+        editable = s.editable_props(node)
+        rows = []
+        width = max([len(n) for n in [*editable, *node._node.props]] or [10])
+        width = min(width, 32)
+        shown = set()
+        for name in editable:
+            shown.add(name)
+            spec = s.spec(node, name)
+            t = Text()
+            t.append(name.ljust(width), style="bold")
+            t.append("  ")
+            if name in node._node.props:
+                prop = node.props.get(name)
+                t.append(values.show(prop.val) if prop else "set")
+                eff = s.effective(node.path, name)
+                if eff:
+                    t.append(f"  {eff[0].name}:{eff[1]}", style="bright_black")
+            elif spec.required:
+                t.append("required, not set", style="red")
+            elif spec.default is not None:
+                t.append(f"default {spec.default}", style="bright_black")
+            else:
+                t.append("-", style="bright_black")
+            rows.append(Option(t, id=name))
+        for name, prop in node._node.props.items():
+            if name in shown:
+                continue
+            t = Text()
+            t.append(name.ljust(width), style="bright_black")
+            t.append("  ")
+            edt_prop = node.props.get(name)
+            t.append(values.show(edt_prop.val) if edt_prop else raw_value(prop),
+                     style="bright_black")
+            t.append("  read-only", style="bright_black italic")
+            rows.append(Option(t, id=f"ro:{name}"))
+        props.add_options(rows)
+        props.border_title = "Properties" if node._binding else \
+            "Properties (no binding: read-only)"
+
+    # -- status ----------------------------------------------------------
+
+    def update_status(self, message: str | None = None) -> None:
+        if message is not None:
+            self.message = message
+        s = self.session
+        parts = []
+        if self.write_file:
+            parts.append(f"write → {rel(self.write_file, self.ws.topdir)}")
+        if s and s.undo_stack:
+            parts.append(f"{len(s.undo_stack)} edit(s), u: undo")
+        if self.filter_text:
+            parts.append(f"filter: {self.filter_text}")
+        if self.message:
+            parts.append(self.message)
+        self.query_one("#statusbar", Static).update("  ·  ".join(parts))
+
+    def report(self, result: EditResult | None) -> None:
+        if result is None:
+            return
+        if result.ok:
+            self.rebuild_tree()
+            self.update_status(result.message)
+            self.notify(result.message, timeout=4)
+        else:
+            self.notify(result.message, severity="error", timeout=10)
+
+    def _poll_changes(self) -> None:
+        s = self.session
+        if s and s.changed_on_disk():
+            if s.reload():
+                self.rebuild_tree()
+                self.update_status("reloaded (files changed)")
+            else:
+                s._mtimes = s._snapshot()
+                self.notify(s.error or "", title="Devicetree no longer parses",
+                            severity="error", timeout=10)
+
+    # -- actions ---------------------------------------------------------
+
+    def _file_for(self, node_path: str, prop: str | None = None) -> Path | None:
+        """The chosen write file if it can take this edit, else the smart default."""
+        s = self.session
+        files = s.write_files(node_path)
+        if self.write_file in files and not prop:
+            return self.write_file
+        return s.default_write_file(node_path, prop)
+
+    def action_help(self) -> None:
+        self.push_screen(HelpScreen())
+
+    def action_filter(self) -> None:
+        f = self.query_one("#filter", FilterInput)
+        f.add_class("visible")
+        f.focus()
+
+    @on(Input.Changed, "#filter")
+    def _filter_changed(self, event: Input.Changed) -> None:
+        self.filter_text = event.value.strip()
+        self.rebuild_tree()
+
+    @on(Input.Submitted, "#filter")
+    def _filter_submitted(self) -> None:
+        self.tree.focus()
+
+    def action_clear_filter(self) -> None:
+        f = self.query_one("#filter", FilterInput)
+        f.value = ""
+        f.remove_class("visible")
+        self.filter_text = ""
+        self.rebuild_tree()
+        self.tree.focus()
+
+    def action_reload(self) -> None:
+        if self.session and self.session.reload():
+            self.rebuild_tree()
+            self.update_status("reloaded")
+        elif self.session:
+            self.notify(self.session.error or "", severity="error", timeout=10)
+
+    def action_undo(self) -> None:
+        if self.session:
+            self.report(self.session.undo())
+
+    def action_pick_file(self) -> None:
+        s = self.session
+        if not s:
+            return
+        files = s.model.writable_files()
+        if not files:
+            self.notify("no editable devicetree files for this target", severity="warning")
+            return
+
+        def done(path: Path | None) -> None:
+            if path:
+                self.write_file = path
+                self.update_status()
+        self.push_screen(FileScreen(files, self.write_file, self.ws.topdir,
+                                    s.inputs.user_files), done)
+
+    def action_add_node(self) -> None:
+        s, path = self.session, self.current_path
+        if not s or not path:
+            return
+        node = s.node(path)
+        if not self.bindings_catalog:
+            self.notify("still reading the bindings, try again in a moment")
+            return
+        if not s.write_files(path):
+            self.notify("no editable file can add to this node", severity="warning")
+            return
+
+        def picked(info: BindingInfo | None) -> None:
+            if info:
+                self.push_screen(NodeFormScreen(s, path, info, self.ws.topdir), self.report)
+        self.push_screen(AddScreen(self.bindings_catalog, path, list(node.buses)), picked)
+
+    def action_toggle_status(self) -> None:
+        s, path = self.session, self.current_path
+        if not s or not path or path == "/":
+            return
+        node = s.node(path)
+        if "status" not in s.editable_props(node):
+            self.notify("this node has no binding; edit it by hand (o)", severity="warning")
+            return
+        file = self._file_for(path)
+        if file is None:
+            self.notify("no editable file for this node", severity="warning")
+            return
+        self.report(s.toggle_status(path, file))
+
+    def action_delete_node(self) -> None:
+        s, path = self.session, self.current_path
+        if not s or not path:
+            return
+        file = self._file_for(path)
+        plan = s.delete_plan(path, file) if file else None
+        if plan is None:
+            self.notify("can't delete this node here", severity="warning")
+            return
+
+        def confirmed(yes: bool) -> None:
+            if yes:
+                self.report(s.delete_node(path, file))
+        self.push_screen(ConfirmScreen(f"Delete {path}?", plan[0]), confirmed)
+
+    def _prop_name(self) -> str | None:
+        props = self.query_one("#props", PropList)
+        if props.highlighted is None:
+            return None
+        return props.get_option_at_index(props.highlighted).id
+
+    def action_edit_prop(self) -> None:
+        s, path, name = self.session, self.current_path, self._prop_name()
+        if not s or not path or not name:
+            return
+        if name.startswith("ro:"):
+            self.notify(f"{name[3:]} is not in the node's binding; edit it by hand (o)",
+                        severity="warning")
+            return
+        if not s.write_files(path):
+            self.notify("no editable file for this node", severity="warning")
+            return
+        self.push_screen(EditScreen(s, path, name, self.ws.topdir), self.report)
+
+    def action_delete_prop(self) -> None:
+        s, path, name = self.session, self.current_path, self._prop_name()
+        if not s or not path or not name or name.startswith("ro:"):
+            return
+        if s.effective(path, name) is None:
+            self.notify(f"{name} is not set")
+            return
+        file = s.default_write_file(path, name)
+        if file is None:
+            self.notify("no editable file for this node", severity="warning")
+            return
+        eff = s.effective(path, name)
+        if eff and eff[0] == file:
+            msg = (f"Remove {name} from {rel(file, self.ws.topdir)}:{eff[1]}. "
+                   "An earlier value, if any, applies again.")
+        else:
+            msg = f"Add /delete-property/ {name}; to {rel(file, self.ws.topdir)}."
+
+        def confirmed(yes: bool) -> None:
+            if yes:
+                self.report(s.set_property(path, name, None, file, delete=True))
+        self.push_screen(ConfirmScreen(f"Remove {name}?", msg), confirmed)
+
+    def action_open_editor(self) -> None:
+        s, path = self.session, self.current_path
+        if not s or not path:
+            return
+        target = None
+        if self.focused is self.query_one("#props"):
+            name = self._prop_name()
+            if name:
+                target = s.effective(path, name.removeprefix("ro:"))
+        if target is None:
+            sources = s.model.node_sources(path)
+            writable = [x for x in sources if x[0] in s.model.writable_files()]
+            pick = (writable or sources or [None])[-1]
+            if pick:
+                target = (pick[0], pick[1].line)
+        if target is None:
+            node = s.node(path)
+            target = (Path(node._node.filename), node._node.lineno)
+        editor = shlex.split(os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi")
+        with self.suspend():
+            subprocess.run([*editor, f"+{target[1]}", str(target[0])])
+        self.action_reload()
+
+    def action_maximize(self) -> None:
+        if self.screen.maximized:
+            self.screen.minimize()
+            return
+        widget = self.focused
+        while widget is not None and not getattr(widget, "ALLOW_MAXIMIZE", False):
+            widget = widget.parent
+        if widget is not None:
+            self.screen.maximize(widget)
