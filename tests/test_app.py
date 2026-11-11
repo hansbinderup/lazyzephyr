@@ -54,3 +54,30 @@ async def test_browse_toggle_and_add(workspace, tmp_path, monkeypatch):
         # Undo restores the file.
         await pilot.press("u")
         await wait_for(lambda: "widget" not in overlay.read_text())
+
+
+async def test_edit_property_dialog(workspace, tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    ws = find_workspace(workspace)
+    app = LazyDtsApp(AppConfig(cwd=workspace / "app", workspace=ws,
+                               choice=TargetChoice(board="native_sim/native",
+                                                   app=str(workspace / "app")),
+                               work_dir=tmp_path / "work"))
+    overlay = workspace / "app" / "boards" / "native_sim.overlay"
+    async with app.run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: "/leds/led_0" in app.node_index)
+        app.node_index["/leds"].expand()
+        await pilot.pause()
+        app.tree.move_cursor(app.node_index["/leds/led_0"])
+        props = app.query_one("#props")
+        await wait_for(lambda: props.option_count and app.current_path == "/leds/led_0")
+        props.focus()
+        ids = [props.get_option_at_index(i).id for i in range(props.option_count)]
+        props.highlighted = ids.index("gpios")
+        await pilot.press("enter")
+        await pilot.pause()
+        field = app.screen.query_one("#edit-value")
+        assert field.value == "<&gpio0 0 0>"
+        field.value = "&gpio0 3 1"
+        await pilot.press("ctrl+s")
+        await wait_for(lambda: "gpios = <&gpio0 3 1>;" in overlay.read_text())

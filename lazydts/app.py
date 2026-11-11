@@ -327,7 +327,7 @@ class EditScreen(ModalScreen[EditResult | None]):
 
     def __init__(self, session: Session, node_path: str, name: str, base: Path):
         super().__init__()
-        self.session, self.node_path, self.name, self.base = session, node_path, name, base
+        self.session, self.node_path, self.prop, self.base = session, node_path, name, base
         node = session.node(node_path)
         self.spec = session.spec(node, name)
 
@@ -335,11 +335,11 @@ class EditScreen(ModalScreen[EditResult | None]):
         s, spec, m = self.session, self.spec, self.session.model
         node = s.node(self.node_path)
         with VerticalScroll(id="edit-dialog", classes="panel dialog") as dialog:
-            dialog.border_title = f"{self.name}  ({spec.type})"
+            dialog.border_title = f"{self.prop}  ({spec.type})"
             dialog.border_subtitle = "enter: apply · esc: cancel"
             yield Static(self._info(node), classes="hint")
-            sources = m.prop_sources(self.node_path, self.name)
-            eff = s.effective(self.node_path, self.name)
+            sources = m.prop_sources(self.node_path, self.prop)
+            eff = s.effective(self.node_path, self.prop)
             if sources:
                 lines = []
                 for f, stmt in sources:
@@ -352,8 +352,8 @@ class EditScreen(ModalScreen[EditResult | None]):
             current = self._current_raw(sources, eff)
             if spec.type == "boolean":
                 yield Select([("true", "true"), ("false (remove)", "false")],
-                             value="true" if node.props.get(self.name)
-                             and node.props[self.name].val else "false",
+                             value="true" if node.props.get(self.prop)
+                             and node.props[self.prop].val else "false",
                              allow_blank=False, id="edit-value")
             elif spec.enum and spec.type in ("int", "string"):
                 opts = [(str(v), str(v)) for v in spec.enum]
@@ -367,7 +367,7 @@ class EditScreen(ModalScreen[EditResult | None]):
                 yield Input(value=value, placeholder=self._placeholder(),
                             id="edit-value")
             files = s.write_files(self.node_path)
-            default = s.default_write_file(self.node_path, self.name)
+            default = s.default_write_file(self.node_path, self.prop)
             yield Static("Write to", classes="label")
             yield Select(file_options(files, self.base, s.inputs.user_files), value=default,
                          allow_blank=False, id="edit-file")
@@ -444,14 +444,14 @@ class EditScreen(ModalScreen[EditResult | None]):
         file = self.query_one("#edit-file", Select).value
         if self.spec.type == "boolean":
             delete = widget.value == "false"
-            result = self.session.set_property(self.node_path, self.name, None, file,
+            result = self.session.set_property(self.node_path, self.prop, None, file,
                                                delete=delete)
         else:
             value = widget.value
             if value is Select.BLANK or value is None:
                 self.query_one("#edit-error", Static).update("[red]pick a value[/red]")
                 return
-            result = self.session.set_property(self.node_path, self.name, str(value), file)
+            result = self.session.set_property(self.node_path, self.prop, str(value), file)
         if result.ok:
             self.dismiss(result)
         else:
