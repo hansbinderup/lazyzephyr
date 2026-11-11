@@ -37,6 +37,10 @@ Tests.
   sysbuild on/off, a build directory, extra Kconfig files and overlays, more CMake
   arguments, the flash runner and the probe's serial number. Configs are saved per
   workspace in `~/.cache/lazyzephyr/builds.json`, and the list shows how each last run went.
+- **Editing a config** is a list of its settings: move with `j`/`k` or the arrows without
+  changing anything, `enter` changes the setting (a searchable list for boards, apps,
+  shields, snippets, revisions, runners and probes; a text box otherwise), `e` types the
+  value instead, `ctrl+s` saves and `esc` leaves (asking first if something changed).
 - **Existing builds** show up under "found builds": `enter` imports one as a config,
   using the `west build` command it was made with (also for sysbuild).
 - **Actions**: build, pristine build, flash, build then flash, flash with `--erase`, run

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import time
@@ -16,7 +17,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Input, OptionList, RichLog, Select, Static
+from textual.widgets import Footer, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ..dts.workspace import Board, Workspace, find_boards, find_build_dirs
@@ -256,6 +257,11 @@ class HelpScreen(ModalScreen[None]):
   m                  menuconfig
   t                  open the build in the Devicetree tab
   n / e / c / d      new / edit / copy / delete config
+[b]Editing a config[/b]
+  j/k, arrows        move between settings (changes nothing)
+  enter              change the setting (a list to pick from, or a text box)
+  e                  type the value instead of picking it
+  ctrl+s / esc       save / leave (asks first if something changed)
   found builds       enter imports one as a config
 [b]Anywhere in the tab[/b]
   x                  stop the running command
@@ -276,8 +282,75 @@ Only one command runs at a time. Configs are saved per workspace in
         self.dismiss(None)
 
 
+class TextEditScreen(ModalScreen[str | None]):
+    """Edit one value. enter keeps it, esc throws it away."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, title: str, value: str, placeholder: str = "", hint: str = ""):
+        super().__init__()
+        self.title_text, self.value, self.placeholder, self.hint = title, value, placeholder, hint
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="text-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = self.title_text
+            dialog.border_subtitle = "enter: keep · esc: cancel"
+            if self.hint:
+                yield Static(self.hint, classes="hint")
+            yield Input(value=self.value, placeholder=self.placeholder, id="text-value")
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    @on(Input.Submitted)
+    def _submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip())
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+@dataclass(frozen=True)
+class Field:
+    key: str
+    label: str
+    kind: str          # text, list, args, app, board, shields, snippets, revision,
+                       # sysbuild, runner, probe
+    hint: str = ""
+
+
+FIELDS = [
+    Field("name", "Name", "text"),
+    Field("app", "Application", "app", "folder with CMakeLists.txt, relative to the workspace"),
+    Field("board", "Board", "board"),
+    Field("revision", "Revision", "revision"),
+    Field("shields", "Shields", "shields", "order matters: later shields go on top"),
+    Field("snippets", "Snippets", "snippets"),
+    Field("sysbuild", "Sysbuild", "sysbuild"),
+    Field("build_dir", "Build directory", "text",
+          "relative to the workspace; empty for the default"),
+    Field("extra_conf", "Extra Kconfig files", "list",
+          "EXTRA_CONF_FILE, comma separated, relative to the app"),
+    Field("extra_overlays", "Extra overlays", "list",
+          "EXTRA_DTC_OVERLAY_FILE, comma separated, relative to the app"),
+    Field("cmake_args", "More CMake args", "args", "e.g. -DCONFIG_LOG=y"),
+    Field("runner", "Flash runner", "runner"),
+    Field("dev_id", "Probe (--dev-id)", "probe"),
+    Field("flash_args", "More flash args", "args", "e.g. --erase"),
+]
+
+
+class SettingsList(OptionList):
+    BINDINGS = [
+        Binding("enter", "screen.edit", "Change"),
+        Binding("e", "screen.edit_text", "Type it"),
+        Binding("j", "cursor_down", show=False),
+        Binding("k", "cursor_up", show=False),
+    ]
+
+
 class ConfigScreen(ModalScreen[BuildConfig | None]):
-    """Create or edit a build config."""
+    """Create or edit a build config: move freely, change a setting with enter."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
@@ -286,151 +359,255 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
 
     def __init__(self, view: BuildView, cfg: BuildConfig, title: str):
         super().__init__()
-        self.view, self.cfg, self.title_text = view, cfg, title
+        self.view, self.title_text = view, title
         self.ws = view.ws
         self.opts = view.options
-
-    # -- layout --
-
-    def _row(self, label: str, widget, button: str | None = None, hint: str = ""):
-        yield Static(label, classes="label")
-        if button:
-            with Horizontal(classes="field-row"):
-                yield widget
-                yield Button("…", id=button, classes="pick")
-        else:
-            yield widget
-        if hint:
-            yield Static(hint, classes="hint")
+        self.draft = replace(cfg)
+        self.original = replace(cfg)
 
     def compose(self) -> ComposeResult:
-        c = self.cfg
-        with VerticalScroll(id="config-dialog", classes="panel dialog") as dialog:
+        with Vertical(id="config-dialog", classes="panel dialog") as dialog:
             dialog.border_title = self.title_text
-            dialog.border_subtitle = "ctrl+s: save · esc: cancel · …: pick from a list"
-            yield from self._row("Name", Input(value=c.name, id="f-name"))
-            yield from self._row("Application", Input(value=c.app, id="f-app"), "pick-app",
-                                 "folder with CMakeLists.txt, relative to the workspace")
-            yield from self._row("Board", Input(value=c.board, id="f-board"), "pick-board")
-            yield from self._row("Revision", Select([], id="f-revision", prompt="board default"))
-            yield from self._row("Shields", Input(value=", ".join(c.shields), id="f-shields"),
-                                 "pick-shields")
-            yield from self._row("Snippets", Input(value=", ".join(c.snippets), id="f-snippets"),
-                                 "pick-snippets")
-            yield from self._row("Sysbuild", Select(
-                [("west default (build.sysbuild)", "default"), ("on", "on"), ("off", "off")],
-                value={None: "default", True: "on", False: "off"}[c.sysbuild],
-                allow_blank=False, id="f-sysbuild"))
-            yield from self._row("Build directory", Input(value=c.build_dir or "", id="f-dir"),
-                                 hint="")
-            yield from self._row("Extra Kconfig files (EXTRA_CONF_FILE)",
-                                 Input(value=", ".join(c.extra_conf), id="f-conf",
-                                       placeholder="e.g. debug.conf, relative to the app"))
-            yield from self._row("Extra devicetree overlays (EXTRA_DTC_OVERLAY_FILE)",
-                                 Input(value=", ".join(c.extra_overlays), id="f-overlays",
-                                       placeholder="e.g. boards/test.overlay"))
-            yield from self._row("More CMake arguments",
-                                 Input(value=" ".join(c.cmake_args), id="f-cmake",
-                                       placeholder="e.g. -DCONFIG_LOG=y"))
-            yield from self._row("Flash runner", Select([], id="f-runner", prompt="board default"))
-            yield from self._row("Probe serial (--dev-id)", Input(value=c.dev_id or "",
-                                                                  id="f-devid"), "pick-probe")
-            yield from self._row("More flash arguments",
-                                 Input(value=" ".join(c.flash_args), id="f-flash",
-                                       placeholder="e.g. --erase"))
+            dialog.border_subtitle = ("enter: change · e: type it · ctrl+s: save · "
+                                      "esc: cancel")
+            yield SettingsList(id="settings")
+            yield Static("", id="f-hint", classes="hint")
             yield Static("", id="f-preview", classes="preview")
             yield Static("", id="f-error")
 
     def on_mount(self) -> None:
-        self._board_changed()
-        self._preview()
+        self.refresh_rows()
+        lst = self.query_one(SettingsList)
+        lst.highlighted = 0
+        lst.focus()
 
-    # -- helpers --
-
-    def _val(self, wid: str) -> str:
-        return self.query_one(f"#{wid}", Input).value.strip()
+    # -- display --
 
     def _board(self) -> Board | None:
-        target = self._val("f-board")
-        for b in self.opts.boards if self.opts else []:
+        target = self.draft.board
+        boards = self.opts.boards if self.opts else []
+        for b in boards:
             if b.target == target:
                 return b
-        # `name` alone is fine for single-SoC boards.
-        if self.opts and "/" not in target:
-            plain = [b for b in self.opts.boards if b.name == target and len(b.quals) == 1]
-            if len(plain) == 1:
-                return plain[0]
-        return None
+        plain = [b for b in boards if b.name == target and len(b.quals) == 1]
+        return plain[0] if len(plain) == 1 else None
 
-    def _board_changed(self) -> None:
+    def _value(self, f: Field) -> Text:
+        d = self.draft
+        dim = "bright_black"
+        v = getattr(d, f.key)
+        if f.key == "board":
+            if not v:
+                return Text("not set", style="red")
+            return Text(v, style="cyan" if self._board() or not self.opts else "red")
+        if f.key == "revision":
+            board = self._board()
+            default = meta.board_revisions(board).default if board else None
+            return Text(v) if v else Text("board default" + (f" ({default})" if default
+                                                            else ""), style=dim)
+        if f.key == "sysbuild":
+            return Text({None: "west default", True: "on", False: "off"}[v],
+                        style=dim if v is None else "")
+        if f.key == "build_dir":
+            return Text(v) if v else Text(
+                f"default: {rel(default_build_dir(self.ws, d), self.ws.topdir)}", style=dim)
+        if f.key == "runner":
+            board = self._board()
+            default = meta.board_runners(board, build_dir(self.ws, d)).flash_default \
+                if board else None
+            return Text(v) if v else Text("board default" + (f" ({default})" if default
+                                                            else ""), style=dim)
+        if f.kind in ("list", "shields", "snippets"):
+            return Text(", ".join(v)) if v else Text("none", style=dim)
+        if f.kind == "args":
+            return Text(shlex.join(v)) if v else Text("none", style=dim)
+        if f.key == "app" and v and not (app_path(self.ws, d) / "CMakeLists.txt").is_file():
+            return Text(v, style="red")
+        return Text(v) if v else Text("not set", style="red" if f.key in ("name", "app")
+                                      else dim)
+
+    def refresh_rows(self) -> None:
+        lst = self.query_one(SettingsList)
+        keep = lst.highlighted
+        lst.clear_options()
+        width = max(len(f.label) for f in FIELDS) + 2
+        rows = []
+        for f in FIELDS:
+            t = Text()
+            changed = getattr(self.draft, f.key) != getattr(self.original, f.key)
+            t.append("● " if changed else "  ", style="yellow")
+            t.append(f.label.ljust(width), style="bold")
+            t.append_text(self._value(f))
+            rows.append(Option(t, id=f.key))
+        lst.add_options(rows)
+        if keep is not None:
+            lst.highlighted = keep
+        self._preview()
+
+    def _preview(self) -> None:
+        t = Text()
+        t.append("build: ", style="bright_black")
+        t.append(shown(build_cmd(self.ws, self.draft)) + "\n")
+        t.append("flash: ", style="bright_black")
+        t.append(shown(runner_cmd(self.ws, self.draft)))
+        self.query_one("#f-preview", Static).update(t)
+
+    def _field(self) -> Field | None:
+        lst = self.query_one(SettingsList)
+        return FIELDS[lst.highlighted] if lst.highlighted is not None else None
+
+    @on(OptionList.OptionHighlighted, "#settings")
+    def _highlighted(self) -> None:
+        f = self._field()
+        self.query_one("#f-hint", Static).update(f.hint if f else "")
+
+    @on(OptionList.OptionSelected, "#settings")
+    def _clicked(self) -> None:
+        self.action_edit()
+
+    def _error(self, msg: str) -> None:
+        self.query_one("#f-error", Static).update(f"[red]{escape(msg)}[/red]" if msg else "")
+
+    def _set(self, key: str, value) -> None:
+        setattr(self.draft, key, value)
+        if key == "board":
+            board = self._board()
+            if board:
+                self.draft.board = board.target
+                revs = meta.board_revisions(board)
+                if self.draft.revision and self.draft.revision not in revs.names:
+                    self.draft.revision = None
+            else:
+                self.draft.revision = None
+        self._error("")
+        self.refresh_rows()
+
+    # -- editing --
+
+    def action_edit(self) -> None:
+        f = self._field()
+        if f is None:
+            return
+        if f.kind in ("text", "list", "args"):
+            self.action_edit_text()
+            return
+        if self.opts is None:
+            self._error("still reading boards and shields, try again in a moment")
+            return
+        getattr(self, f"_pick_{f.kind}")(f)
+
+    def action_edit_text(self) -> None:
+        f = self._field()
+        if f is None:
+            return
+        if f.kind in ("revision", "sysbuild", "runner"):
+            self.action_edit()  # a choice, not free text
+            return
+        v = getattr(self.draft, f.key)
+        if f.kind == "args":
+            text = shlex.join(v)
+        elif isinstance(v, list):
+            text = ", ".join(v)
+        else:
+            text = v or ""
+
+        def done(value: str | None) -> None:
+            if value is None:
+                return
+            if f.kind == "args":
+                try:
+                    self._set(f.key, shlex.split(value))
+                except ValueError as exc:
+                    self._error(f"{f.label}: {exc}")
+            elif f.kind in ("list", "shields", "snippets"):
+                self._set(f.key, split_list(value))
+            elif f.key == "build_dir":
+                self._set(f.key, value or None)
+            elif f.key == "dev_id":
+                self._set(f.key, value or None)
+            else:
+                self._set(f.key, value)
+        self.app.push_screen(TextEditScreen(f.label, text, hint=f.hint), done)
+
+    def _pick(self, title: str, items, key: str, multi: bool = False, selected=(),
+              hint: str = "", convert=lambda r: r[0]) -> None:
+        def done(result: list[str] | None) -> None:
+            if result is None or (not multi and not result):
+                return
+            self._set(key, convert(result))
+        self.app.push_screen(PickerScreen(title, items, multi=multi, selected=selected,
+                                          hint=hint), done)
+
+    def _pick_app(self, f: Field) -> None:
+        items = []
+        for p in self.opts.apps:
+            r = rel(p, self.ws.topdir)
+            style = "bright_black" if p.is_relative_to(self.ws.zephyr_base) else ""
+            items.append((r, Text(r, style=style), r))
+        self._pick("Application", items, "app", hint="e on the setting types a path instead")
+
+    def _pick_board(self, f: Field) -> None:
+        items = [(b.target, Text.assemble(b.target, (f"  {b.full_name or ''}", "bright_black")),
+                  f"{b.target} {b.vendor or ''} {b.full_name or ''}") for b in self.opts.boards]
+        self._pick("Board", items, "board")
+
+    def _pick_shields(self, f: Field) -> None:
+        items = [(s.name, Text.assemble(s.name, (f"  {s.full_name or ''}", "bright_black")),
+                  f"{s.name} {s.full_name or ''} {s.vendor or ''}") for s in self.opts.shields]
+        self._pick("Shields", items, "shields", multi=True, selected=self.draft.shields,
+                   hint=f.hint, convert=list)
+
+    def _pick_snippets(self, f: Field) -> None:
+        items = [(s.name, s.name, s.name) for s in self.opts.snippets]
+        self._pick("Snippets", items, "snippets", multi=True, selected=self.draft.snippets,
+                   convert=list)
+
+    def _pick_revision(self, f: Field) -> None:
         board = self._board()
-        rev = self.query_one("#f-revision", Select)
-        runner = self.query_one("#f-runner", Select)
         if board is None:
-            rev.set_options([])
-            runner.set_options([(self.cfg.runner, self.cfg.runner)] if self.cfg.runner else [])
-            if self.cfg.runner:
-                runner.value = self.cfg.runner
+            self._error("pick a board first")
             return
         revs = meta.board_revisions(board)
-        rev.set_options([(r + ("  (default)" if r == revs.default else ""), r)
-                         for r in revs.names])
-        rev.prompt = f"board default ({revs.default})" if revs.default else "board default"
-        if self.cfg.revision in revs.names:
-            rev.value = self.cfg.revision
-        cfg = self._collect(check=False) or self.cfg
-        runners = meta.board_runners(board, build_dir(self.ws, cfg))
-        names = list(runners.names)
-        if self.cfg.runner and self.cfg.runner not in names:
-            names.append(self.cfg.runner)
-        runner.set_options([(n + ("  (default)" if n == runners.flash_default else ""), n)
-                            for n in names])
-        runner.prompt = (f"board default ({runners.flash_default})" if runners.flash_default
-                         else "board default")
-        if self.cfg.runner in names:
-            runner.value = self.cfg.runner
+        if not revs.names:
+            self._error(f"{board.name} has no revisions")
+            return
+        items = [("", Text("board default" + (f" ({revs.default})" if revs.default else ""),
+                           style="bright_black"), "default")]
+        items += [(r, r + ("  (default)" if r == revs.default else ""), r) for r in revs.names]
+        self._pick("Revision", items, "revision", convert=lambda r: r[0] or None)
 
-    def _collect(self, check: bool = True) -> BuildConfig | None:
-        """The config as filled in. With check=True, report problems and return None."""
-        try:
-            import shlex
-            cmake = shlex.split(self._val("f-cmake"))
-            flash = shlex.split(self._val("f-flash"))
-        except ValueError as exc:
-            if check:
-                self._error(f"arguments: {exc}")
-            return None
-        rev = self.query_one("#f-revision", Select).value
-        runner = self.query_one("#f-runner", Select).value
-        sysbuild = {"default": None, "on": True, "off": False}[
-            self.query_one("#f-sysbuild", Select).value]
+    def _pick_sysbuild(self, f: Field) -> None:
+        items = [("default", "west default (build.sysbuild)", "default"),
+                 ("on", "on", "on"), ("off", "off", "off")]
+        self._pick("Sysbuild", items, "sysbuild",
+                   convert=lambda r: {"default": None, "on": True, "off": False}[r[0]])
+
+    def _pick_runner(self, f: Field) -> None:
         board = self._board()
-        cfg = replace(
-            self.cfg,
-            name=self._val("f-name"),
-            app=self._val("f-app"),
-            board=board.target if board else self._val("f-board"),
-            revision=rev if isinstance(rev, str) else None,
-            shields=split_list(self._val("f-shields")),
-            snippets=split_list(self._val("f-snippets")),
-            sysbuild=sysbuild,
-            build_dir=self._val("f-dir") or None,
-            extra_conf=split_list(self._val("f-conf")),
-            extra_overlays=split_list(self._val("f-overlays")),
-            cmake_args=cmake,
-            runner=runner if isinstance(runner, str) else None,
-            dev_id=self._val("f-devid") or None,
-            flash_args=flash,
-        )
-        if not check:
-            return cfg
-        problem = self._problem(cfg, board)
-        if problem:
-            self._error(problem)
-            return None
-        return cfg
+        runners = meta.board_runners(board, build_dir(self.ws, self.draft)) if board else None
+        names = list(runners.names) if runners else []
+        default = runners.flash_default if runners else None
+        items = [("", Text("board default" + (f" ({default})" if default else ""),
+                           style="bright_black"), "default")]
+        items += [(n, n + ("  (default)" if n == default else ""), n) for n in names]
+        hint = ("from the build's runners.yaml" if runners and runners.exact
+                else "from the board's board.cmake; exact once built")
+        self._pick("Flash runner", items, "runner", hint=hint, convert=lambda r: r[0] or None)
 
-    def _problem(self, cfg: BuildConfig, board: Board | None) -> str | None:
+    def _pick_probe(self, f: Field) -> None:
+        probes = meta.find_probes()
+        if not probes:
+            self._error("no debug probes found on USB; e types a serial number")
+            return
+        items = [("", Text("none (runner picks)", style="bright_black"), "none")]
+        items += [(p.dev_id, Text.assemble(p.dev_id, (f"  {p.kind} · {p.product}",
+                                                      "bright_black")),
+                   f"{p.dev_id} {p.kind} {p.product}") for p in probes]
+        self._pick("Debug probe", items, "dev_id", convert=lambda r: r[0] or None)
+
+    # -- save --
+
+    def _problem(self, cfg: BuildConfig) -> str | None:
         if not cfg.name:
             return "give the config a name"
         if any(c.name == cfg.name and c is not self.view.editing
@@ -440,8 +617,8 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
             return "the application folder needs a CMakeLists.txt"
         if self.opts is None:
             return "still reading boards and shields, try again in a moment"
-        if board is None:
-            return f"unknown board target: {cfg.board} (use … to pick one)"
+        if self._board() is None:
+            return f"unknown board target: {cfg.board or '(none)'}"
         known = {s.name for s in self.opts.shields}
         bad = [s for s in cfg.shields if s not in known]
         if bad:
@@ -455,107 +632,23 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
             return "the build directory can't be the workspace or the app folder"
         return None
 
-    def _error(self, msg: str) -> None:
-        self.query_one("#f-error", Static).update(f"[red]{escape(msg)}[/red]")
-
-    def _preview(self) -> None:
-        cfg = self._collect(check=False)
-        if cfg is None:
-            return
-        self.query_one("#f-dir", Input).placeholder = \
-            f"default: {rel(default_build_dir(self.ws, cfg), self.ws.topdir)}"
-        text = Text()
-        text.append("build: ", style="bright_black")
-        text.append(shown(build_cmd(self.ws, cfg)) + "\n")
-        text.append("flash: ", style="bright_black")
-        text.append(shown(runner_cmd(self.ws, cfg)))
-        self.query_one("#f-preview", Static).update(text)
-
-    # -- events --
-
-    @on(Input.Changed)
-    def _changed(self, event: Input.Changed) -> None:
-        if event.input.id == "f-board":
-            self._board_changed()
-        self._preview()
-        self.query_one("#f-error", Static).update("")
-
-    @on(Select.Changed)
-    def _select_changed(self) -> None:
-        self._preview()
-
-    @on(Input.Submitted)
-    def _submitted(self) -> None:
-        self.focus_next()
-
-    @on(Button.Pressed)
-    def _pick(self, event: Button.Pressed) -> None:
-        if self.opts is None:
-            self._error("still reading boards and shields, try again in a moment")
-            return
-        handler = {
-            "pick-app": self._pick_app, "pick-board": self._pick_board,
-            "pick-shields": self._pick_shields, "pick-snippets": self._pick_snippets,
-            "pick-probe": self._pick_probe,
-        }[event.button.id]
-        handler()
-
-    def _set(self, wid: str, value: str) -> None:
-        self.query_one(f"#{wid}", Input).value = value
-
-    def _pick_app(self) -> None:
-        top = self.ws.topdir
-        items = []
-        for p in self.opts.apps:
-            r = rel(p, top)
-            label = Text(r, style="" if not p.is_relative_to(self.ws.zephyr_base)
-                         else "bright_black")
-            items.append((r, label, r))
-        self.app.push_screen(PickerScreen("Application", items),
-                             lambda r: r and self._set("f-app", r[0]))
-
-    def _pick_board(self) -> None:
-        items = []
-        for b in self.opts.boards:
-            label = Text.assemble(b.target, (f"  {b.full_name or ''}", "bright_black"))
-            items.append((b.target, label, f"{b.target} {b.vendor or ''} {b.full_name or ''}"))
-        self.app.push_screen(PickerScreen("Board", items),
-                             lambda r: r and self._set("f-board", r[0]))
-
-    def _pick_shields(self) -> None:
-        items = [(s.name, Text.assemble(s.name, (f"  {s.full_name or ''}", "bright_black")),
-                  f"{s.name} {s.full_name or ''} {s.vendor or ''}") for s in self.opts.shields]
-        self.app.push_screen(
-            PickerScreen("Shields", items, multi=True,
-                         selected=split_list(self._val("f-shields")),
-                         hint="Order matters: later shields are applied after earlier ones."),
-            lambda r: r is not None and self._set("f-shields", ", ".join(r)))
-
-    def _pick_snippets(self) -> None:
-        items = [(s.name, s.name, s.name) for s in self.opts.snippets]
-        self.app.push_screen(
-            PickerScreen("Snippets", items, multi=True,
-                         selected=split_list(self._val("f-snippets"))),
-            lambda r: r is not None and self._set("f-snippets", ", ".join(r)))
-
-    def _pick_probe(self) -> None:
-        probes = meta.find_probes()
-        if not probes:
-            self._error("no debug probes found on USB")
-            return
-        items = [(p.dev_id, Text.assemble(p.dev_id, (f"  {p.kind} · {p.product}",
-                                                     "bright_black")),
-                  f"{p.dev_id} {p.kind} {p.product}") for p in probes]
-        self.app.push_screen(PickerScreen("Debug probe", items),
-                             lambda r: r and self._set("f-devid", r[0]))
-
     def action_save(self) -> None:
-        cfg = self._collect()
-        if cfg:
-            self.dismiss(cfg)
+        problem = self._problem(self.draft)
+        if problem:
+            self._error(problem)
+            return
+        self.dismiss(self.draft)
 
     def action_cancel(self) -> None:
-        self.dismiss(None)
+        if self.draft == self.original:
+            self.dismiss(None)
+            return
+
+        def answered(yes: bool) -> None:
+            if yes:
+                self.dismiss(None)
+        self.app.push_screen(ConfirmScreen("Discard changes?",
+                                           "Leave without saving this config?"), answered)
 
 
 # --------------------------------------------------------------------------
@@ -573,13 +666,12 @@ BUILD_CSS = """
     BuildView.-portrait #b-main { layout: vertical; }
     BuildView.-portrait #b-left, BuildView.-portrait #b-right { width: 100%; min-width: 0; }
     BuildView.-portrait #b-left { height: 35%; }
-    PickerScreen, ConfigScreen { align: center middle; }
+    PickerScreen, ConfigScreen, TextEditScreen { align: center middle; }
+    #settings { height: auto; max-height: 20; margin-top: 1; }
+    #text-dialog { width: 90; }
     #picker-dialog { height: 90%; }
     #picker-list { height: 1fr; margin: 1 0; }
-    #config-dialog { width: 110; height: 90%; }
-    #config-dialog .field-row { height: auto; }
-    #config-dialog .field-row Input { width: 1fr; }
-    #config-dialog .pick { min-width: 5; width: 5; }
+    #config-dialog { width: 120; }
     #config-dialog .preview { margin-top: 1; color: $text-muted; }
     #build-confirm-dialog { width: 70; }
     #f-error { margin-top: 1; }

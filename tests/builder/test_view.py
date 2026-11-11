@@ -4,7 +4,9 @@ import asyncio
 import sys
 from pathlib import Path
 
-from lazyzephyr.builder.app import BuildView, LazyBuildApp
+from dataclasses import replace
+
+from lazyzephyr.builder.app import FIELDS, BuildView, LazyBuildApp
 from lazyzephyr.builder.configs import BuildConfig, ConfigStore
 from lazyzephyr.builder.runner import Job, Runner
 from lazyzephyr.dts.workspace import find_workspace
@@ -48,20 +50,53 @@ async def test_build_tab(workspace, tmp_path, monkeypatch):
     app = LazyBuildApp(view)
     async with app.run_test(size=(180, 50)) as pilot:
         await wait_for(lambda: view.options is not None)
-        # New config through the form.
+        # New config through the settings list.
         await pilot.press("n")
         await pilot.pause()
         form = app.screen
-        form.query_one("#f-name").value = "sim"
-        form.query_one("#f-app").value = "app"
-        form.query_one("#f-board").value = "native_sim/native/64"
+        rows = [f.key for f in FIELDS]
+
+        async def goto(key):
+            form.query_one("#settings").highlighted = rows.index(key)
+            await pilot.pause()
+
+        async def type_value(key, text):
+            await goto(key)
+            await pilot.press("e")
+            await pilot.pause()
+            field = app.screen.query_one("#text-value")
+            field.value = text
+            await pilot.press("enter")
+            await pilot.pause()
+
+        # Moving around changes nothing.
+        before = replace(form.draft)
+        await pilot.press("down", "down", "j", "k", "up")
+        assert form.draft == before
+        # esc in an editor throws the change away.
+        await goto("name")
+        await pilot.press("enter")
         await pilot.pause()
-        form.query_one("#f-shields").value = "no_such_shield"
+        app.screen.query_one("#text-value").value = "oops"
+        await pilot.press("escape")
         await pilot.pause()
+        assert form.draft.name == "" and app.screen is form
+        await type_value("name", "sim")
+        await type_value("app", "app")
+        # enter on Board opens the searchable list.
+        await goto("board")
+        await pilot.press("enter")
+        await pilot.pause()
+        for ch in "native_sim/native/64":
+            await pilot.press(ch)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert form.draft.board == "native_sim/native/64"
+        await type_value("shields", "no_such_shield")
         await pilot.press("ctrl+s")
         await pilot.pause()
         assert "unknown shield" in str(form.query_one("#f-error").render())
-        form.query_one("#f-shields").value = ""
+        await type_value("shields", "")
         await pilot.press("ctrl+s")
         await wait_for(lambda: [c.name for c in store.configs] == ["sim"])
         assert ConfigStore(ws.topdir, tmp_path / "builds.json").configs[0].board == \
