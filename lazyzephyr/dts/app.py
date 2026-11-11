@@ -7,7 +7,6 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
 
 from rich.markup import escape
 from rich.text import Text
@@ -20,9 +19,10 @@ from textual.widgets import Footer, Input, OptionList, Select, Static, Tree
 from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 
-from . import catalog, checks, macros, specifiers, values
+from . import catalog, checks, macros, settings, specifiers, values
 from .catalog import BindingInfo
-from .editors import CompleteInput, Completer, SpecifierEditor, SpecRow, macro_choice
+from .editors import (CompleteInput, Completer, PickScreen, SpecifierEditor, SpecRow,
+                      macro_choice)
 from .model import import_edtlib
 from .session import REF_NODES, EditResult, Session
 from .state import TargetChoice, save_choice
@@ -72,6 +72,7 @@ def rel(path: Path | str, base: Path) -> str:
 
 class NodeTree(ForwardActions, Tree[str]):
     BINDINGS = [
+        Binding("enter", "focus_settings", "Settings"),
         Binding("a", "add_node", "Add node"),
         Binding("s", "toggle_status", "okay/disabled"),
         Binding("d", "delete_node", "Delete"),
@@ -102,10 +103,15 @@ class NodeTree(ForwardActions, Tree[str]):
 
 
 class PropList(ForwardActions, OptionList):
+    """A node's settings (see settings.rows)."""
+
     BINDINGS = [
-        Binding("enter,e", "edit_prop", "Edit"),
+        Binding("enter,e", "edit_prop", "Change"),
+        Binding("space", "toggle_prop", "On/off"),
         Binding("d", "delete_prop", "Remove"),
-        Binding("o", "open_editor", "Open"),
+        Binding("a", "add_node", "Add node"),
+        Binding("o", "open_editor", "Open file"),
+        Binding("escape,h,left", "focus_tree", "Back to tree"),
         Binding("j", "cursor_down", show=False),
         Binding("k", "cursor_up", show=False),
     ]
@@ -157,18 +163,27 @@ class HelpScreen(ModalScreen[None]):
 
     TEXT = """\
 [b]Tree[/b]
-  j/k, h/l, arrows   move, fold
-  /                  filter by name, label or compatible
+  j/k, arrows        move
+  l/h, space         unfold / fold
+  enter              go to the node's settings
+  /                  search by name, label or compatible
   a                  add a node under the selected node
-  s                  toggle status okay / disabled
+  s                  turn the node on / off
   d                  delete the node
-  o                  open the source in $EDITOR
-  tab                go to the properties
+  o                  open its file in $EDITOR
 
-[b]Properties[/b]
-  enter, e           edit (only properties from the node's binding)
-  d                  remove the value (falls back to the earlier one)
-  o                  open where the value is set
+[b]Settings[/b]
+  enter              change the setting: pick from the list or type a value
+  space              switch on/off settings (and Enabled)
+  d                  remove the value (the board's value applies again)
+  a                  add a node here
+  esc                back to the tree
+  The settings that are set come first; "more settings" shows the rest.
+
+[b]Picking a value[/b]
+  type               search the list, or type your own value
+  up/down, enter     pick
+  esc                cancel
 
 [b]Anywhere[/b]
   p                  problems: pins used twice, two devices at one address,
@@ -180,8 +195,9 @@ class HelpScreen(ModalScreen[None]):
   z                  maximize the focused panel
   q                  quit
 
-Edits are written straight to the source file, then the devicetree is parsed
-again. If it no longer parses, the file is put back and the error is shown.
+Changes go straight into your overlay (or the file that already sets the value),
+then the devicetree is checked. If it no longer parses, the change is put back
+and you see why. u undoes the last change.
 """
 
     def compose(self) -> ComposeResult:
@@ -361,13 +377,9 @@ class TargetScreen(ModalScreen[TargetChoice | None]):
         self.dismiss(None)
 
 
-# Types whose values name other nodes, and types whose cells can use macros.
-LABEL_TYPES = {"phandle", "phandles", "path"}
-MACRO_TYPES = {"int", "array", "phandle-array", "compound"}
-
-
 class EditScreen(ModalScreen[EditResult | None]):
-    """Edit one property, limited to what its binding allows."""
+    """Edit a phandle-array (gpios, pwms…): one row per entry, a controller and its
+    named cells. Everything else is edited with a PickScreen."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
@@ -377,220 +389,69 @@ class EditScreen(ModalScreen[EditResult | None]):
         Binding("ctrl+t", "toggle_text", "Type as text", priority=True),
     ]
 
-    def __init__(self, session: Session, node_path: str, name: str | None, base: Path,
-                 chosen_names: set[str] | None = None):
-        """name None: a new /chosen or /aliases entry, named in the dialog."""
+    def __init__(self, session: Session, node_path: str, name: str, file: Path):
         super().__init__()
-        self.session, self.node_path, self.prop, self.base = session, node_path, name, base
-        self.chosen_names = chosen_names or set()
-        node = session.node(node_path)
-        if node_path in REF_NODES:
-            self.spec = SimpleNamespace(type="path", description=self._ref_description(),
-                                        required=False, enum=None, const=None, default=None,
-                                        deprecated=False)
-        else:
-            self.spec = session.spec(node, name)
-        self.space: str | None = None
-        self.ctrls: list[specifiers.Controller] = []
-        if self.spec.type == "phandle-array":
-            self.space = specifiers.space(name, self.spec)
-            self.ctrls = specifiers.controllers(session.model.edt, self.space)
+        self.session, self.node_path, self.prop, self.file = session, node_path, name, file
+        self.spec = session.spec(session.node(node_path), name)
+        self.space = specifiers.space(name, self.spec)
+        self.ctrls = specifiers.controllers(session.model.edt, self.space)
 
     def compose(self) -> ComposeResult:
-        s, spec, m = self.session, self.spec, self.session.model
-        node = s.node(self.node_path)
         with VerticalScroll(id="edit-dialog", classes="panel dialog") as dialog:
-            what = "chosen" if self.node_path == "/chosen" else "alias"
-            dialog.border_title = f"{self.prop or 'new ' + what}  ({spec.type})"
-            yield Static(self._info(node), classes="hint")
-            if self.prop is None:
-                yield Static("Name", classes="label")
-                yield CompleteInput(placeholder="e.g. zephyr,console" if what == "chosen"
-                                    else "e.g. led0", id="edit-name", kind="name", whole=True)
-            sources = m.prop_sources(self.node_path, self.prop) if self.prop else []
-            eff = s.effective(self.node_path, self.prop) if self.prop else None
-            if sources:
-                lines = []
-                for f, stmt in sources:
-                    mark = "→" if eff == (f, stmt.line) else " "
-                    text = (f"/delete-property/" if stmt.kind == "delete-property"
-                            else (f"= {stmt.value}" if stmt.value is not None else "(set)"))
-                    lines.append(f"{mark} {escape(rel(f, self.base))}:{stmt.line}  "
-                                 f"{escape(text)}")
-                yield Static("[b]Set in[/b]\n" + "\n".join(lines), classes="sources")
-            current = self._current_raw(sources, eff)
-            if spec.type == "boolean":
-                yield Select([("true", "true"), ("false (remove)", "false")],
-                             value="true" if node.props.get(self.prop)
-                             and node.props[self.prop].val else "false",
-                             allow_blank=False, id="edit-value")
-            elif spec.enum and spec.type in ("int", "string"):
-                opts = [(str(v), str(v)) for v in spec.enum]
-                cur = values.to_input(spec.type, current) if current else None
-                if cur is None and spec.default is not None:
-                    cur = str(spec.default)
-                yield Select(opts, value=cur if cur in [o[1] for o in opts] else Select.BLANK,
-                             id="edit-value", prompt="pick a value")
-            else:
-                if self.prop is None:
-                    yield Static("Value", classes="label")
-                yield self._value_widget(current, structured=True)
+            dialog.border_title = settings.friendly(self.prop)
+            yield Static(self._info(), classes="hint")
+            current = settings.source_text(self.session, self.node_path, self.prop)
+            yield self._value_widget(current, structured=True)
             yield Completer(self._choices, id="edit-complete")
-            files = s.write_files(self.node_path)
-            default = s.default_write_file(self.node_path, self.prop)
-            yield Static("Write to", classes="label")
-            yield Select(file_options(files, self.base, s.inputs.user_files), value=default,
-                         allow_blank=False, id="edit-file")
             yield Static("", id="edit-error")
 
     def on_mount(self) -> None:
         self._update_keys()
-        if self.prop is None:
-            self.query_one("#edit-name").focus()
+        widget = self.query_one("#edit-value")
+        cells = widget.query(Input) if isinstance(widget, SpecifierEditor) else None
+        if cells:
+            cells.first().focus()
+        elif isinstance(widget, SpecifierEditor):
+            widget.query_one(Select).focus()
+        else:
+            widget.focus()
 
     def _value_widget(self, text: str | None, structured: bool):
-        type_ = self.spec.type
-        if type_ == "phandle-array" and structured and self.ctrls:
+        if structured and self.ctrls:
             entries = specifiers.parse(text, self.ctrls)
             if entries is not None:
                 return SpecifierEditor(self.ctrls, entries, self._macro_context(),
                                        id="edit-value")
-        value = values.to_input(type_, text) if text is not None else ""
-        if type_ in LABEL_TYPES or type_ in MACRO_TYPES:
-            return CompleteInput(value=value, placeholder=self._placeholder(), id="edit-value",
-                                 kind="label" if type_ in LABEL_TYPES else "macro",
-                                 context=self._macro_context())
-        return Input(value=value, placeholder=self._placeholder(), id="edit-value")
-
-    def _ref_description(self) -> str:
-        if self.node_path == "/chosen":
-            what = (f"DT_CHOSEN({self.prop.replace(',', '_').replace('-', '_')})"
-                    if self.prop else "DT_CHOSEN()")
-            return f"The node Zephyr uses for this purpose; code reads it with {what}."
-        what = f"DT_ALIAS({self.prop.replace('-', '_')})" if self.prop else "DT_ALIAS()"
-        return f"Another name for a node; code reads it with {what}."
+        value = values.to_input(self.spec.type, text) if text is not None else ""
+        return CompleteInput(value=value, placeholder="e.g. <&gpio0 5 GPIO_ACTIVE_LOW>",
+                             id="edit-value", kind="macro", context=self._macro_context())
 
     def _macro_context(self) -> set[str]:
         node = self.session.node(self.node_path)
-        return macros.context_words(self.prop or "", self.space, *node.compats[:1], *node.buses,
+        return macros.context_words(self.prop, self.space, *node.compats[:1], *node.buses,
                                     *node.on_buses)
 
     def _update_keys(self) -> None:
-        keys = ["enter: apply"]
-        widget = self.query_one("#edit-value")
-        if isinstance(widget, SpecifierEditor):
-            keys += ["ctrl+n/r: add/remove entry", "ctrl+t: as text"]
-        elif self.spec.type == "phandle-array" and self.ctrls:
-            keys.append("ctrl+t: fields")
-        if isinstance(widget, CompleteInput) or isinstance(widget, SpecifierEditor):
-            keys.append("↓: choices")
-        keys.append("esc: cancel")
-        self.query_one("#edit-dialog").border_subtitle = " · ".join(keys)
+        if isinstance(self.query_one("#edit-value"), SpecifierEditor):
+            keys = ["enter: set", "ctrl+n: another entry", "ctrl+r: remove entry",
+                    "ctrl+t: type it", "esc: cancel"]
+        else:
+            keys = ["enter: set", "ctrl+t: fields" if self.ctrls else "", "esc: cancel"]
+        self.query_one("#edit-dialog").border_subtitle = " · ".join(k for k in keys if k)
 
     def _choices(self, token: str, target: CompleteInput) -> list:
-        m = self.session.model
-        if target.kind == "label":
-            return self._label_choices(token)
-        if target.kind == "name":
-            return self._name_choices(token)
         if token[:1].isdigit():
             return []
-        return [macro_choice(x) for x in macros.rank(m.macros, token, target.context)]
+        return [macro_choice(x)
+                for x in macros.rank(self.session.model.macros, token, target.context)]
 
-    def _label_choices(self, token: str) -> list:
-        edt = self.session.model.edt
-        labels = edt._dt.label2node
-        want = token.lstrip("&").lower()
-        if want and want in {k.lower() for k in labels}:
-            want = ""  # a complete label: offer all of them, to change it
-        out = []
-        for label in sorted(labels, key=str.lower):
-            low = label.lower()
-            if want and want not in low:
-                continue
-            node = self.session.node(labels[label].path)
-            t = Text()
-            t.append(f"&{label}", style="yellow")
-            t.append(f"  {labels[label].path}", style="bright_black")
-            if node is not None and node.compats:
-                t.append(f"  {node.compats[0]}", style="cyan")
-            if node is not None and node.status != "okay":
-                t.append(f"  {node.status}", style="bright_black italic")
-            has_compat = node is not None and bool(node.compats)
-            out.append((not low.startswith(want), not has_compat, f"&{label}", t))
-        out.sort(key=lambda c: c[:2])
-        return [(ins, t) for *_, ins, t in out]
-
-    def _name_choices(self, token: str) -> list:
-        if self.node_path != "/chosen":
-            return []
-        node = self.session.node(self.node_path)
-        used = set(node._node.props) if node else set()
-        want = token.lower()
-        out = []
-        for name in sorted(self.chosen_names | used):
-            if want and want not in name:
-                continue
-            t = Text(name, style="bold" if name not in used else "bright_black")
-            if name in used:
-                t.append("  already set", style="bright_black italic")
-            out.append((name in used, not name.startswith(want), name, t))
-        out.sort(key=lambda c: c[:2])
-        return [(name, t) for *_, name, t in out]
-
-    def _current_raw(self, sources, eff) -> str | None:
-        for f, stmt in reversed(sources):
-            if eff == (f, stmt.line) and stmt.kind == "set":
-                return stmt.value
-        return None
-
-    def _placeholder(self) -> str:
-        return {
-            "int": "e.g. 100, 0x20 or MACRO(1)",
-            "array": "e.g. 1 2 3",
-            "uint8-array": "hex bytes, e.g. 00 1f a0",
-            "string": "text (no quotes needed)",
-            "string-array": "comma separated, e.g. a, b",
-            "phandle": "node label, e.g. &gpio0",
-            "phandles": "node labels, e.g. &dma0 &dma1",
-            "phandle-array": "e.g. <&gpio0 5 GPIO_ACTIVE_LOW>",
-            "path": "&label or /path/to/node",
-        }.get(self.spec.type, "value")
-
-    def _info(self, node) -> str:
-        spec = self.spec
-        parts = []
-        if spec.description:
-            parts.append(escape(" ".join(spec.description.split())))
-        facts = []
-        if spec.required:
-            facts.append("[red]required[/red]")
-        if spec.enum:
-            facts.append("one of: " + escape(", ".join(map(str, spec.enum))))
-        if spec.const is not None:
-            facts.append(f"const: {escape(str(spec.const))}")
-        if spec.default is not None:
-            facts.append(f"default: {escape(str(spec.default))}")
-        if spec.deprecated:
-            facts.append("[yellow]deprecated[/yellow]")
-        if self.space is not None:
-            facts.append(self._cells_hint())
-        if facts:
-            parts.append(" · ".join(facts))
-        return "\n".join(parts) or "(no description in the binding)"
-
-    def _cells_hint(self) -> str:
-        """`<&controller pin flags>` from the controllers in the tree."""
+    def _info(self) -> str:
+        desc = " ".join((self.spec.description or "").split())
+        hint = ("Pick the controller, then fill in each field. While typing a field, "
+                "↓ shows the matching macros.")
         if not self.ctrls:
-            return escape(f"no node in the tree has #{self.space}-cells")
-        cells: dict[tuple[str, ...], list[str]] = {}
-        for c in self.ctrls:
-            cells.setdefault(tuple(c.cells), []).append(c.ref)
-        hints = []
-        for names, refs in list(cells.items())[:3]:
-            shown = ", ".join(refs[:4]) + (", …" if len(refs) > 4 else "")
-            hints.append(f"<&ctrl {' '.join(names)}> for {shown}")
-        return escape("; ".join(hints))
+            hint = f"No node in this tree can be used here (none has #{self.space}-cells)."
+        return escape(f"{desc}\n{hint}" if desc else hint)
 
     # -- events ----------------------------------------------------------
 
@@ -601,10 +462,7 @@ class EditScreen(ModalScreen[EditResult | None]):
     @on(Input.Submitted)
     def submitted(self, event: Input.Submitted) -> None:
         event.stop()
-        if event.input.id == "edit-name":
-            self.query_one("#edit-value").focus()
-        else:
-            self.action_apply()
+        self.action_apply()
 
     @on(Input.Changed)
     def changed(self, event: Input.Changed) -> None:
@@ -646,11 +504,12 @@ class EditScreen(ModalScreen[EditResult | None]):
         row = next((a for a in focused.ancestors_with_self if isinstance(a, SpecRow)),
                    None) if focused else None
         if not await widget.remove_row(row or widget.rows[-1]):
-            self._error("can't remove the only entry; remove the property instead (d)")
+            self._error("can't remove the only entry; press d in the list to remove the "
+                        "setting instead")
 
     async def action_toggle_text(self) -> None:
         widget = self.query_one("#edit-value")
-        if self.spec.type != "phandle-array" or not self.ctrls:
+        if not self.ctrls:
             return
         if isinstance(widget, SpecifierEditor):
             text = specifiers.compose([e for e in widget.entries() if e[0]])
@@ -660,7 +519,7 @@ class EditScreen(ModalScreen[EditResult | None]):
             if text and "<" not in text:
                 text = f"<{text}>"
             if specifiers.parse(text, self.ctrls) is None:
-                self._error("can't split this into controllers and cells; edit it as text")
+                self._error("can't split this into controllers and fields; edit it as text")
                 return
             new = self._value_widget(text, structured=True)
         self._error("")
@@ -672,30 +531,15 @@ class EditScreen(ModalScreen[EditResult | None]):
 
     def action_apply(self) -> None:
         widget = self.query_one("#edit-value")
-        file = self.query_one("#edit-file", Select).value
-        name = self.prop
-        if name is None:
-            name = self.query_one("#edit-name", Input).value.strip()
-            if not name:
-                self._error("give it a name")
-                return
-        if self.spec.type == "boolean":
-            delete = widget.value == "false"
-            result = self.session.set_property(self.node_path, name, None, file,
-                                               delete=delete)
-        elif isinstance(widget, SpecifierEditor):
+        if isinstance(widget, SpecifierEditor):
             entries = widget.entries()
             if err := specifiers.check(entries, self.ctrls):
                 self._error(err)
                 return
-            result = self.session.set_property(self.node_path, name,
-                                               specifiers.compose(entries), file)
+            text = specifiers.compose(entries)
         else:
-            value = widget.value
-            if not isinstance(value, str):
-                self._error("pick a value")
-                return
-            result = self.session.set_property(self.node_path, name, str(value), file)
+            text = widget.value
+        result = self.session.set_property(self.node_path, self.prop, text, self.file)
         if result.ok:
             self.dismiss(result)
         else:
@@ -995,12 +839,19 @@ DTS_CSS = """
     DtsView #filter { display: none; border: none; height: 1; padding: 0 1; }
     DtsView #filter.visible { display: block; }
     DtsView #details-panel { height: 45%; padding: 0 1; }
-    DtsView #props { height: 1fr; border: round $panel-lighten-2; background: $surface; }
-    DtsView #props:focus { border: round $success; }
+    DtsView #details-panel { height: 40%; }
+    DtsView #settings-panel { height: 1fr; padding: 0 1; }
+    DtsView #props { height: 1fr; border: none; background: $surface; padding: 0; }
+    DtsView #prop-help { height: auto; max-height: 3; color: $text-muted;
+                         border-top: solid $panel-lighten-2; }
+    #pick-dialog { width: 100; height: auto; max-height: 80%; }
+    #pick-input { margin-top: 1; }
+    #pick-list { height: auto; max-height: 16; border: none; background: $surface; }
+    #pick-error { height: auto; }
     DtsView #statusbar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
     .dialog { width: 100; max-width: 95%; height: auto; max-height: 90%; padding: 1 2; }
     ConfirmScreen, HelpScreen, FileScreen, TargetScreen, EditScreen, AddScreen,
-    NodeFormScreen, ProblemsScreen { align: center middle; }
+    NodeFormScreen, ProblemsScreen, PickScreen { align: center middle; }
     #problems-dialog { width: 130; height: auto; max-height: 80%; }
     #problems-list { height: auto; max-height: 30; margin-top: 1; }
     #dts-confirm-dialog { width: 70; }
@@ -1056,6 +907,9 @@ class DtsView(View):
         self.write_file: Path | None = None
         self.node_index: dict[str, TreeNode[str]] = {}
         self.problem_marks: dict[str, str] = {}  # node path -> worst severity
+        self.more_open: set[str] = set()  # nodes showing all their settings
+        self.setting_rows: dict[str, settings.Row] = {}
+        self.last_row: dict[str, str] = {}  # node path -> highlighted setting
         self.filter_text = ""
         self.message = ""
 
@@ -1073,9 +927,10 @@ class DtsView(View):
                 with ScrollPanel(id="details-panel", classes="panel") as details:
                     details.border_title = "Node"
                     yield Static("", id="details")
-                props = PropList(id="props")
-                props.border_title = "Properties"
-                yield props
+                with Panel(id="settings-panel", classes="panel") as panel:
+                    panel.border_title = "Settings"
+                    yield PropList(id="props")
+                    yield Static("", id="prop-help")
         yield Static("", id="statusbar")
 
     @property
@@ -1241,10 +1096,14 @@ class DtsView(View):
     def _highlighted(self) -> None:
         self.show_node()
 
-    @on(Tree.NodeSelected, "#tree")
-    def _selected(self, event) -> None:
-        if not event.node.allow_expand:
-            self.query_one("#props").focus()
+    def action_focus_settings(self) -> None:
+        props = self.query_one("#props", PropList)
+        props.focus()
+        if props.highlighted is None and props.option_count:
+            props.highlighted = 0
+
+    def action_focus_tree(self) -> None:
+        self.tree.focus()
 
     # -- details ---------------------------------------------------------
 
@@ -1330,75 +1189,34 @@ class DtsView(View):
         self._props_path = path
         self._focus_pending_prop()
 
-    def fill_ref_props(self, node) -> None:
-        """/chosen and /aliases: each entry points at a node."""
-        props = self.query_one("#props", PropList)
-        names = list(node._node.props)
-        width = min(max([len(n) for n in names] or [10]), 32)
-        rows = []
-        for name, prop in node._node.props.items():
-            t = Text()
-            t.append(name.ljust(width), style="bold")
-            t.append("  ")
-            try:
-                target = prop.to_path()
-                labels = target.labels
-                t.append(f"&{labels[0]}" if labels else target.path, style="yellow")
-            except Exception:  # DTError: not a path or reference
-                t.append(raw_value(prop))
-            eff = self.session.effective(node.path, name)
-            if eff:
-                t.append(f"  {eff[0].name}:{eff[1]}", style="bright_black")
-            rows.append(Option(t, id=name))
-        what = "chosen" if node.path == "/chosen" else "alias"
-        rows.append(Option(Text(f"+ add {what}…", style="green"), id="new:"))
-        props.add_options(rows)
-        props.border_title = "Chosen" if node.path == "/chosen" else "Aliases"
-
     def fill_props(self, node) -> None:
-        s = self.session
+        """The settings list for `node` (keeps the cursor on the same row)."""
         props = self.query_one("#props", PropList)
-        if node.path in REF_NODES:
-            self.fill_ref_props(node)
-            return
-        editable = s.editable_props(node)
-        rows = []
-        width = max([len(n) for n in [*editable, *node._node.props]] or [10])
-        width = min(width, 32)
-        shown = set()
-        for name in editable:
-            shown.add(name)
-            spec = s.spec(node, name)
-            t = Text()
-            t.append(name.ljust(width), style="bold")
-            t.append("  ")
-            if name in node._node.props:
-                prop = node.props.get(name)
-                t.append(values.show(prop.val) if prop else "set")
-                eff = s.effective(node.path, name)
-                if eff:
-                    t.append(f"  {eff[0].name}:{eff[1]}", style="bright_black")
-            elif spec.required:
-                t.append("required, not set", style="red")
-            elif spec.default is not None:
-                t.append(f"default {spec.default}", style="bright_black")
-            else:
-                t.append("-", style="bright_black")
-            rows.append(Option(t, id=name))
-        for name, prop in node._node.props.items():
-            if name in shown:
-                continue
-            t = Text()
-            t.append(name.ljust(width), style="bright_black")
-            t.append("  ")
-            edt_prop = node.props.get(name)
-            t.append(values.show(edt_prop.val) if edt_prop else raw_value(prop),
-                     style="bright_black")
-            t.append("  read-only", style="bright_black italic")
-            rows.append(Option(t, id=f"ro:{name}"))
-        props.add_options(rows)
-        props.border_title = "Properties" if node._binding else \
-            "Properties (no binding: read-only)"
+        keep = self.last_row.get(node.path)
+        rows = settings.rows(self.session, node, node.path in self.more_open,
+                             base_name=lambda f: rel(f, self.ws.topdir))
+        self.setting_rows = {r.id: r for r in rows}
+        props.clear_options()
+        props.add_options([Option(r.text, id=r.id, disabled=r.kind == "head") for r in rows])
+        ids = [r.id for r in rows]
+        if keep in ids:
+            props.highlighted = ids.index(keep)
+        else:
+            props.highlighted = next((i for i, r in enumerate(rows) if r.kind != "head"), None)
+        self._show_help()
+
+    @on(OptionList.OptionHighlighted, "#props")
+    def _show_help(self, event=None) -> None:
+        row = self._row()
+        text = row.help if row else ""
+        path = self.current_path
+        if row and path and getattr(self, "_props_path", None) == path:
+            self.last_row[path] = row.id
+        if row and row.kind in ("prop", "status", "entry") and self.session and path:
+            file = self._file_for(path, row.id if row.kind != "status" else None)
+            if file:
+                text += f"  ·  changes go to {rel(file, self.ws.topdir)}"
+        self.query_one("#prop-help", Static).update(Text(text))
 
     # -- status ----------------------------------------------------------
 
@@ -1584,42 +1402,169 @@ class DtsView(View):
             return None
         return props.get_option_at_index(props.highlighted).id
 
-    def action_edit_prop(self) -> None:
-        s, path, name = self.session, self.current_path, self._prop_name()
-        if not s or not path or not name:
+    def _row(self) -> settings.Row | None:
+        name = self._prop_name()
+        return self.setting_rows.get(name) if name else None
+
+    def _set(self, path: str, name: str, text: str | None, delete: bool = False) -> EditResult:
+        file = self._file_for(path, name)
+        if file is None:
+            return EditResult(False, "none of this target's files can be edited "
+                                     "(add an app overlay)")
+        return self.session.set_property(path, name, text, file, delete=delete)
+
+    def action_toggle_prop(self) -> None:
+        """space: switch the highlighted on/off setting, else change it."""
+        row, path, s = self._row(), self.current_path, self.session
+        if row is None or not s or not path:
             return
-        if name.startswith("ro:"):
-            self.notify(f"{name[3:]} is not in the node's binding; edit it by hand (o)",
+        if row.kind == "status":
+            self.action_toggle_status()
+        elif row.kind == "prop" and s.spec(s.node(path), row.id).type == "boolean":
+            on = row.id in s.node(path)._node.props
+            self.report(self._set(path, row.id, None, delete=on))
+        else:
+            self.action_edit_prop()
+
+    def action_edit_prop(self) -> None:
+        row, path, s = self._row(), self.current_path, self.session
+        if row is None or not s or not path:
+            return
+        if row.kind in ("status",):
+            self.action_toggle_status()
+        elif row.kind == "more":
+            self.more_open ^= {path}
+            self.fill_props(s.node(path))
+        elif row.kind == "child":
+            self.reveal(row.id[5:])
+        elif row.kind == "add":
+            self.action_add_node()
+        elif row.kind == "readonly":
+            self.notify(f"{row.id[3:]} isn't in the node's binding, so it can't be changed "
+                        "here; press o to open the file", severity="warning")
+        elif row.kind == "entry":
+            self._pick_label(path, row.id)
+        elif row.kind == "new":
+            self._pick_ref_name(path)
+        elif row.kind == "prop":
+            self._edit_setting(path, row.id)
+
+    def _edit_setting(self, path: str, name: str) -> None:
+        s = self.session
+        node = s.node(path)
+        spec = s.spec(node, name)
+        type_ = spec.type
+        if type_ == "boolean":
+            on = name in node._node.props
+            self.report(self._set(path, name, None, delete=on))
+            return
+        file = self._file_for(path, name)
+        if file is None:
+            self.notify("none of this target's files can be edited (add an app overlay)",
                         severity="warning")
             return
-        if not s.write_files(path):
-            self.notify("no editable file for this node", severity="warning")
+        if type_ == "phandle-array":
+            self.push_screen(EditScreen(s, path, name, file), self.report)
             return
-        self.push_screen(EditScreen(s, path, None if name == "new:" else name, self.ws.topdir,
-                                    self.chosen_names), self.report)
+        raw = settings.source_text(s, path, name)
+        current = values.to_input(type_, raw) if raw is not None else ""
+        title = settings.friendly(name)
+        desc = " ".join((spec.description or "").split())
+        apply = lambda v: self._set(path, name, v)  # noqa: E731
+        if spec.enum:
+            default = spec.default
+
+            def enum_choices(token: str) -> list:
+                out = []
+                for v in spec.enum:
+                    if token.lower() in str(v).lower():
+                        t = Text(str(v), style="bold")
+                        if v == default:
+                            t.append("  default", style="bright_black italic")
+                        out.append((str(v), t))
+                return out
+            self.push_screen(PickScreen(title, desc, enum_choices, apply,
+                                        current or ("" if default is None else str(default)),
+                                        free=False, placeholder="type to search"),
+                             self.report)
+        elif type_ in settings.LABEL_TYPES:
+            self.push_screen(PickScreen(title, desc, lambda t: settings.label_choices(s, t),
+                                        apply, current, free=False,
+                                        placeholder="type to search for a node"), self.report)
+        elif type_ == "phandles":
+            self.push_screen(PickScreen(title, desc, lambda t: settings.label_choices(s, t),
+                                        apply, current, word=True,
+                                        placeholder="&node1 &node2"), self.report)
+        elif type_ in ("int", "array", "compound"):
+            context = macros.context_words(*node.compats[:1])
+            primary = macros.context_words(name, *node.buses, *node.on_buses)
+
+            def macro_choices(token: str) -> list:
+                if token[:1].isdigit():
+                    return []
+                out = []
+                is_hz = settings._is_hz(name)
+                for m in macros.rank(s.model.macros, token, context | primary, primary=primary):
+                    ins, t = macro_choice(m)
+                    v = macros.value_of(m)
+                    if is_hz and not token and (v is None or v < 1000):
+                        continue  # not a frequency (channel numbers and such)
+                    if v is not None and is_hz:
+                        t.append(f"  {settings.hz(v)}", style="green")
+                    out.append((ins, t))
+                return out
+            hint = {"int": "a number or a macro", "array": "numbers, e.g. 1 2 3"}.get(
+                type_, "a value")
+            self.push_screen(PickScreen(title, desc, macro_choices, apply, current, word=True,
+                                        placeholder=hint), self.report)
+        else:
+            hint = {"string": "text", "string-array": "texts, separated by commas",
+                    "uint8-array": "hex bytes, e.g. 00 1f a0"}.get(type_, "a value")
+            self.push_screen(PickScreen(title, desc, lambda t: [], apply, current,
+                                        placeholder=hint), self.report)
+
+    def _pick_label(self, path: str, name: str) -> None:
+        s = self.session
+        raw = settings.source_text(s, path, name)
+        self.push_screen(PickScreen(name, "Which node should this point at?",
+                                    lambda t: settings.label_choices(s, t),
+                                    lambda v: self._set(path, name, v), raw or "", free=False,
+                                    placeholder="type to search for a node"), self.report)
+
+    def _pick_ref_name(self, path: str) -> None:
+        s = self.session
+        chosen = path == "/chosen"
+        pattern = REF_NODES[path]
+        used = set(s.node(path)._node.props)
+
+        def named(name: str):
+            if not pattern.match(name):
+                return EditResult(False, "use lowercase letters, digits and - (and , . _ "
+                                         "for chosen)" if chosen else
+                                         "use lowercase letters, digits and -")
+            return EditResult(True, name)
+
+        def then(result) -> None:
+            if result is not None:
+                self._pick_label(path, result.message)
+        choices = (lambda t: settings.chosen_choices(self.chosen_names, used, t)) if chosen \
+            else (lambda t: [])
+        self.push_screen(PickScreen("New chosen entry" if chosen else "New alias",
+                                    "First the name, then the node it points at.", choices,
+                                    named, placeholder="e.g. zephyr,console" if chosen
+                                    else "e.g. led0"), then)
 
     def action_delete_prop(self) -> None:
-        s, path, name = self.session, self.current_path, self._prop_name()
-        if not s or not path or not name or name.startswith("ro:") or name == "new:":
+        row, path, s = self._row(), self.current_path, self.session
+        if row is None or not s or not path or row.kind not in ("prop", "entry"):
             return
-        if s.effective(path, name) is None:
-            self.notify(f"{name} is not set")
+        if s.effective(path, row.id) is None:
+            self.notify(f"{settings.friendly(row.id)} is not set")
             return
-        file = s.default_write_file(path, name)
-        if file is None:
-            self.notify("no editable file for this node", severity="warning")
-            return
-        eff = s.effective(path, name)
-        if eff and eff[0] == file:
-            msg = (f"Remove {name} from {rel(file, self.ws.topdir)}:{eff[1]}. "
-                   "An earlier value, if any, applies again.")
-        else:
-            msg = f"Add /delete-property/ {name}; to {rel(file, self.ws.topdir)}."
-
-        def confirmed(yes: bool) -> None:
-            if yes:
-                self.report(s.set_property(path, name, None, file, delete=True))
-        self.push_screen(ConfirmScreen(f"Remove {name}?", msg), confirmed)
+        result = self._set(path, row.id, None, delete=True)
+        if result.ok:
+            result.message += "  (u: undo)"
+        self.report(result)
 
     def action_open_editor(self) -> None:
         s, path = self.session, self.current_path

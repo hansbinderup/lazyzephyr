@@ -85,21 +85,23 @@ Tests.
   two devices at one address on a bus, two enabled bus controllers sharing one register
   block (nRF `spi0` + `i2c0`), overlapping flash partitions, enabled nodes or chosen
   entries that point at a disabled node, and deprecated properties. `enter` jumps to it.
-- **Edit only what the bindings allow**: the properties panel lists the binding's
-  properties, with their values and where each is set. Values are checked by type, enum
-  and label, then the whole tree is parsed again with Zephyr's own `edtlib`. If it no
-  longer parses, the file is put back and the error is shown.
+- **Settings**: press `enter` on a node to get its settings in plain words ("Clock
+  frequency  400 kHz", "Enabled  ● yes"). What's set comes first, then the device's own
+  settings, and the generic ones (interrupts, clocks, power management…) sit under
+  "more settings". The node's devices are listed too, with `+ add device…`. The line
+  under the list explains the highlighted setting and says which file a change goes to.
+- **Changing a setting**: `space` switches on/off settings. `enter` opens a short list
+  to pick from: the choices of an enum, the nodes for a reference, the matching macros
+  for a number (`I2C_BITRATE_FAST  400 kHz`, from the `dt-bindings` headers the tree
+  includes). Type to search, or type your own value; `↑↓` and `enter` set it. `d`
+  removes a value so the board's applies again. Changes are made straight away, checked
+  against the binding and parsed again with Zephyr's own `edtlib`; if the tree no longer
+  parses, the change is put back and you see why.
 - **`gpios`, `pwms`, `io-channels` and other phandle-arrays** are edited as rows: pick the
-  controller from the nodes that can serve it, then fill in its named cells (`pin`,
+  controller from the nodes that can serve it, then fill in its named fields (`pin`,
   `flags`, `channel`…). Pins are checked against the controller's `ngpios`. `ctrl+n` /
   `ctrl+r` add / remove an entry, `ctrl+t` switches to plain text and back.
-- **Macro suggestions**: while you type a cell or a number, the macros from the
-  `dt-bindings` headers the tree includes are listed (`GPIO_ACTIVE_LOW`,
-  `I2C_BITRATE_FAST`…), the ones that fit the property first. `↓` moves into the list,
-  `enter` puts the macro in, so `GPIO_ACTIVE_LOW | GPIO_PULL_UP` takes a few keys.
-- **Pick nodes from a list**: `phandle`, `phandles` and `path` values list the labels in
-  the tree (with the node's path, compatible and status) as you type.
-- **`/chosen` and `/aliases`** are editable: change where an entry points, remove it, or
+- **`/chosen` and `/aliases`**: point an entry at another node, remove it, or
   `+ add` a new one. Names for `chosen` are suggested from what Zephyr's code reads
   (`DT_CHOSEN(zephyr_console)` and Kconfig's `DT_CHOSEN_*` symbols), e.g.
   `zephyr,shell-uart`.
@@ -117,15 +119,17 @@ Tests.
 
 | Key | Action |
 | --- | --- |
+| `enter` | in the tree: go to the node's settings; in settings: change the setting |
+| `space` | in settings: switch on/off settings |
+| `esc` | back to the tree |
 | `/` | filter by name, label or compatible |
 | `a` | add a node under the selected node |
-| `s` | toggle status okay / disabled |
-| `d` | delete the node, or in Properties remove the value |
-| `enter` / `e` | in Properties: edit the value |
+| `s` | turn the node on / off |
+| `d` | delete the node, or in settings remove the value |
 | `o` | open `$EDITOR` where the node or value is set |
 | `p` | list problems; `enter` goes to the node |
 | `w` / `t` | pick the file edits go to / pick another target |
-| `u` / `r` | undo the last edit / reload |
+| `u` / `r` | undo the last change / reload |
 | `z` / `?` | maximise the focused panel / help |
 
 A C preprocessor (`gcc` or `clang`) must be on `PATH`, as for any Zephyr build.

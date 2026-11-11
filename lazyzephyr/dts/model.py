@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import checks, dtsedit
 from . import macros as dtmacros
-from .workspace import DtInputs, Workspace
+from .workspace import DtInputs, Workspace, load_yaml
 
 
 class DtError(Exception):
@@ -82,6 +82,7 @@ class Model:
     _macros: list[dtmacros.Macro] | None = None
     _references: dict[str, list[checks.Ref]] | None = None
     _problems: list[checks.Problem] | None = None
+    _generic: set[str] | None = None
 
     @property
     def labels(self) -> set[str]:
@@ -127,6 +128,19 @@ class Model:
         if self._problems is None:
             self._problems = checks.problems(self.edt, self.macros, self.references)
         return self._problems
+
+    @property
+    def generic_props(self) -> set[str]:
+        """Properties every binding gets from Zephyr's base bindings (interrupts,
+        clocks, dmas, power management…), as opposed to the device's own."""
+        if self._generic is None:
+            self._generic = set()
+            base = self.ws.zephyr_base / "dts" / "bindings" / "base"
+            for name in ("base.yaml", "pm.yaml", "mutable.yaml"):
+                raw = load_yaml(base / name) or {}
+                self._generic |= set((raw.get("properties") or {}) if isinstance(raw, dict)
+                                     else ())
+        return self._generic
 
     def dts_files(self) -> list[Path]:
         """Devicetree sources (not headers) in include order."""

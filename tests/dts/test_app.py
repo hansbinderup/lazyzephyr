@@ -5,7 +5,7 @@ import asyncio
 from textual.widgets import Input
 
 from lazyzephyr.dts.app import AppConfig, LazyDtsApp
-from lazyzephyr.dts.editors import SpecifierEditor
+from lazyzephyr.dts.editors import PickScreen, SpecifierEditor
 from lazyzephyr.dts.state import TargetChoice
 from lazyzephyr.dts.workspace import find_workspace
 
@@ -115,43 +115,134 @@ async def test_edit_property_dialog(workspace, tmp_path, monkeypatch):
                        in overlay.read_text())
 
 
-async def test_chosen_and_label_choices(workspace, tmp_path, monkeypatch):
+def make_app(workspace, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     ws = find_workspace(workspace)
-    app = LazyDtsApp(AppConfig(cwd=workspace / "app", workspace=ws,
-                               choice=TargetChoice(board="native_sim/native",
-                                                   app=str(workspace / "app")),
-                               work_dir=tmp_path / "work"))
+    return LazyDtsApp(AppConfig(cwd=workspace / "app", workspace=ws,
+                                choice=TargetChoice(board="native_sim/native",
+                                                    app=str(workspace / "app")),
+                                work_dir=tmp_path / "work"))
+
+
+def setting_ids(app):
+    props = app.query_one("#props")
+    return [props.get_option_at_index(i).id for i in range(props.option_count)]
+
+
+async def open_settings(app, pilot, path):
+    await wait_for(lambda: path in app.node_index)
+    app.reveal(path)
+    await wait_for(lambda: app.current_path == path)
+    app.tree.focus()
+    await pilot.press("enter")  # enter on a tree node goes to its settings
+    await wait_for(lambda: app.focused is app.query_one("#props"))
+
+
+def pick_row(app, row_id):
+    props = app.query_one("#props")
+    props.highlighted = setting_ids(app).index(row_id)
+
+
+async def test_chosen_and_label_choices(workspace, tmp_path, monkeypatch):
+    app = make_app(workspace, tmp_path, monkeypatch)
     overlay = workspace / "app" / "boards" / "native_sim.overlay"
     async with app.run_test(size=(180, 50)) as pilot:
-        await wait_for(lambda: "/chosen" in app.node_index)
         await wait_for(lambda: app.chosen_names)
-        app.tree.move_cursor(app.node_index["/chosen"])
-        props = app.query_one("#props")
-        await wait_for(lambda: props.option_count and app.current_path == "/chosen")
-        ids = [props.get_option_at_index(i).id for i in range(props.option_count)]
+        await open_settings(app, pilot, "/chosen")
+        ids = setting_ids(app)
         assert "zephyr,console" in ids and ids[-1] == "new:"
-        props.focus()
-        props.highlighted = ids.index("new:")
+        pick_row(app, "new:")
+        await pilot.press("enter")
+        await pilot.pause()
+        # First the name: Zephyr's chosen names are listed, the match is picked.
+        assert isinstance(app.screen, PickScreen)
+        await pilot.press(*"shell-u")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        # Then the node it points at, from the labels.
+        screen = app.screen
+        assert isinstance(screen, PickScreen) and screen.title_text == "zephyr,shell-uart"
+        await pilot.press(*"uart")
+        await pilot.pause()
+        await pilot.press("enter")
+        await wait_for(lambda: "zephyr,shell-uart = &uart0;" in overlay.read_text())
+
+
+async def test_settings_list(workspace, tmp_path, monkeypatch):
+    app = make_app(workspace, tmp_path, monkeypatch)
+    overlay = workspace / "app" / "boards" / "native_sim.overlay"
+    async with app.run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: any(p.startswith("/i2c@") for p in app.node_index))
+        i2c = next(p for p in app.node_index if p.startswith("/i2c@"))
+        await open_settings(app, pilot, i2c)
+        ids = setting_ids(app)
+        # Enabled first, the controller's own settings shown, generic ones under more.
+        assert ids[0] == "status" and "clock-frequency" in ids
+        assert "interrupts" not in ids and "more:" in ids and "add:" in ids
+        # space turns it off and on.
+        pick_row(app, "status")
+        await pilot.press("space")
+        await wait_for(lambda: 'status = "disabled";' in overlay.read_text())
+        await pilot.press("space")
+        await wait_for(lambda: 'status = "okay";' in overlay.read_text())
+        # Clock frequency offers the I2C speeds, by name and in Hz.
+        pick_row(app, "clock-frequency")
         await pilot.press("enter")
         await pilot.pause()
         screen = app.screen
-        # The name offers chosen entries from Zephyr's code.
-        await pilot.press(*"shell-u")
-        await pilot.pause()
-        assert screen.completer.display
+        assert isinstance(screen, PickScreen)
+        lst = screen.query_one("#pick-list")
+        first = str(lst.get_option_at_index(0).prompt)
+        assert first.startswith("I2C_BITRATE_STANDARD") and "100 kHz" in first
         await pilot.press("down", "enter")
-        name = screen.query_one("#edit-name", Input)
-        assert name.value == "zephyr,shell-uart"
-        # The value offers node labels.
+        await wait_for(lambda: "clock-frequency = <I2C_BITRATE_FAST>;" in overlay.read_text())
+        await wait_for(lambda: "400 kHz" in str(
+            app.query_one("#props").get_option_at_index(
+                setting_ids(app).index("clock-frequency")).prompt))
+        # Typing a number works too.
         await pilot.press("enter")
-        value = screen.query_one("#edit-value", Input)
-        assert screen.focused is value
-        await pilot.press(*"uart")
         await pilot.pause()
-        assert screen.completer.target is value and screen.completer.display
-        await pilot.press("down", "enter")
-        assert value.value.startswith("&uart")
-        chosen = value.value
-        await pilot.press("ctrl+s")
-        await wait_for(lambda: f"zephyr,shell-uart = {chosen};" in overlay.read_text())
+        await pilot.press(*"250000", "enter")
+        await wait_for(lambda: "clock-frequency = <250000>;" in overlay.read_text())
+        # d removes it, without asking (u undoes).
+        await pilot.press("d")
+        await wait_for(lambda: "clock-frequency" not in overlay.read_text())
+        await pilot.press("u")
+        await wait_for(lambda: "clock-frequency = <250000>;" in overlay.read_text())
+        # "more settings" shows the rest; esc goes back to the tree.
+        pick_row(app, "more:")
+        await pilot.press("enter")
+        await wait_for(lambda: "interrupts" in setting_ids(app))
+        await pilot.press("escape")
+        assert app.focused is app.tree
+
+
+async def test_enum_and_children(workspace, tmp_path, monkeypatch):
+    app = make_app(workspace, tmp_path, monkeypatch)
+    overlay = workspace / "app" / "boards" / "native_sim.overlay"
+    overlay.write_text(overlay.read_text() + """
+&i2c0 {
+	widget: widget@10 {
+		compatible = "vnd,widget";
+		reg = <0x10>;
+		mode = "fast";
+	};
+};
+""")
+    async with app.run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: any(p.endswith("/widget@10") for p in app.node_index))
+        i2c = next(p for p in app.node_index if p.startswith("/i2c@") and "/" not in p[1:])
+        await open_settings(app, pilot, i2c)
+        # The bus lists its devices; enter goes to one.
+        pick_row(app, f"node:{i2c}/widget@10")
+        await pilot.press("enter")
+        await wait_for(lambda: app.current_path == f"{i2c}/widget@10")
+        await wait_for(lambda: "mode" in setting_ids(app))
+        # An enum is a list to pick from.
+        pick_row(app, "mode")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, PickScreen)
+        await pilot.press(*"slo", "enter")
+        await wait_for(lambda: 'mode = "slow";' in overlay.read_text())

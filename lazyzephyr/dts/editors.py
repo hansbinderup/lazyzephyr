@@ -11,7 +11,8 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Input, OptionList, Select
+from textual.screen import ModalScreen
+from textual.widgets import Input, OptionList, Select, Static
 from textual.widgets.option_list import Option
 
 from . import macros
@@ -193,3 +194,123 @@ class SpecifierEditor(Vertical):
         rest = self.rows
         rest[min(i, len(rest) - 1)].query_one(Select).focus()
         return True
+
+
+class PickScreen(ModalScreen):
+    """Set a value by picking from a list or typing it.
+
+    Typing filters the list (and, when free text is allowed, offers what was
+    typed as the last row). up/down move through the list, enter sets the
+    highlighted row, esc cancels. `apply(value)` does the edit; the dialog
+    stays open with the error if it fails.
+    """
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, title: str, help: str, choices: Callable[[str], list[Choice]],
+                 apply: Callable[[str], object], value: str = "", free: bool = True,
+                 placeholder: str = "", word: bool = False):
+        """word: a choice replaces only the word being typed (`A | B` + macro)."""
+        super().__init__()
+        self.title_text, self.help = title, help
+        self.choices, self.apply, self.value = choices, apply, value
+        self.free, self.placeholder, self.word = free, placeholder, word
+        self.touched = False
+        self._rows: list[str | None] = []  # None: what was typed
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="pick-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = self.title_text
+            dialog.border_subtitle = ("type to search or enter a value · ↑↓ pick · "
+                                      "enter: set · esc: cancel" if self.free else
+                                      "type to search · ↑↓ pick · enter: set · esc: cancel")
+            if self.help:
+                yield Static(self.help, classes="hint", markup=False)
+            yield Input(value=self.value, placeholder=self.placeholder, id="pick-input")
+            yield OptionList(id="pick-list")
+            yield Static("", id="pick-error")
+
+    def on_mount(self) -> None:
+        self.refill()
+        inp = self.query_one("#pick-input", Input)
+        inp.focus()
+        # The current value is selected, so typing replaces it.
+        self.call_after_refresh(inp.select_all)
+
+    def _token(self, text: str) -> str:
+        if not self.touched:
+            return ""  # show every choice until something is typed
+        return token_before(text, len(text)) if self.word else text
+
+    def refill(self) -> None:
+        text = self.query_one("#pick-input", Input).value
+        lst = self.query_one("#pick-list", OptionList)
+        lst.clear_options()
+        self._rows = []
+        options = []
+        typed = text.strip()
+        for insert, display in self.choices(self._token(text))[:200]:
+            options.append(Option(display))
+            self._rows.append(insert)
+        # What was typed comes last, so enter takes the best match while there is
+        # one; with no match it is the only row.
+        if self.free and typed and typed not in self._rows:
+            t = Text("set to ", style="bright_black")
+            t.append(typed, style="bold")
+            options.append(Option(t))
+            self._rows.append(None)
+        lst.add_options(options)
+        lst.display = bool(options)
+        if options:
+            # Put the cursor on the current value when nothing is typed yet.
+            start = 0
+            if not self.touched and self.value:
+                start = next((i for i, r in enumerate(self._rows) if r == self.value), 0)
+            lst.highlighted = start
+
+    @on(Input.Changed, "#pick-input")
+    def changed(self, event: Input.Changed) -> None:
+        if event.value == self.value and not self.touched:
+            return  # the starting value arriving, not a keypress
+        self.touched = True
+        self.refill()
+
+    def on_key(self, event) -> None:
+        lst = self.query_one("#pick-list", OptionList)
+        if event.key in ("up", "down", "pageup", "pagedown") and lst.option_count:
+            event.stop()
+            {"up": lst.action_cursor_up, "down": lst.action_cursor_down,
+             "pageup": lst.action_page_up, "pagedown": lst.action_page_down}[event.key]()
+
+    @on(Input.Submitted, "#pick-input")
+    def submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        self.pick(self.query_one("#pick-list", OptionList).highlighted)
+
+    @on(OptionList.OptionSelected, "#pick-list")
+    def selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        self.pick(event.option_index)
+
+    def pick(self, index: int | None) -> None:
+        text = self.query_one("#pick-input", Input).value.strip()
+        if index is None or not 0 <= index < len(self._rows):
+            if not (self.free and text):
+                return
+            value = text
+        elif self._rows[index] is None:
+            value = text
+        elif self.word and self.touched:
+            value = text[:len(text) - len(token_before(text, len(text)))] + self._rows[index]
+        else:
+            value = self._rows[index]
+        result = self.apply(value)
+        ok = getattr(result, "ok", True)
+        if ok:
+            self.dismiss(result)
+        else:
+            self.query_one("#pick-error", Static).update(
+                Text(getattr(result, "message", "can't set that"), style="red"))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
