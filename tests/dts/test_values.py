@@ -1,6 +1,6 @@
 import pytest
 
-from lazydts.values import format_value, to_input
+from lazyzephyr.dts.values import format_value, to_input
 
 
 @pytest.mark.parametrize("type_,text,expected", [

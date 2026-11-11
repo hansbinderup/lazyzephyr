@@ -1,5 +1,5 @@
-from lazydts.session import Session
-from lazydts.workspace import find_board, find_workspace, inputs_for_board
+from lazyzephyr.dts.session import Session
+from lazyzephyr.dts.workspace import find_board, find_workspace, inputs_for_board
 
 
 def make(workspace, tmp_path):

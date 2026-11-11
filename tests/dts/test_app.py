@@ -2,9 +2,9 @@
 
 import asyncio
 
-from lazydts.app import AppConfig, LazyDtsApp
-from lazydts.state import TargetChoice
-from lazydts.workspace import find_workspace
+from lazyzephyr.dts.app import AppConfig, LazyDtsApp
+from lazyzephyr.dts.state import TargetChoice
+from lazyzephyr.dts.workspace import find_workspace
 
 
 async def wait_for(predicate, timeout=10.0):

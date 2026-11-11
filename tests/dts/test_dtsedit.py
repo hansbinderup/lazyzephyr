@@ -1,6 +1,6 @@
 import textwrap
 
-from lazydts import dtsedit
+from lazyzephyr.dts import dtsedit
 
 LABELS = {"i2c0": "/soc/i2c@100", "gpio0": "/soc/gpio@200", "uart0": "/soc/uart@300"}
 

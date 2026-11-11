@@ -1,7 +1,7 @@
-"""Entry point that isolates lazydts from a foreign PYTHONPATH.
+"""Entry point that isolates lazyzephyr from a foreign PYTHONPATH.
 
 Zephyr/west dev shells (e.g. `nix develop`) export a PYTHONPATH pointing at
-*their* interpreter's site-packages. When lazydts runs from its own
+*their* interpreter's site-packages. When lazyzephyr runs from its own
 environment, those entries can shadow its dependencies and break imports.
 
 This module must only import the standard library.
@@ -13,7 +13,7 @@ import sys
 
 def isolate_sys_path() -> None:
     pythonpath = os.environ.get("PYTHONPATH")
-    if not pythonpath or os.environ.get("LAZYDTS_KEEP_PYTHONPATH"):
+    if not pythonpath or os.environ.get("LAZYZEPHYR_KEEP_PYTHONPATH"):
         return
     foreign = {os.path.realpath(p) for p in pythonpath.split(os.pathsep) if p}
     sys.path[:] = [p for p in sys.path if os.path.realpath(p or os.curdir) not in foreign]
@@ -21,7 +21,7 @@ def isolate_sys_path() -> None:
 
 def main() -> None:
     isolate_sys_path()
-    from lazydts.cli import main as cli_main
+    from lazyzephyr.cli import main as cli_main
 
     cli_main()
 

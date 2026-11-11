@@ -12,7 +12,7 @@ def write(path: Path, content: str) -> Path:
 
 
 def _zephyr_base() -> Path | None:
-    for env in ("LAZYDTS_TEST_ZEPHYR_BASE", "ZEPHYR_BASE"):
+    for env in ("LAZYZEPHYR_TEST_ZEPHYR_BASE", "ZEPHYR_BASE"):
         value = os.environ.get(env)
         if value and (Path(value) / "scripts" / "dts" / "python-devicetree").is_dir():
             return Path(value).resolve()
@@ -23,7 +23,7 @@ def _zephyr_base() -> Path | None:
 def zephyr_base() -> Path:
     base = _zephyr_base()
     if base is None:
-        pytest.skip("needs a Zephyr tree: set LAZYDTS_TEST_ZEPHYR_BASE or ZEPHYR_BASE")
+        pytest.skip("needs a Zephyr tree: set LAZYZEPHYR_TEST_ZEPHYR_BASE or ZEPHYR_BASE")
     return base
 
 

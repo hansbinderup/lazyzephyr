@@ -32,7 +32,7 @@ class Session:
     def __init__(self, ws: Workspace, inputs: DtInputs, work_dir: Path | None = None):
         self.ws = ws
         self.inputs = inputs
-        self.work_dir = work_dir or Path(tempfile.mkdtemp(prefix="lazydts-"))
+        self.work_dir = work_dir or Path(tempfile.mkdtemp(prefix="lazyzephyr-dts-"))
         self.model: Model | None = None
         self.error: str | None = None
         self.undo_stack: list[list[tuple[Path, str | None]]] = []

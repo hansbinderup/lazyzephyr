@@ -1,0 +1,25 @@
+*** Booting Zephyr OS build 4.3.0 ***
+Running TESTSUITE demo_suite
+===================================================================
+START - test_fails
+
+    Assertion failed at CMAKE_SOURCE_DIR/src/main.c:12: demo_suite_test_fails: (value not equal to 3)
+value was 2
+ FAIL - test_fails in 0.000 seconds
+===================================================================
+START - test_passes
+ PASS - test_passes in 0.000 seconds
+===================================================================
+TESTSUITE demo_suite failed.
+
+------ TESTSUITE SUMMARY START ------
+
+SUITE FAIL -  50.00% [demo_suite]: pass = 1, fail = 1, skip = 0, total = 2 duration = 0.000 seconds
+ - FAIL - [demo_suite.test_fails] duration = 0.000 seconds
+ - PASS - [demo_suite.test_passes] duration = 0.000 seconds
+
+------ TESTSUITE SUMMARY END ------
+
+===================================================================
+RunID: 7d43326a45240ced5be7652a281915fd
+PROJECT EXECUTION FAILED

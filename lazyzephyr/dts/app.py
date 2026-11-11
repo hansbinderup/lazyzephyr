@@ -1,4 +1,4 @@
-"""The lazydts Textual application."""
+"""The devicetree tab: browse and edit a target's devicetree."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from .catalog import BindingInfo
 from .model import import_edtlib
 from .session import EditResult, Session
 from .state import TargetChoice, save_choice
+from ..view import COMMON_CSS, ForwardActions, View
 from .workspace import (Board, DtInputs, Workspace, find_board, find_boards, find_build_dirs,
                         inputs_for_board, inputs_from_build)
 
@@ -67,12 +68,12 @@ def rel(path: Path | str, base: Path) -> str:
 # --------------------------------------------------------------------------
 
 
-class NodeTree(Tree[str]):
+class NodeTree(ForwardActions, Tree[str]):
     BINDINGS = [
-        Binding("a", "app.add_node", "Add node"),
-        Binding("s", "app.toggle_status", "okay/disabled"),
-        Binding("d", "app.delete_node", "Delete"),
-        Binding("o", "app.open_editor", "Open"),
+        Binding("a", "add_node", "Add node"),
+        Binding("s", "toggle_status", "okay/disabled"),
+        Binding("d", "delete_node", "Delete"),
+        Binding("o", "open_editor", "Open"),
         Binding("j", "cursor_down", show=False),
         Binding("k", "cursor_up", show=False),
         Binding("l,right", "expand", show=False),
@@ -98,11 +99,11 @@ class NodeTree(Tree[str]):
             self.move_cursor(node.parent)
 
 
-class PropList(OptionList):
+class PropList(ForwardActions, OptionList):
     BINDINGS = [
-        Binding("enter,e", "app.edit_prop", "Edit"),
-        Binding("d", "app.delete_prop", "Remove"),
-        Binding("o", "app.open_editor", "Open"),
+        Binding("enter,e", "edit_prop", "Edit"),
+        Binding("d", "delete_prop", "Remove"),
+        Binding("o", "open_editor", "Open"),
         Binding("j", "cursor_down", show=False),
         Binding("k", "cursor_up", show=False),
     ]
@@ -116,8 +117,8 @@ class ScrollPanel(VerticalScroll):
     ALLOW_MAXIMIZE = True
 
 
-class FilterInput(Input):
-    BINDINGS = [Binding("escape", "app.clear_filter", "Clear filter")]
+class FilterInput(ForwardActions, Input):
+    BINDINGS = [Binding("escape", "clear_filter", "Clear filter")]
 
 
 # --------------------------------------------------------------------------
@@ -140,7 +141,7 @@ class ConfirmScreen(ModalScreen[bool]):
         self.title_text, self.message = title, message
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="confirm-dialog", classes="panel dialog") as dialog:
+        with Vertical(id="dts-confirm-dialog", classes="panel dialog") as dialog:
             dialog.border_title = self.title_text
             dialog.border_subtitle = "y: yes · n: no"
             yield Static(self.message)
@@ -180,8 +181,8 @@ again. If it no longer parses, the file is put back and the error is shown.
 """
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="help-dialog", classes="panel dialog") as dialog:
-            dialog.border_title = "lazydts help"
+        with VerticalScroll(id="dts-help-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = "Devicetree help"
             yield Static(self.TEXT)
 
     def action_dismiss_help(self) -> None:
@@ -743,35 +744,21 @@ class NodeFormScreen(ModalScreen[EditResult | None]):
 # --------------------------------------------------------------------------
 
 
-class LazyDtsApp(App):
-    TITLE = "lazydts"
-    CSS = """
-    Screen { layout: vertical; }
-    #main { layout: horizontal; height: 1fr; }
-    .panel {
-        border: round $panel-lighten-2;
-        border-title-color: $text-muted;
-        border-subtitle-color: $text-muted;
-        background: $surface;
-    }
-    .panel:focus, .panel:focus-within {
-        border: round $success;
-        border-title-color: $success;
-        border-title-style: bold;
-    }
-    #left { width: 45%; min-width: 40; }
-    #right { width: 1fr; }
-    #tree { border: none; background: $surface; padding: 0; }
-    #filter { display: none; border: none; height: 1; padding: 0 1; }
-    #filter.visible { display: block; }
-    #details-panel { height: 45%; padding: 0 1; }
-    #props { height: 1fr; border: round $panel-lighten-2; background: $surface; }
-    #props:focus { border: round $success; }
-    #statusbar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
+DTS_CSS = """
+    DtsView #main { layout: horizontal; height: 1fr; }
+    DtsView #left { width: 45%; min-width: 40; }
+    DtsView #right { width: 1fr; }
+    DtsView #tree { border: none; background: $surface; padding: 0; }
+    DtsView #filter { display: none; border: none; height: 1; padding: 0 1; }
+    DtsView #filter.visible { display: block; }
+    DtsView #details-panel { height: 45%; padding: 0 1; }
+    DtsView #props { height: 1fr; border: round $panel-lighten-2; background: $surface; }
+    DtsView #props:focus { border: round $success; }
+    DtsView #statusbar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
     .dialog { width: 100; max-width: 95%; height: auto; max-height: 90%; padding: 1 2; }
     ConfirmScreen, HelpScreen, FileScreen, TargetScreen, EditScreen, AddScreen,
     NodeFormScreen { align: center middle; }
-    #confirm-dialog { width: 70; }
+    #dts-confirm-dialog { width: 70; }
     #target-dialog, #add-dialog { height: 90%; }
     #add-dialog { width: 140; }
     #target-list, #file-list { height: 1fr; margin: 1 0; min-height: 5; }
@@ -786,13 +773,15 @@ class LazyDtsApp(App):
     .sources { margin-top: 1; }
     #edit-error, #form-error { margin-top: 1; }
 
-    Screen.-portrait #main { layout: vertical; }
-    Screen.-portrait #left, Screen.-portrait #right { width: 100%; min-width: 0; }
-    Screen.-portrait #left { height: 45%; }
+    DtsView.-portrait #main { layout: vertical; }
+    DtsView.-portrait #left, DtsView.-portrait #right { width: 100%; min-width: 0; }
+    DtsView.-portrait #left { height: 45%; }
     """
 
+
+class DtsView(View):
+
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
         Binding("question_mark", "help", "Help"),
         Binding("slash", "filter", "Filter"),
         Binding("w", "pick_file", "Write to"),
@@ -802,8 +791,8 @@ class LazyDtsApp(App):
         Binding("z", "maximize", "Zoom", show=False),
     ]
 
-    def __init__(self, config: AppConfig):
-        super().__init__()
+    def __init__(self, config: AppConfig, **kwargs):
+        super().__init__(**kwargs)
         self.config = config
         self.ws = config.workspace
         self.choice = config.choice
@@ -833,21 +822,28 @@ class LazyDtsApp(App):
                 props.border_title = "Properties"
                 yield props
         yield Static("", id="statusbar")
-        yield Footer()
 
     @property
     def tree(self) -> NodeTree:
         return self.query_one("#tree", NodeTree)
 
     def on_resize(self, event) -> None:
-        self.screen.set_class(event.size.width < 110, "-portrait")
+        self.set_class(event.size.width < 110, "-portrait")
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._poll_changes)
         if self.choice and not self.config.pick_target:
             self.open_target(self.choice)
         else:
+            # Asked once the tab is shown (see activated()).
+            self._ask_target = True
+
+    def activated(self) -> None:
+        if getattr(self, "_ask_target", False):
+            self._ask_target = False
             self.action_pick_target()
+        elif self.focused is None or self not in self.focused.ancestors:
+            self.tree.focus()
 
     # -- target ----------------------------------------------------------
 
@@ -890,7 +886,8 @@ class LazyDtsApp(App):
             if choice:
                 self.open_target(choice)
             elif self.session is None:
-                self.exit()
+                self.query_one("#details", Static).update(
+                    "No target. Press t to pick a board or build directory.")
         self.push_screen(TargetScreen(self.ws, self.config.cwd, self.choice), done)
 
     # -- tree ------------------------------------------------------------
@@ -1299,3 +1296,31 @@ class LazyDtsApp(App):
             widget = widget.parent
         if widget is not None:
             self.screen.maximize(widget)
+
+
+class LazyDtsApp(App):
+    """The devicetree tab on its own (used by the tests)."""
+
+    CSS = COMMON_CSS + DTS_CSS
+    BINDINGS = [Binding("q", "quit", "Quit")]
+
+    def __init__(self, config: AppConfig):
+        super().__init__()
+        self.view = DtsView(config, id="dts")
+
+    def compose(self) -> ComposeResult:
+        yield self.view
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self.view.activated)
+
+    @property
+    def tree(self):
+        return self.view.tree
+
+    def __getattr__(self, name: str):
+        view = self.__dict__.get("view")
+        if view is not None and not name.startswith("_"):
+            return getattr(view, name)
+        raise AttributeError(name)

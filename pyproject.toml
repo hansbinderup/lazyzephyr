@@ -3,13 +3,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lazydts"
+name = "lazyzephyr"
 version = "0.1.0"
-description = "lazygit-style TUI for Zephyr devicetrees in west workspaces"
+description = "lazygit-style TUI for Zephyr: twister tests and the devicetree"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "textual>=1.0",
+    "watchfiles>=0.21",
     "PyYAML>=6.0",
 ]
 
@@ -17,10 +18,10 @@ dependencies = [
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 
 [project.scripts]
-lazydts = "lazydts.launcher:main"
+lazyzephyr = "lazyzephyr.launcher:main"
 
 [tool.setuptools]
-packages = ["lazydts"]
+packages = ["lazyzephyr", "lazyzephyr.dts", "lazyzephyr.twister"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

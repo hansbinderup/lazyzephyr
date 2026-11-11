@@ -1,6 +1,6 @@
 west-commands:
-  - file: lazydts/west_ext.py
+  - file: lazyzephyr/west_ext.py
     commands:
-      - name: lazydts
-        class: LazyDtsCommand
-        help: lazygit-style TUI for the devicetree
+      - name: lazyzephyr
+        class: LazyZephyrCommand
+        help: lazygit-style TUI for twister tests and the devicetree

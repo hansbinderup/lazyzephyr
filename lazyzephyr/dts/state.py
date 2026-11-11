@@ -27,7 +27,7 @@ class TargetChoice:
 
 def state_file() -> Path:
     base = os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache"
-    return Path(base) / "lazydts" / "targets.json"
+    return Path(base) / "lazyzephyr" / "targets.json"
 
 
 def _load() -> dict:
