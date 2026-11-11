@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -13,18 +15,20 @@ from .dts.app import AppConfig as DtsConfig
 from .twister.app import TWISTER_CSS, TwisterView
 from .twister.app import AppConfig as TwisterConfig
 from .dts.state import TargetChoice
+from .kconfig.app import KCONFIG_CSS, KconfigView
+from .kconfig.app import AppConfig as KconfigConfig
 from .view import COMMON_CSS, View
 
-TABS = ("build", "dts", "tests")
+TABS = ("build", "dts", "tests", "kconfig")
 
 
 class LazyZephyrApp(App):
     TITLE = "lazyzephyr"
-    CSS = COMMON_CSS + TWISTER_CSS + DTS_CSS + BUILD_CSS + """
+    CSS = COMMON_CSS + TWISTER_CSS + DTS_CSS + BUILD_CSS + KCONFIG_CSS + """
     #tabs { height: 1fr; }
     #tabs > ContentSwitcher { height: 1fr; }
     #tabs TabPane { padding: 0; height: 1fr; }
-    TwisterView, DtsView, BuildView { height: 1fr; }
+    TwisterView, DtsView, BuildView, KconfigView { height: 1fr; }
     .tab-error { padding: 1 2; color: $error; }
     """
 
@@ -35,6 +39,7 @@ class LazyZephyrApp(App):
         Binding("f1", "show_tab('build')", show=False),
         Binding("f2", "show_tab('dts')", show=False),
         Binding("f3", "show_tab('tests')", show=False),
+        Binding("f4", "show_tab('kconfig')", show=False),
     ]
 
     def __init__(self, twister: TwisterConfig, dts: DtsConfig | None, tab: str = "build",
@@ -62,6 +67,15 @@ class LazyZephyrApp(App):
                                  classes="tab-error")
             with TabPane("Tests", id="tests"):
                 yield TwisterView(self.twister_config, id="twister")
+            with TabPane("Kconfig", id="kconfig"):
+                if self.dts_config is not None:
+                    choice = self.dts_config.choice
+                    build = Path(choice.build_dir) if choice and choice.build_dir else None
+                    yield KconfigView(KconfigConfig(self.dts_config.cwd,
+                                                    self.dts_config.workspace, build),
+                                      id="kconfig-view")
+                else:
+                    yield Static(f"Kconfig unavailable: {self.dts_error}", classes="tab-error")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -98,6 +112,16 @@ class LazyZephyrApp(App):
     def action_request_quit(self) -> None:
         # Asks first while twister jobs are running, whichever tab is shown.
         self.twister.action_request_quit()
+
+    def open_in_kconfig(self, build_dir) -> None:
+        """Show an existing build in the Kconfig tab (used by the Build tab)."""
+        view = self.view("kconfig")
+        if view is None:
+            self.notify("the Kconfig tab is unavailable", severity="error")
+            return
+        self.tabs.active = "kconfig"
+        view._asked = True
+        view.open_build(Path(build_dir))
 
     def open_in_dts(self, build_dir) -> None:
         """Show an existing build in the Devicetree tab (used by the Build tab)."""

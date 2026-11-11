@@ -56,6 +56,7 @@ ACTIONS = [
     ("debugserver", "Debug server (west debugserver)", "job"),
     ("rtt", "RTT console (west rtt)", "terminal"),
     ("dts", "Open the build in the Devicetree tab", "app"),
+    ("kconfig", "Open the build in the Kconfig tab", "app"),
     ("delete_dir", "Delete the build directory", "app"),
 ]
 ACTION_LABEL = {k: label for k, label, _ in ACTIONS}
@@ -96,6 +97,7 @@ class ConfigList(ForwardActions, OptionList):
         Binding("F", "do('build_flash')", "Build+flash"),
         Binding("m", "do('menuconfig')", "menuconfig", show=False),
         Binding("t", "do('dts')", "Devicetree", show=False),
+        Binding("K", "do('kconfig')", "Kconfig", show=False),
         Binding("n", "new_config", "New"),
         Binding("e", "edit_config", "Edit"),
         Binding("c", "copy_config", "Copy", show=False),
@@ -1006,6 +1008,8 @@ class BuildView(View):
                 self._terminal(runner_cmd(ws, cfg, action))
         elif action == "dts":
             self.open_in_dts(cfg)
+        elif action == "kconfig":
+            self.open_in_kconfig(cfg)
         elif action == "delete_dir":
             self.delete_build_dir(cfg)
 
@@ -1018,6 +1022,18 @@ class BuildView(View):
         opener = getattr(self.app, "open_in_dts", None)
         if opener is None:
             self.notify("no Devicetree tab here", severity="warning")
+            return
+        opener(d)
+
+    def open_in_kconfig(self, cfg: BuildConfig) -> None:
+        d = dts_build_dir(build_dir(self.ws, cfg))
+        if not (d / "build_info.yml").is_file():
+            self.notify("build it first: the Kconfig tab reads the build directory",
+                        severity="warning")
+            return
+        opener = getattr(self.app, "open_in_kconfig", None)
+        if opener is None:
+            self.notify("no Kconfig tab here", severity="warning")
             return
         opener(d)
 
