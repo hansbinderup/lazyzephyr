@@ -211,3 +211,56 @@ def test_key_bytes():
     assert key_bytes(events.Key("enter", "\r")) == b"\r"
     assert _color("brightbrown") == "bright_yellow" and _color("ff8800") == "#ff8800"
     assert _color("default") is None
+
+
+async def test_monitor_select_and_copy():
+    """Dragging selects monitor text; ctrl+c copies it instead of reaching the device."""
+    from textual.app import App
+    from textual.geometry import Offset
+    from textual.selection import Selection
+
+    from lazyzephyr.builder.monitor import MonitorTerminal
+
+    class TermApp(App):
+        def compose(self):
+            yield MonitorTerminal()
+
+    app = TermApp()
+    async with app.run_test(size=(40, 4)) as pilot:
+        term = app.query_one(MonitorTerminal)
+        term.focus()
+        sent = []
+
+        class FakeProcess:
+            running = True
+
+            def write(self, data):
+                sent.append(data)
+
+            def close(self):
+                pass
+        term.process = FakeProcess()
+        term._output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive")
+        await pilot.pause()
+        scrolled = term.screen_.scrolled
+        assert scrolled == 1  # "one" is in the history
+        await pilot.mouse_down(term, offset=(1, 0))
+        await pilot.hover(term, offset=(2, 2))
+        await pilot.mouse_up(term, offset=(2, 2))
+        await pilot.pause()
+        assert app.screen.get_selected_text() == "wo\nthree\nfou"
+        # More output scrolls the screen; the selection stays on the same text.
+        term._output(b"\r\nsix")
+        await pilot.pause()
+        assert app.screen.get_selected_text() == "wo\nthree\nfou"
+        # A selection reaching back into history.
+        app.screen.selections = {term: Selection.from_offsets(
+            Offset(0, scrolled - 1), Offset(3, scrolled))}
+        assert app.screen.get_selected_text() == "one\ntwo"
+        copied = []
+        app.copy_to_clipboard = copied.append
+        await pilot.press("ctrl+c")
+        assert copied == ["one\ntwo"] and sent == []
+        assert term.text_selection is None
+        await pilot.press("ctrl+c")  # nothing selected: ctrl+c goes to the device
+        assert sent == [b"\x03"]

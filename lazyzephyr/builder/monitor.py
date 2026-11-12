@@ -2,7 +2,8 @@
 
 The command runs in a pseudo terminal; pyte keeps the screen and Textual draws it.
 While the terminal has focus every key goes to the command, except LEAVE_KEY
-(back to the configs, the command keeps running), FULLSCREEN_KEY and CLOSE_KEY.
+(back to the configs, the command keeps running), FULLSCREEN_KEY and CLOSE_KEY,
+and ctrl+c while text is selected with the mouse (it copies the text instead).
 They are ctrl keys that serial consoles (Zephyr's shell, tio, west espressif
 monitor) leave alone, and that get through tmux and every terminal.
 """
@@ -29,6 +30,7 @@ from textual import events
 from textual.binding import Binding
 from textual.geometry import Size
 from textual.message import Message
+from textual.selection import Selection
 from textual.strip import Strip
 from textual.widget import Widget
 
@@ -96,6 +98,7 @@ class TermScreen(pyte.Screen):
 
     def __init__(self, columns: int, lines: int, reply: Callable[[str], None]):
         self.scrollback: deque = deque(maxlen=SCROLLBACK)
+        self.scrolled = 0        # lines ever scrolled off the top
         self._reply = reply
         super().__init__(columns, lines)
 
@@ -103,10 +106,25 @@ class TermScreen(pyte.Screen):
         top, bottom = self.margins or pyte.screens.Margins(0, self.lines - 1)
         if self.cursor.y == bottom and top == 0:
             self.scrollback.append(self.buffer[0])
+            self.scrolled += 1
         super().index()
 
     def write_process_input(self, data: str) -> None:
         self._reply(data)
+
+    def line_at(self, row: int):
+        """Row `row` of the screen; negative rows are history (-1 the newest)."""
+        if row < 0:
+            index = len(self.scrollback) + row
+            return self.scrollback[index] if 0 <= index < len(self.scrollback) else None
+        return self.buffer[row] if row < self.lines else None
+
+    def line_text(self, row: int) -> str:
+        line = self.line_at(row)
+        if not line:
+            return ""
+        return "".join((line[x].data if x in line else " ") or ""
+                       for x in range(self.columns)).rstrip()
 
 
 class MonitorProcess:
@@ -349,15 +367,18 @@ class MonitorTerminal(Widget, can_focus=True):
     def render_line(self, y: int) -> Strip:
         screen = self.screen_
         width = self.content_size.width
-        history = screen.scrollback
         row = y - self.scroll
-        if row < 0:
-            index = len(history) + row
-            line = history[index] if 0 <= index < len(history) else {}
-        elif row < screen.lines:
-            line = screen.buffer[row]
-        else:
+        if row >= screen.lines:
             return Strip.blank(width)
+        line = screen.line_at(row) or {}
+        # Selections use absolute line numbers, so they stay put as output scrolls.
+        absolute = screen.scrolled + row
+        span = None
+        if self.text_selection is not None:
+            span = self.text_selection.get_span(absolute)
+            if span is not None:
+                span = (span[0], screen.columns if span[1] == -1 else span[1])
+                selected = self.screen.get_component_rich_style("screen--selection")
         show_cursor = (self.has_focus and self.scroll == 0 and row == screen.cursor.y
                        and not screen.cursor.hidden)
         segments = []
@@ -372,6 +393,8 @@ class MonitorTerminal(Widget, can_focus=True):
                                 ch.strikethrough, ch.reverse)
             if show_cursor and x == screen.cursor.x:
                 st = st + Style(reverse=not st.reverse)
+            if span is not None and span[0] <= x < span[1]:
+                st = st + selected
             if st is not style and text:
                 segments.append(Segment("".join(text), style))
                 text = []
@@ -379,7 +402,28 @@ class MonitorTerminal(Widget, can_focus=True):
             text.append(data)
         if text:
             segments.append(Segment("".join(text), style))
-        return Strip(segments).adjust_cell_length(width).apply_style(self.rich_style)
+        strip = Strip(segments).adjust_cell_length(width).apply_style(self.rich_style)
+        return strip.apply_offsets(0, absolute)
+
+    # -- mouse selection (Textual drives it: drag selects, ctrl+c copies) --
+
+    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+        screen = self.screen_
+        first = screen.scrolled - len(screen.scrollback)
+        last = screen.scrolled + screen.lines - 1
+        start = max(selection.start.y if selection.start else first, first)
+        end = min(selection.end.y if selection.end else last, last)
+        lines = []
+        for absolute in range(start, end + 1):
+            span = selection.get_span(absolute)
+            if span is None:
+                continue
+            text = screen.line_text(absolute - screen.scrolled)
+            lines.append(text[span[0]:] if span[1] == -1 else text[span[0]:span[1]])
+        return "\n".join(lines).rstrip("\n"), "\n"
+
+    def selection_updated(self, selection: Selection | None) -> None:
+        self.refresh()
 
     def on_focus(self) -> None:
         self.refresh()
@@ -400,6 +444,11 @@ class MonitorTerminal(Widget, can_focus=True):
         own = OWN_KEYS.get(event.key)
         if own is not None:
             getattr(self, f"action_{own}")()
+            return
+        if event.key == "ctrl+c" and self.text_selection is not None:
+            self.screen.action_copy_text()
+            self.screen.clear_selection()
+            self.app.notify("Copied to the clipboard", timeout=2)
             return
         if event.key == "shift+pageup":
             self._scroll_by(max(self.content_size.height - 1, 1))
