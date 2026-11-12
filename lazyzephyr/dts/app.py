@@ -109,6 +109,7 @@ class PropList(ForwardActions, OptionList):
     BINDINGS = [
         Binding("enter,e", "edit_prop", "Change"),
         Binding("space", "toggle_prop", "On/off"),
+        Binding("i", "info", "Info"),
         Binding("d", "delete_prop", "Remove"),
         Binding("a", "add_node", "Add node"),
         Binding("o", "open_editor", "Open file"),
@@ -182,6 +183,8 @@ class HelpScreen(ModalScreen[None]):
 [b]Settings[/b]
   enter              change the setting: pick from the list or type a value
   space              switch on/off settings (and Enabled)
+  i                  details: type, allowed values, where it is set, macros you
+                     can use, and an overlay snippet (y copies it)
   d                  remove the value (the board's value applies again)
   a                  add a node here
   esc                back to the tree
@@ -556,6 +559,35 @@ class EditScreen(ModalScreen[EditResult | None]):
         self.dismiss(None)
 
 
+class InfoScreen(ModalScreen[None]):
+    """A read-only card about one property: what it is, what it may be, where
+    it is set, and a snippet to put in an overlay."""
+
+    BINDINGS = [
+        Binding("escape,enter,q", "close", "Close"),
+        Binding("y", "copy", "Copy snippet"),
+    ]
+
+    def __init__(self, title: str, body: Text, snippet: str | None):
+        super().__init__()
+        self.title_text, self.body, self.snippet = title, body, snippet
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="info-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = self.title_text
+            dialog.border_subtitle = ("y: copy the overlay snippet · esc: close"
+                                      if self.snippet else "esc: close")
+            yield Static(self.body)
+
+    def action_copy(self) -> None:
+        if self.snippet:
+            self.app.copy_to_clipboard(self.snippet)
+            self.notify("copied the overlay snippet", timeout=3)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class AddScreen(ModalScreen[BindingInfo | None]):
     """Search every binding, pick one to add under the selected node."""
 
@@ -858,7 +890,8 @@ DTS_CSS = """
     DtsView #statusbar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
     .dialog { width: 100; max-width: 95%; height: auto; max-height: 90%; padding: 1 2; }
     ConfirmScreen, HelpScreen, FileScreen, TargetScreen, EditScreen, AddScreen,
-    NodeFormScreen, ProblemsScreen, PickScreen { align: center middle; }
+    NodeFormScreen, ProblemsScreen, PickScreen, InfoScreen { align: center middle; }
+    #info-dialog { width: 110; height: auto; max-height: 90%; }
     #problems-dialog { width: 130; height: auto; max-height: 80%; }
     #problems-list { height: auto; max-height: 30; margin-top: 1; }
     #dts-confirm-dialog { width: 70; }
@@ -1223,6 +1256,8 @@ class DtsView(View):
             file = self._file_for(path, row.id if row.kind != "status" else None)
             if file:
                 text += f"  ·  changes go to {rel(file, self.ws.topdir)}"
+        if row and row.kind in ("prop", "status", "readonly"):
+            text += "  ·  i: details"
         self.query_one("#prop-help", Static).update(Text(text))
 
     # -- status ----------------------------------------------------------
@@ -1560,6 +1595,24 @@ class DtsView(View):
                                     "First the name, then the node it points at.", choices,
                                     named, placeholder="e.g. zephyr,console" if chosen
                                     else "e.g. led0"), then)
+
+    def action_info(self) -> None:
+        """i: the reference card for the highlighted property."""
+        row, path, s = self._row(), self.current_path, self.session
+        if row is None or not s or not path:
+            return
+        name = {"status": "status", "prop": row.id,
+                "readonly": row.id[3:]}.get(row.kind)
+        if name is None:
+            self.notify("pick a property to see its details", severity="warning")
+            return
+        node = s.node(path)
+        spec = s.spec(node, name)
+        snippet = settings.example(s, node, name, spec) if spec is not None else None
+        self.push_screen(InfoScreen(settings.friendly(name),
+                                    settings.prop_info(s, node, name,
+                                                       lambda f: rel(f, self.ws.topdir)),
+                                    snippet))
 
     def action_delete_prop(self) -> None:
         row, path, s = self._row(), self.current_path, self.session

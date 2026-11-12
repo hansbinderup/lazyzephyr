@@ -4,7 +4,7 @@ import asyncio
 
 from textual.widgets import Input
 
-from lazyzephyr.dts.app import AppConfig, LazyDtsApp, prop_id
+from lazyzephyr.dts.app import AppConfig, InfoScreen, LazyDtsApp, prop_id
 from lazyzephyr.dts.editors import PickScreen, SpecifierEditor
 from lazyzephyr.dts.state import TargetChoice
 from lazyzephyr.dts.workspace import find_workspace
@@ -270,3 +270,55 @@ async def test_add_node_with_odd_property_names(workspace, tmp_path, monkeypatch
         await wait_for(lambda: "expander@20 {" in overlay.read_text())
         text = overlay.read_text()
         assert "#gpio-cells = <2>;" in text and 'vnd,mode = "a";' in text
+
+
+async def test_reference_card(workspace, tmp_path, monkeypatch):
+    app = make_app(workspace, tmp_path, monkeypatch)
+    overlay = workspace / "app" / "boards" / "native_sim.overlay"
+    overlay.write_text(overlay.read_text() + """
+&i2c0 {
+	widget: widget@10 {
+		compatible = "vnd,widget";
+		reg = <0x10>;
+		mode = "fast";
+	};
+};
+""")
+    before = overlay.read_text()
+    async with app.run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: any(p.endswith("/widget@10") for p in app.node_index))
+        i2c = next(p for p in app.node_index if p.startswith("/i2c@") and "/" not in p[1:])
+        await open_settings(app, pilot, i2c)
+        # i opens the card: the macros that fit, and an overlay snippet y copies.
+        pick_row(app, "clock-frequency")
+        await pilot.press("i")
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, InfoScreen)
+        card = screen.body.plain
+        assert "Macros you can use" in card and "I2C_BITRATE_FAST" in card and "400 kHz" in card
+        assert "&i2c0 {" in screen.snippet and "clock-frequency = " in screen.snippet
+        await pilot.press("y")
+        assert app.clipboard == screen.snippet
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, InfoScreen)
+        # An enum lists its allowed values and where it is set.
+        await open_settings(app, pilot, f"{i2c}/widget@10")
+        pick_row(app, "mode")
+        await pilot.press("i")
+        await pilot.pause()
+        card = app.screen.body.plain
+        assert "Allowed values" in card and "slow" in card and "native_sim.overlay:" in card
+        await pilot.press("escape")
+        # gpios: its format and the GPIO flags.
+        await open_settings(app, pilot, "/leds/led_0")
+        pick_row(app, "gpios")
+        await pilot.press("i")
+        await pilot.pause()
+        card = app.screen.body.plain
+        assert "<&controller pin flags>" in card and "GPIO_ACTIVE_LOW" in card
+        assert "gpios = <&gpio0 0 0>;" in app.screen.snippet
+        await pilot.press("escape")
+        # Looking changes nothing.
+        assert overlay.read_text() == before

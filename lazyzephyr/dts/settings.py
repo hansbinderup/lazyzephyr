@@ -276,3 +276,148 @@ def chosen_choices(names: set[str], used: set[str], token: str) -> list[tuple[st
         out.append((name in used, not name.startswith(want), name, t))
     out.sort(key=lambda c: c[:2])
     return [(name, t) for *_, name, t in out]
+
+
+# --------------------------------------------------------------------------
+# The reference card for one property
+# --------------------------------------------------------------------------
+
+
+def example_value(session, node, name: str, spec) -> str | None:
+    """A DTS right-hand side to start from: the current value, else something
+    the binding allows. None for booleans (`name;`)."""
+    from . import specifiers
+    raw = source_text(session, node.path, name)
+    if raw is not None:
+        return raw
+    type_ = spec.type if spec else None
+    if type_ == "boolean":
+        return None
+    first = spec.enum[0] if spec is not None and spec.enum else None
+    default = spec.default if spec is not None else None
+    pick = first if first is not None else default
+    if type_ in ("string", "string-array"):
+        return f'"{pick}"' if pick is not None else '"..."'
+    if type_ == "int":
+        return f"<{pick}>" if pick is not None else "<0>"
+    if type_ == "array":
+        return "<" + " ".join(map(str, default)) + ">" if isinstance(default, list) else "<0>"
+    if type_ in ("phandle", "phandles"):
+        return "<&node>"
+    if type_ == "path":
+        return "&node"
+    if type_ == "phandle-array":
+        ctrls = specifiers.controllers(session.model.edt, specifiers.space(name, spec))
+        if ctrls:
+            c = ctrls[0]
+            return "<" + " ".join([c.ref, *(cell.upper().replace(" ", "_")
+                                             for cell in c.cells)]) + ">"
+        return "<&controller ...>"
+    if type_ == "uint8-array":
+        return "[00]"
+    return "..."
+
+
+def example(session, node, name: str, spec) -> str:
+    """An overlay snippet that sets the property on this node."""
+    from .dtsedit import node_ref
+    value = example_value(session, node, name, spec)
+    line = f"{name};" if value is None else f"{name} = {value};"
+    return f"{node_ref(node.path, list(node.labels))} {{\n\t{line}\n}};"
+
+
+def prop_info(session, node, name: str, base_name=lambda p: p.name) -> Text:
+    """Everything worth knowing about one property, for writing it by hand."""
+    from . import macros, specifiers
+    spec = session.spec(node, name)
+    t = Text()
+    t.append(name, style="bold")
+    if spec is None:
+        t.append("\n\nNot in the node's binding: Zephyr won't check or use it.\n",
+                 style="bright_black")
+        prop = node._node.props.get(name)
+        if prop is not None:
+            t.append(f"\nValue: {_raw(prop)}\n")
+        return t
+    facts = [spec.type]
+    if spec.required:
+        facts.append("required")
+    if spec.deprecated:
+        facts.append("deprecated")
+    t.append("\n" + " · ".join(facts), style="bright_black")
+    desc = (spec.description or "").strip()
+    if desc:
+        t.append("\n\n" + desc + "\n")
+    t.append("\nValue: ", style="bold")
+    t.append_text(show_value(session, node, name, spec))
+    t.append("\n")
+    sources = session.model.prop_sources(node.path, name)
+    if sources:
+        eff = session.effective(node.path, name)
+        t.append("Set in\n", style="bold")
+        for f, stmt in sources:
+            mark = "→ " if eff == (f, stmt.line) else "  "
+            what = "/delete-property/" if stmt.kind == "delete-property" else \
+                f"= {stmt.value}" if stmt.value is not None else "(set)"
+            t.append(f"  {mark}{base_name(f)}:{stmt.line}  ", style="bright_black")
+            t.append(what + "\n")
+    if spec.enum:
+        t.append("\nAllowed values\n", style="bold")
+        for v in spec.enum:
+            t.append(f"  {v}", style="green" if v == spec.default else "")
+            if v == spec.default:
+                t.append("  (default)", style="bright_black")
+            t.append("\n")
+    elif spec.default is not None:
+        t.append("\nDefault: ", style="bold")
+        t.append(_default_text(name, spec.default) + "\n")
+    if spec.const is not None:
+        t.append("\nMust be: ", style="bold")
+        t.append(f"{spec.const}\n")
+
+    if spec.type == "phandle-array":
+        space = specifiers.space(name, spec)
+        ctrls = specifiers.controllers(session.model.edt, space)
+        t.append("\nFormat\n", style="bold")
+        if ctrls:
+            shapes: dict[tuple, list[str]] = {}
+            for c in ctrls:
+                shapes.setdefault(tuple(c.cells), []).append(c.ref)
+            for cells, refs in shapes.items():
+                t.append(f"  <&controller {' '.join(cells)}>", style="yellow")
+                shown = ", ".join(refs[:8]) + (", …" if len(refs) > 8 else "")
+                t.append(f"  for {shown}\n", style="bright_black")
+            pins = [c for c in ctrls if c.limit]
+            if pins:
+                t.append(f"  pins: 0–{pins[0].limit - 1} on {pins[0].ref}\n",
+                         style="bright_black")
+        else:
+            t.append(f"  no node in this tree has #{space}-cells\n", style="bright_black")
+    elif spec.type in ("phandle", "phandles", "path"):
+        t.append("\nPoints at a node, written as ", style="bold")
+        t.append("&label" if spec.type == "path" else "<&label>", style="yellow")
+        t.append("\n")
+
+    if spec.type in ("int", "array", "phandle-array"):
+        context = macros.context_words(*node.compats[:1])
+        primary = macros.context_words(name, *node.buses, *node.on_buses,
+                                       specifiers.space(name, spec)
+                                       if spec.type == "phandle-array" else None)
+        found = macros.rank(session.model.macros, "", context | primary, limit=16,
+                            primary=primary)
+        if _is_hz(name):
+            found = [m for m in found if (macros.value_of(m) or 0) >= 1000]
+        if found:
+            t.append("\nMacros you can use\n", style="bold")
+            for m in found:
+                t.append(f"  {m.name}{m.args or ''}", style="cyan")
+                v = macros.value_of(m)
+                shown = hz(v) if v is not None and _is_hz(name) else m.value[:40]
+                t.append(f"  {shown}", style="bright_black")
+                t.append(f"  {m.header.parent.name}/{m.header.name}\n",
+                         style="bright_black italic")
+
+    t.append("\nIn an overlay\n", style="bold")
+    for line in example(session, node, name, spec).splitlines():
+        t.append(f"  {line}\n", style="yellow")
+    return t

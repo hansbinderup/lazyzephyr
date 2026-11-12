@@ -99,6 +99,11 @@ Tests, `--tab kconfig` in Kconfig.
   removes a value so the board's applies again. Changes are made straight away, checked
   against the binding and parsed again with Zephyr's own `edtlib`; if the tree no longer
   parses, the change is put back and you see why.
+- **A reference card per setting** (`i`): type, whether it's required, the full
+  description, allowed values and default, every file and line that sets it, the format
+  of `gpios`-style properties and which controllers fit, the macros that fit
+  (`I2C_BITRATE_FAST  400 kHz`, `GPIO_ACTIVE_LOW`…), and a snippet for an overlay; `y`
+  copies the snippet.
 - **`gpios`, `pwms`, `io-channels` and other phandle-arrays** are edited as rows: pick the
   controller from the nodes that can serve it, then fill in its named fields (`pin`,
   `flags`, `channel`…). Pins are checked against the controller's `ngpios`. `ctrl+n` /
@@ -123,6 +128,7 @@ Tests, `--tab kconfig` in Kconfig.
 | --- | --- |
 | `enter` | in the tree: go to the node's settings; in settings: change the setting |
 | `space` | in settings: switch on/off settings |
+| `i` | in settings: the setting's reference card (`y` copies its overlay snippet) |
 | `esc` | back to the tree |
 | `/` | filter by name, label or compatible |
 | `a` | add a node under the selected node |
