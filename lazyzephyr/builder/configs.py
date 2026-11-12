@@ -30,6 +30,7 @@ class BuildConfig:
     runner: str | None = None      # None: the board's default
     dev_id: str | None = None
     flash_args: list[str] = field(default_factory=list)
+    monitor: str = ""              # shell command for the serial monitor
     # Last action and how it went, shown in the list.
     last_action: str | None = None
     last_status: str | None = None
@@ -151,6 +152,12 @@ def runner_cmd(ws: Workspace, cfg: BuildConfig, command: str = "flash",
         args += cfg.flash_args
     args += list(extra)
     return args
+
+
+def monitor_env(ws: Workspace, cfg: BuildConfig) -> dict[str, str]:
+    """Environment for the monitor command: $BUILD_DIR and $BOARD point at this config."""
+    return dict(os.environ, BUILD_DIR=str(build_dir(ws, cfg)), BOARD=cfg.target,
+                TERM="xterm-256color")
 
 
 def shown(args: list[str]) -> str:

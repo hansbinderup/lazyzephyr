@@ -25,7 +25,8 @@ from ..view import COMMON_CSS, ForwardActions, View
 from . import meta
 from .configs import (BuildConfig, ConfigStore, app_path, build_cmd, build_dir,
                       config_from_build, default_build_dir, dts_build_dir, is_sysbuild_image,
-                      runner_cmd, shown, target_cmd)
+                      monitor_env, runner_cmd, shown, target_cmd)
+from .monitor import FULLSCREEN_KEY, LEAVE_KEY, MonitorTerminal
 from .runner import Job, Runner, west_command
 
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -55,6 +56,9 @@ ACTIONS = [
     ("attach", "Attach (west attach)", "terminal"),
     ("debugserver", "Debug server (west debugserver)", "job"),
     ("rtt", "RTT console (west rtt)", "terminal"),
+    ("monitor", "Monitor (serial console, in the tab)", "app"),
+    ("close_monitor", "Close the monitor", "app"),
+    ("set_monitor", "Change the monitor command", "app"),
     ("dts", "Open the build in the Devicetree tab", "app"),
     ("kconfig", "Open the build in the Kconfig tab", "app"),
     ("delete_dir", "Delete the build directory", "app"),
@@ -96,6 +100,8 @@ class ConfigList(ForwardActions, OptionList):
         Binding("f", "do('flash')", "Flash"),
         Binding("F", "do('build_flash')", "Build+flash"),
         Binding("m", "do('menuconfig')", "menuconfig", show=False),
+        Binding("o", "do('monitor')", "Monitor"),
+        Binding("O", "close_monitor", "Close monitor", show=False),
         Binding("t", "do('dts')", "Devicetree", show=False),
         Binding("K", "do('kconfig')", "Kconfig", show=False),
         Binding("n", "new_config", "New"),
@@ -257,6 +263,8 @@ class HelpScreen(ModalScreen[None]):
   b / B              build / pristine build (-p always)
   f / F              flash / build, then flash
   m                  menuconfig
+  o                  monitor: open it, or go back to the running one
+  O                  close the monitor (ends the connection)
   t                  open the build in the Devicetree tab
   n / e / c / d      new / edit / copy / delete config
 [b]Editing a config[/b]
@@ -265,10 +273,20 @@ class HelpScreen(ModalScreen[None]):
   e                  type the value instead of picking it
   ctrl+s / esc       save / leave (asks first if something changed)
   found builds       enter imports one as a config
+[b]Monitor[/b]
+  The command is per config (Monitor command in the config), run with sh
+  in the workspace; $BUILD_DIR and $BOARD are set. Examples:
+    tio /dev/ttyACM0
+    west espressif monitor -d $BUILD_DIR
+  While the monitor has focus every key goes to it, except:
+  ctrl+o             back to the configs (the monitor keeps running)
+  f11                full screen on/off (esc also leaves full screen)
+  shift+pgup/pgdn    scroll back (or the mouse wheel)
 [b]Anywhere in the tab[/b]
   x                  stop the running command
   L                  clear the output
   z                  maximize the focused panel
+  f11                monitor full screen on/off
   ?                  this help
 
 Only one command runs at a time. Configs are saved per workspace in
@@ -339,6 +357,9 @@ FIELDS = [
     Field("runner", "Flash runner", "runner"),
     Field("dev_id", "Probe (--dev-id)", "probe"),
     Field("flash_args", "More flash args", "args", "e.g. --erase"),
+    Field("monitor", "Monitor command", "text",
+          "shell command; $BUILD_DIR and $BOARD are set. "
+          "e.g. tio /dev/ttyACM0 or west espressif monitor -d $BUILD_DIR"),
 ]
 
 
@@ -452,6 +473,9 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
         t.append(shown(build_cmd(self.ws, self.draft)) + "\n")
         t.append("flash: ", style="bright_black")
         t.append(shown(runner_cmd(self.ws, self.draft)))
+        if self.draft.monitor:
+            t.append("\nmonitor: ", style="bright_black")
+            t.append(self.draft.monitor)
         self.query_one("#f-preview", Static).update(t)
 
     def _field(self) -> Field | None:
@@ -664,6 +688,9 @@ BUILD_CSS = """
     BuildView #b-configs { height: 1fr; border: none; background: $surface; }
     BuildView #b-details-panel { height: 40%; padding: 0 1; }
     BuildView #b-log { height: 1fr; }
+    BuildView #b-monitor-panel { height: 2fr; display: none; }
+    BuildView.-monitor #b-monitor-panel { display: block; }
+    BuildView.-monitor #b-details-panel { height: 25%; }
     BuildView #b-statusbar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
     BuildView.-portrait #b-main { layout: vertical; }
     BuildView.-portrait #b-left, BuildView.-portrait #b-right { width: 100%; min-width: 0; }
@@ -686,6 +713,7 @@ class BuildView(View):
         Binding("L", "clear_log", "Clear output", show=False),
         Binding("question_mark", "help", "Help"),
         Binding("z", "maximize", "Zoom", show=False),
+        Binding(FULLSCREEN_KEY, "monitor_fullscreen", "Monitor full screen", show=False),
     ]
 
     def __init__(self, ws: Workspace, cwd: Path, store: ConfigStore | None = None,
@@ -699,6 +727,7 @@ class BuildView(View):
         self.job: Job | None = None
         self.last_job: Job | None = None
         self.editing: BuildConfig | None = None
+        self.monitor_config: str | None = None   # config the monitor was opened for
         self._spin = 0
         self._ids: list[str] = []
 
@@ -715,6 +744,11 @@ class BuildView(View):
                               wrap=False, max_lines=20000)
                 log.border_title = "Output"
                 yield log
+                with Panel(id="b-monitor-panel", classes="panel") as mon:
+                    mon.border_title = "Monitor"
+                    mon.border_subtitle = (f"{LEAVE_KEY}: back · {FULLSCREEN_KEY}: full screen"
+                                           " · O: close")
+                    yield MonitorTerminal(id="b-monitor")
         yield Static("", id="b-statusbar")
 
     @property
@@ -888,6 +922,8 @@ class BuildView(View):
                 + f"   available: {avail}")
         if cfg.dev_id:
             row("probe", cfg.dev_id)
+        row("monitor", cfg.monitor or "not set (o asks for it)",
+            "" if cfg.monitor else "bright_black")
         if cfg.last_status:
             when = time.strftime("%H:%M:%S", time.localtime(cfg.last_time or 0))
             icon, style = STATUS.get(cfg.last_status, STATUS[None])
@@ -908,6 +944,9 @@ class BuildView(View):
             icon, _ = STATUS.get(self.last_job.status, STATUS[None])
             parts.append(f"{icon} {self.last_job.title}: {self.last_job.status}"
                          f" in {self.last_job.duration or 0:.0f}s")
+        if self.monitor_config is not None:
+            state = "running" if self.monitor.running else "ended"
+            parts.append(f"monitor: {self.monitor_config} ({state})")
         if self.options is None:
             parts.append("reading boards…")
         self.query_one("#b-statusbar", Static).update("  ·  ".join(parts))
@@ -1012,6 +1051,103 @@ class BuildView(View):
             self.open_in_kconfig(cfg)
         elif action == "delete_dir":
             self.delete_build_dir(cfg)
+        elif action == "monitor":
+            self.open_monitor(cfg)
+        elif action == "close_monitor":
+            self.action_close_monitor()
+        elif action == "set_monitor":
+            self.ask_monitor_command(cfg)
+
+    # -- monitor --
+
+    @property
+    def monitor(self) -> MonitorTerminal:
+        return self.query_one("#b-monitor", MonitorTerminal)
+
+    def ask_monitor_command(self, cfg: BuildConfig, then_open: bool = False) -> None:
+        def done(value: str | None) -> None:
+            if not value:
+                return
+            cfg.monitor = value
+            self.store.save()
+            self.show_details()
+            if then_open:
+                self.open_monitor(cfg)
+        field = next(f for f in FIELDS if f.key == "monitor")
+        self.push_screen(TextEditScreen(f"Monitor command for {cfg.name}", cfg.monitor,
+                                        placeholder="tio /dev/ttyACM0", hint=field.hint), done)
+
+    def open_monitor(self, cfg: BuildConfig) -> None:
+        if not cfg.monitor:
+            self.ask_monitor_command(cfg, then_open=True)
+            return
+        mon = self.monitor
+        if mon.running and self.monitor_config == cfg.name:
+            mon.focus()
+            return
+        if mon.running:
+            def answered(yes: bool) -> None:
+                if yes:
+                    self._start_monitor(cfg)
+            self.push_screen(ConfirmScreen(
+                "Switch the monitor?",
+                f"The monitor is open for {self.monitor_config}. Close it and open "
+                f"one for {cfg.name}?"), answered)
+            return
+        self._start_monitor(cfg)
+
+    def _start_monitor(self, cfg: BuildConfig) -> None:
+        self.add_class("-monitor")
+        mon = self.monitor
+        panel = self.query_one("#b-monitor-panel", Panel)
+        panel.border_title = f"Monitor · {cfg.name}"
+        self.monitor_config = cfg.name
+
+        try:
+            mon.start(cfg.monitor, self.ws.topdir, monitor_env(self.ws, cfg))
+        except OSError as exc:
+            self.notify(f"could not start the monitor: {exc}", severity="error")
+            return
+        mon.focus()
+        self.update_status()
+
+    def action_close_monitor(self) -> None:
+        mon = self.monitor
+        if self.monitor_config is None:
+            self.notify("no monitor is open")
+            return
+        mon.stop()
+        if self.screen.maximized is not None:
+            self.screen.minimize()
+        self.remove_class("-monitor")
+        self.monitor_config = None
+        self.configs_list.focus()
+        self.update_status()
+
+    def action_monitor_fullscreen(self) -> None:
+        if self.screen.maximized is not None:
+            self.screen.minimize()
+            return
+        if self.monitor_config is None:
+            self.notify("no monitor is open (o opens one)")
+            return
+        self.monitor.focus()
+        self.screen.maximize(self.query_one("#b-monitor-panel", Panel))
+
+    @on(MonitorTerminal.Leave)
+    def _monitor_leave(self) -> None:
+        if self.screen.maximized is not None:
+            self.screen.minimize()
+        self.configs_list.focus()
+
+    @on(MonitorTerminal.ToggleFullscreen)
+    def _monitor_fullscreen(self) -> None:
+        self.action_monitor_fullscreen()
+
+    @on(MonitorTerminal.Exited)
+    def _monitor_exited(self, event: MonitorTerminal.Exited) -> None:
+        if self.monitor_config is not None:
+            self.update_status()
 
     def open_in_dts(self, cfg: BuildConfig) -> None:
         d = dts_build_dir(build_dir(self.ws, cfg))

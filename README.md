@@ -50,6 +50,13 @@ Tests, `--tab kconfig` in Kconfig.
   attach, debugserver, RTT, delete the build directory, and open the build in the
   Devicetree tab (`t`) or the Kconfig tab (`K`). Output streams into the Output panel;
   menuconfig, debug, attach and RTT take over the terminal until they exit.
+- **Monitor**: `o` opens a serial monitor for the config in a terminal panel inside the
+  tab, running whatever command you give it (asked the first time, then saved with the
+  config), e.g. `tio /dev/ttyACM0` or `west espressif monitor -d $BUILD_DIR`. It runs with
+  `sh` in the workspace, with `$BUILD_DIR` and `$BOARD` set. While it has focus every key
+  goes to it except `ctrl+o` (back to the configs; it keeps running) and `f11` (full
+  screen; `esc` also leaves it). `shift+pgup` / `shift+pgdn` or the mouse wheel scroll
+  back. `O` closes the connection.
 - **Runners** come from the build's `runners.yaml` once built, before that from the
   board's `board.cmake`. **Probes** (J-Link, ST-Link, CMSIS-DAP, MCU-Link…) are read from
   USB, so you can pick the serial number of the one to flash.
@@ -65,6 +72,8 @@ Tests, `--tab kconfig` in Kconfig.
 | `b` / `B` | build / pristine build |
 | `f` / `F` | flash / build, then flash |
 | `m` / `t` / `K` | menuconfig / open the build in the Devicetree / Kconfig tab |
+| `o` / `O` | open (or go back to) the monitor / close it |
+| `ctrl+o` / `f11` | in the monitor: back to the configs / full screen |
 | `n` / `e` / `c` / `d` | new / edit / copy / delete config |
 | `x` | stop the running command |
 | `L` / `z` / `?` | clear the output / maximize the focused panel / help |

@@ -123,3 +123,76 @@ async def test_build_tab(workspace, tmp_path, monkeypatch):
         await wait_for(lambda: store.configs[0].last_action == "build_flash"
                        and store.configs[0].last_status == "passed")
         assert "fake west flash -d" in "\n".join(view.last_job.lines)
+
+
+FAKE_DEVICE = ("echo \"hello from $BOARD\"; "
+               "while read -r line; do echo \"got:$line\"; done")
+
+
+def screen_text(view) -> str:
+    return "\n".join(view.monitor.screen_.display)
+
+
+async def test_monitor(workspace, tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    ws = find_workspace(workspace)
+    store = ConfigStore(ws.topdir, tmp_path / "builds.json")
+    store.configs.append(BuildConfig(name="sim", app="app", board="native_sim",
+                                     monitor=FAKE_DEVICE))
+    store.configs.append(BuildConfig(name="bare", app="app", board="native_sim"))
+    store.save()
+    view = BuildView(ws, workspace / "app", store=store, west=FAKE_WEST, id="builder")
+    app = LazyBuildApp(view)
+    async with app.run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: view.options is not None)
+        view.configs_list.focus()
+        await pilot.press("o")
+        await wait_for(lambda: view.monitor.running)
+        assert app.focused is view.monitor
+        await wait_for(lambda: "hello from native_sim" in screen_text(view))
+        # Keys go to the device, also ones the tab or app would otherwise take.
+        for key in ("q", "b", "x", "enter"):
+            await pilot.press(key)
+        await wait_for(lambda: "got:qbx" in screen_text(view))
+        assert app.is_running and view.job is None
+        # Full screen and back.
+        await pilot.press("f11")
+        await pilot.pause()
+        assert app.screen.maximized is view.query_one("#b-monitor-panel")
+        await pilot.press("f11")
+        await pilot.pause()
+        assert app.screen.maximized is None
+        # ctrl+o leaves the monitor running.
+        await pilot.press("ctrl+o")
+        await pilot.pause()
+        assert app.focused is view.configs_list and view.monitor.running
+        proc = view.monitor.process.proc
+        # O closes the connection.
+        await pilot.press("O")
+        await wait_for(lambda: proc.poll() is not None)
+        assert view.monitor_config is None and not view.has_class("-monitor")
+        # A config without a command asks for one, saves it and opens the monitor.
+        await pilot.press("down")
+        await pilot.press("o")
+        await pilot.pause()
+        app.screen.query_one("#text-value").value = "echo bare monitor; sleep 30"
+        await pilot.press("enter")
+        await wait_for(lambda: "bare monitor" in screen_text(view))
+        assert ConfigStore(ws.topdir, tmp_path / "builds.json").configs[1].monitor \
+            == "echo bare monitor; sleep 30"
+        proc = view.monitor.process.proc
+    await asyncio.sleep(0.2)
+    assert proc.poll() is not None  # quitting the app closes the monitor
+
+
+def test_key_bytes():
+    from textual import events
+
+    from lazyzephyr.builder.monitor import _color, key_bytes
+    assert key_bytes(events.Key("ctrl+c", None)) == b"\x03"
+    assert key_bytes(events.Key("up", None)) == b"\x1b[A"
+    assert key_bytes(events.Key("up", None), app_cursor=True) == b"\x1bOA"
+    assert key_bytes(events.Key("a", "a")) == b"a"
+    assert key_bytes(events.Key("enter", "\r")) == b"\r"
+    assert _color("brightbrown") == "bright_yellow" and _color("ff8800") == "#ff8800"
+    assert _color("default") is None

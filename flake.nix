@@ -15,7 +15,7 @@
           pyproject = true;
           src = ./.;
           build-system = [ pkgs.python3Packages.setuptools ];
-          dependencies = with pkgs.python3Packages; [ textual watchfiles pyyaml ];
+          dependencies = with pkgs.python3Packages; [ textual watchfiles pyyaml pyte ];
           nativeCheckInputs = with pkgs.python3Packages; [ pytestCheckHook pytest-asyncio ];
           # Relies on live filesystem watching, which is unreliable in the Nix build sandbox.
           disabledTests = [ "test_new_testcase_is_picked_up_live" ];
@@ -31,7 +31,7 @@
         default = pkgs.mkShell {
           packages = [
             (pkgs.python3.withPackages (ps: with ps; [
-              textual watchfiles pyyaml pytest pytest-asyncio
+              textual watchfiles pyyaml pyte pytest pytest-asyncio
             ]))
           ];
         };
