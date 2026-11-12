@@ -24,7 +24,9 @@
   `sh` in the workspace, with `$BUILD_DIR` and `$BOARD` set. While it has focus every key
   goes to it except `ctrl+o` (back to the configs; it keeps running), `ctrl+z` (full
   screen; `esc` also leaves it) and `ctrl+x` (close the connection). `shift+pgup` /
-  `shift+pgdn` or the mouse wheel scroll back. From the configs list, `O` closes it.
+  `shift+pgdn` or the mouse wheel scroll back. Drag with the mouse to select text, then
+  `ctrl+c` copies it (with nothing selected, `ctrl+c` goes to the device as usual). From
+  the configs list, `O` closes it.
 - **Runners** come from the build's `runners.yaml` once built, before that from the
   board's `board.cmake`. **Probes** (J-Link, ST-Link, CMSIS-DAP, MCU-Link…) are read from
   USB, so you can pick the serial number of the one to flash.

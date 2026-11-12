@@ -283,6 +283,7 @@ class HelpScreen(ModalScreen[None]):
   ctrl+z             full screen on/off (esc also leaves full screen)
   ctrl+x             close the monitor (ends the connection)
   shift+pgup/pgdn    scroll back (or the mouse wheel)
+  drag the mouse     select text; ctrl+c then copies it (else ctrl+c goes to it)
 [b]Anywhere in the tab[/b]
   x                  stop the running command
   L                  clear the output
