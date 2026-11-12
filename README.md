@@ -175,6 +175,15 @@ The Tests tab's tests use `tests/twister/fake_twister.py` in place of twister. T
 Devicetree, Kconfig and Build tests need a Zephyr tree: set `LAZYZEPHYR_TEST_ZEPHYR_BASE`
 (or `ZEPHYR_BASE`) to one, else they are skipped.
 
+### Releasing
+
+Releases are automatic. Commit subjects follow conventional commits
+(`feat(build): …`, `fix: …`), and the
+[release workflow](https://github.com/hansbinderup/lazyzephyr/blob/main/.github/workflows/release.yml)
+keeps a release PR open with the next version (`feat` bumps the minor version, `fix` the
+patch) and its changelog. Merging that PR tags the release, creates the GitHub release
+and publishes to PyPI. The version lives only in `pyproject.toml`.
+
 ## License
 
 [Apache-2.0](https://github.com/hansbinderup/lazyzephyr/blob/main/LICENSE)
