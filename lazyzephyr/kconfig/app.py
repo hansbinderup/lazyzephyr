@@ -23,6 +23,7 @@ from textual.widgets.tree import TreeNode
 from ..dts.app import ConfirmScreen
 from ..dts.editors import PickScreen
 from ..dts.workspace import Workspace, find_build_dirs
+from ..clipboard import SystemClipboard
 from ..view import COMMON_CSS, ForwardActions, View
 from . import describe, loader
 from .session import Problem, Result, Session
@@ -886,7 +887,7 @@ def search(session: Session, query: str, limit: int = 300) -> list:
     return [x[3] for x in scored[:limit]]
 
 
-class LazyKconfigApp(App):
+class LazyKconfigApp(SystemClipboard, App):
     """The Kconfig tab on its own (used by the tests)."""
 
     CSS = COMMON_CSS + KCONFIG_CSS + """
