@@ -1141,7 +1141,7 @@ class BuildView(View):
             self.notify("no monitor is open (o opens one)")
             return
         self.monitor.focus()
-        self.screen.maximize(self.query_one("#b-monitor-panel", Panel))
+        self.toggle_maximize(self.query_one("#b-monitor-panel", Panel))
 
     @on(MonitorTerminal.Leave)
     def _monitor_leave(self) -> None:
@@ -1311,14 +1311,7 @@ class BuildView(View):
         self.push_screen(HelpScreen())
 
     def action_maximize(self) -> None:
-        if self.screen.maximized:
-            self.screen.minimize()
-            return
-        widget = self.focused
-        while widget is not None and not getattr(widget, "ALLOW_MAXIMIZE", False):
-            widget = widget.parent
-        if widget is not None:
-            self.screen.maximize(widget)
+        self.toggle_maximize()
 
 
 class LazyBuildApp(App):

@@ -3,6 +3,7 @@
 import asyncio
 
 from lazyzephyr.app import LazyZephyrApp
+from lazyzephyr.builder.configs import BuildConfig
 from lazyzephyr.dts.app import AppConfig as DtsConfig
 from lazyzephyr.dts.state import TargetChoice
 from lazyzephyr.dts.workspace import find_workspace
@@ -76,7 +77,7 @@ async def drag(pilot, x, y, dx, dy):
     await pilot.pause()
 
 
-async def test_drag_borders_in_every_tab(workspace, tmp_path):
+async def test_drag_and_maximize_in_every_tab(workspace, tmp_path):
     tests = tmp_path / "tests" / "t"
     tests.mkdir(parents=True)
     (tests / "testcase.yaml").write_text("tests:\n  demo.one: {}\n")
@@ -107,3 +108,30 @@ async def test_drag_borders_in_every_tab(workspace, tmp_path):
             await drag(pilot, upper.region.x + 5, upper.region.bottom - 1, 0, 3)
             assert upper.outer_size.height == height + 3, tab
             assert lower.region.y == upper.region.bottom, tab
+            # z maximizes the focused panel itself, not the whole tab area.
+            target = upper if upper.can_focus else next(
+                w for w in upper.query("*") if w.can_focus)
+            target.focus()
+            await pilot.press("z")
+            await pilot.pause()
+            assert app.screen.maximized is upper, (tab, app.screen.maximized)
+            await pilot.press("z")
+            await pilot.pause()
+            assert app.screen.maximized is None, tab
+        # The monitor's ctrl+z, in the tabbed app.
+        app.tabs.active = "build"
+        await pilot.pause(0.3)
+        build = app.view("build")
+        build.store.configs.append(BuildConfig(name="mon", app="app", board="native_sim",
+                                               monitor="echo ready; sleep 30"))
+        build.refresh_list(select="cfg:mon")
+        build.configs_list.focus()
+        await pilot.press("o")
+        await wait_for(lambda: build.monitor.process is not None and build.monitor.running)
+        await pilot.press("ctrl+z")
+        await pilot.pause()
+        assert app.screen.maximized is build.query_one("#b-monitor-panel")
+        await pilot.press("ctrl+z")
+        await pilot.pause()
+        assert app.screen.maximized is None
+        await pilot.press("ctrl+x")

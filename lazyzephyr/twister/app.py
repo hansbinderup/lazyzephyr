@@ -720,11 +720,7 @@ class TwisterView(View):
                     f"{', compact' if self.compact else ''})", timeout=2)
 
     def action_toggle_maximize(self) -> None:
-        screen = self.screen
-        if screen.maximized is not None:
-            screen.minimize()
-        elif self.focused is not None:
-            screen.maximize(self.focused)
+        self.toggle_maximize()
 
     # -- discovery & tree ----------------------------------------------------
 

@@ -1652,14 +1652,7 @@ class DtsView(View):
         self.action_reload()
 
     def action_maximize(self) -> None:
-        if self.screen.maximized:
-            self.screen.minimize()
-            return
-        widget = self.focused
-        while widget is not None and not getattr(widget, "ALLOW_MAXIMIZE", False):
-            widget = widget.parent
-        if widget is not None:
-            self.screen.maximize(widget)
+        self.toggle_maximize()
 
 
 class LazyDtsApp(App):

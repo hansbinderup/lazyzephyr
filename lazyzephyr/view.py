@@ -364,6 +364,36 @@ class View(Vertical):
     def focused(self):
         return self.app.focused
 
+    def toggle_maximize(self, widget: Widget | None = None) -> None:
+        """Maximize `widget`, else the panel around the focus; or restore.
+
+        Always maximizes exactly that panel: Screen.maximize() on its own picks
+        the nearest ancestor that may be maximized, which inside the tabbed app
+        is the whole TabbedContent (so nothing seemed to happen)."""
+        screen = self.screen
+        if screen.maximized is not None:
+            screen.minimize()
+            return
+        if widget is None:
+            widget = self._panel_around(self.focused)
+        if widget is not None:
+            screen.maximize(widget, container=False)
+
+    def _panel_around(self, node) -> Widget | None:
+        """The outermost panel (ALLOW_MAXIMIZE) holding `node` in this View, so the
+        panel and not a list inside it (OptionList allows maximizing too); else
+        the nearest widget that may be maximized (a focusable one)."""
+        if node is None or self not in node.ancestors_with_self:
+            return None
+        panel = fallback = None
+        while node is not None and node is not self:
+            if getattr(node, "ALLOW_MAXIMIZE", None) is True:
+                panel = node
+            if fallback is None and node.allow_maximize:
+                fallback = node
+            node = node.parent
+        return panel or fallback
+
     def activated(self) -> None:
         """Called when the View's tab is shown (also the first time)."""
 
