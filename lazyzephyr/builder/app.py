@@ -689,16 +689,19 @@ BUILD_CSS = """
     BuildView #b-main { layout: horizontal; height: 1fr; }
     BuildView #b-left { width: 40%; min-width: 36; }
     BuildView #b-right { width: 1fr; }
+    BuildView #b-configs-panel { height: 1fr; }
     BuildView #b-configs { height: 1fr; border: none; background: $surface; }
-    BuildView #b-details-panel { height: 40%; padding: 0 1; }
+    BuildView #b-details-panel { height: 1fr; padding: 0 1; }
     BuildView #b-log { height: 1fr; }
     BuildView #b-monitor-panel { height: 2fr; display: none; }
     BuildView.-monitor #b-monitor-panel { display: block; }
-    BuildView.-monitor #b-details-panel { height: 25%; }
     BuildView #b-statusbar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
     BuildView.-portrait #b-main { layout: vertical; }
     BuildView.-portrait #b-left, BuildView.-portrait #b-right { width: 100%; min-width: 0; }
-    BuildView.-portrait #b-left { height: 35%; }
+    BuildView.-portrait #b-left { height: 45%; }
+    BuildView.-portrait #b-left { layout: horizontal; }
+    BuildView.-portrait #b-configs-panel, BuildView.-portrait #b-details-panel {
+        height: 100%; width: 1fr; }
     PickerScreen, ConfigScreen, TextEditScreen { align: center middle; }
     #settings { height: auto; max-height: 20; margin-top: 1; }
     #text-dialog { width: 90; }
@@ -712,7 +715,7 @@ BUILD_CSS = """
 
 
 class BuildView(View):
-    SPLITS = ("b-main", "b-right")
+    SPLITS = ("b-main", "b-left", "b-right")
     BINDINGS = [
         Binding("x", "cancel_job", "Stop"),
         Binding("L", "clear_log", "Clear output", show=False),
@@ -738,13 +741,14 @@ class BuildView(View):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="b-main"):
-            with Panel(id="b-left", classes="panel") as left:
-                left.border_title = "Build configs"
-                yield ConfigList(id="b-configs")
-            with Vertical(id="b-right"):
+            with Vertical(id="b-left"):
+                with Panel(id="b-configs-panel", classes="panel") as configs:
+                    configs.border_title = "Build configs"
+                    yield ConfigList(id="b-configs")
                 with ScrollPanel(id="b-details-panel", classes="panel") as details:
                     details.border_title = "Details"
                     yield Static("", id="b-details")
+            with Vertical(id="b-right"):
                 log = RichLog(id="b-log", classes="panel", markup=False, highlight=False,
                               wrap=False, max_lines=20000)
                 log.border_title = "Output"

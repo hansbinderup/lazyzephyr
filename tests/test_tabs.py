@@ -85,7 +85,7 @@ async def test_drag_borders_in_every_tab(workspace, tmp_path):
                     work_dir=tmp_path / "work")
     app = LazyZephyrApp(twister_config(tmp_path, [tmp_path / "tests"]), dts)
     # (tab, left column, the two stacked panels on the right)
-    tabs = [("build", "#b-left", "#b-details-panel", "#b-log"),
+    tabs = [("build", "#b-left", "#b-configs-panel", "#b-details-panel"),
             ("dts", "#left", "#details-panel", "#settings-panel"),
             ("kconfig", "#kleft", "#kdetails-panel", "#krelated-panel"),
             ("tests", "#left", "#log", "#details-panel")]
