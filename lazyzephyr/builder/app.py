@@ -21,6 +21,7 @@ from textual.widgets import Footer, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ..dts.workspace import Board, Workspace, find_boards, find_build_dirs
+from ..clipboard import SystemClipboard
 from ..view import COMMON_CSS, ForwardActions, View
 from . import meta
 from .configs import (BuildConfig, ConfigStore, app_path, build_cmd, build_dir,
@@ -1315,7 +1316,7 @@ class BuildView(View):
         self.toggle_maximize()
 
 
-class LazyBuildApp(App):
+class LazyBuildApp(SystemClipboard, App):
     """The build tab on its own (used by the tests)."""
 
     CSS = COMMON_CSS + BUILD_CSS + """

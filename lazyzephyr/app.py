@@ -17,12 +17,13 @@ from .twister.app import AppConfig as TwisterConfig
 from .dts.state import TargetChoice
 from .kconfig.app import KCONFIG_CSS, KconfigView
 from .kconfig.app import AppConfig as KconfigConfig
+from .clipboard import SystemClipboard
 from .view import COMMON_CSS, View
 
 TABS = ("build", "dts", "kconfig", "tests")
 
 
-class LazyZephyrApp(App):
+class LazyZephyrApp(SystemClipboard, App):
     TITLE = "lazyzephyr"
     CSS = COMMON_CSS + TWISTER_CSS + DTS_CSS + BUILD_CSS + KCONFIG_CSS + """
     #tabs { height: 1fr; }

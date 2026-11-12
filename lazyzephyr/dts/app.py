@@ -27,6 +27,7 @@ from .editors import (CompleteInput, Completer, PickScreen, SpecifierEditor, Spe
 from .model import import_edtlib
 from .session import REF_NODES, EditResult, Session
 from .state import TargetChoice, save_choice
+from ..clipboard import SystemClipboard
 from ..view import COMMON_CSS, ForwardActions, View
 from .workspace import (Board, DtInputs, Workspace, find_board, find_boards, find_build_dirs,
                         inputs_for_board, inputs_from_build)
@@ -1655,7 +1656,7 @@ class DtsView(View):
         self.toggle_maximize()
 
 
-class LazyDtsApp(App):
+class LazyDtsApp(SystemClipboard, App):
     """The devicetree tab on its own (used by the tests)."""
 
     CSS = COMMON_CSS + DTS_CSS

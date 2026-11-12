@@ -25,6 +25,7 @@ from .discovery import Discovery, Scenario, Workspace, default_roots, discover
 from .jobs import Job, JobManager, NodeRef, RunOptions, RunTarget, make_target
 from .results import ResultStore, worst
 from .watcher import WatchError, watch_changes
+from ..clipboard import SystemClipboard
 from ..view import COMMON_CSS, ForwardActions, View
 
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -1594,7 +1595,7 @@ class TwisterView(View):
         self.jobs.shutdown()
 
 
-class LazyTwisterApp(App):
+class LazyTwisterApp(SystemClipboard, App):
     """The twister tab on its own (used by the tests)."""
 
     CSS = COMMON_CSS + TWISTER_CSS
