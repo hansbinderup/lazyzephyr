@@ -1,13 +1,31 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "lazyzephyr"
 version = "0.1.0"
-description = "lazygit-style TUI for Zephyr: twister tests and the devicetree"
+description = "lazygit-style terminal UI for Zephyr: build, devicetree, Kconfig and twister tests"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Hans Binderup" }]
 requires-python = ">=3.11"
+keywords = ["zephyr", "west", "twister", "devicetree", "kconfig", "tui", "embedded"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "textual>=1.0",
     "watchfiles>=0.21",
@@ -17,6 +35,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.urls]
+Homepage = "https://github.com/hansbinderup/lazyzephyr"
+Documentation = "https://github.com/hansbinderup/lazyzephyr/blob/main/docs/README.md"
+Issues = "https://github.com/hansbinderup/lazyzephyr/issues"
+Source = "https://github.com/hansbinderup/lazyzephyr"
 
 [project.scripts]
 lazyzephyr = "lazyzephyr.launcher:main"

@@ -1,5 +1,5 @@
 {
-  description = "lazyzephyr - lazygit-style TUI for Zephyr: twister tests and the devicetree";
+  description = "lazyzephyr - lazygit-style terminal UI for Zephyr: build, devicetree, Kconfig and twister tests";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -11,7 +11,7 @@
       packages = forAll (pkgs: rec {
         lazyzephyr = pkgs.python3Packages.buildPythonApplication {
           pname = "lazyzephyr";
-          version = "0.1.0";
+          version = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project.version;
           pyproject = true;
           src = ./.;
           build-system = [ pkgs.python3Packages.setuptools ];
@@ -20,7 +20,9 @@
           # Relies on live filesystem watching, which is unreliable in the Nix build sandbox.
           disabledTests = [ "test_new_testcase_is_picked_up_live" ];
           meta = {
-            description = "lazygit-style TUI for Zephyr: twister tests and the devicetree";
+            description = "lazygit-style terminal UI for Zephyr: build, devicetree, Kconfig and twister tests";
+            homepage = "https://github.com/hansbinderup/lazyzephyr";
+            license = pkgs.lib.licenses.asl20;
             mainProgram = "lazyzephyr";
           };
         };
