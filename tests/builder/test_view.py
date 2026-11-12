@@ -155,13 +155,28 @@ async def test_monitor(workspace, tmp_path, monkeypatch):
             await pilot.press(key)
         await wait_for(lambda: "got:qbx" in screen_text(view))
         assert app.is_running and view.job is None
+        # The footer shows only the monitor's own keys: the rest go to the device.
+        shown = {b.binding.key for b in app.screen.active_bindings.values() if b.binding.show}
+        assert {"ctrl+o", "ctrl+z", "ctrl+x"} <= shown and not shown & {"x", "question_mark"}
         # Full screen and back.
+        await pilot.press("ctrl+z")
+        await pilot.pause()
+        assert app.screen.maximized is view.query_one("#b-monitor-panel")
+        await pilot.press("ctrl+z")
+        await pilot.pause()
+        assert app.screen.maximized is None
         await pilot.press("f11")
         await pilot.pause()
         assert app.screen.maximized is view.query_one("#b-monitor-panel")
-        await pilot.press("f11")
-        await pilot.pause()
-        assert app.screen.maximized is None
+        # ctrl+x closes it, also from full screen.
+        proc = view.monitor.process.proc
+        await pilot.press("ctrl+x")
+        await wait_for(lambda: proc.poll() is not None)
+        assert view.monitor_config is None and app.screen.maximized is None
+        assert app.focused is view.configs_list
+        # Open again for the rest.
+        await pilot.press("o")
+        await wait_for(lambda: view.monitor.process is not None and view.monitor.running)
         # ctrl+o leaves the monitor running.
         await pilot.press("ctrl+o")
         await pilot.pause()

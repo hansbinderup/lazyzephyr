@@ -68,9 +68,9 @@ Every tab's panels can be resized and moved, and each tab remembers it in
   tab, running whatever command you give it (asked the first time, then saved with the
   config), e.g. `tio /dev/ttyACM0` or `west espressif monitor -d $BUILD_DIR`. It runs with
   `sh` in the workspace, with `$BUILD_DIR` and `$BOARD` set. While it has focus every key
-  goes to it except `ctrl+o` (back to the configs; it keeps running) and `f11` (full
-  screen; `esc` also leaves it). `shift+pgup` / `shift+pgdn` or the mouse wheel scroll
-  back. `O` closes the connection.
+  goes to it except `ctrl+o` (back to the configs; it keeps running), `ctrl+z` (full
+  screen; `esc` also leaves it) and `ctrl+x` (close the connection). `shift+pgup` /
+  `shift+pgdn` or the mouse wheel scroll back. From the configs list, `O` closes it.
 - **Runners** come from the build's `runners.yaml` once built, before that from the
   board's `board.cmake`. **Probes** (J-Link, ST-Link, CMSIS-DAP, MCU-Link…) are read from
   USB, so you can pick the serial number of the one to flash.
@@ -87,7 +87,7 @@ Every tab's panels can be resized and moved, and each tab remembers it in
 | `f` / `F` | flash / build, then flash |
 | `m` / `t` / `K` | menuconfig / open the build in the Devicetree / Kconfig tab |
 | `o` / `O` | open (or go back to) the monitor / close it |
-| `ctrl+o` / `f11` | in the monitor: back to the configs / full screen |
+| `ctrl+o` / `ctrl+z` / `ctrl+x` | in the monitor: back to the configs / full screen / close |
 | `n` / `e` / `c` / `d` | new / edit / copy / delete config |
 | `x` | stop the running command |
 | `L` / `z` / `?` | clear the output / maximize the focused panel / help |

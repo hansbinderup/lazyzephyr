@@ -2,7 +2,9 @@
 
 The command runs in a pseudo terminal; pyte keeps the screen and Textual draws it.
 While the terminal has focus every key goes to the command, except LEAVE_KEY
-(back to the configs, the command keeps running) and FULLSCREEN_KEY.
+(back to the configs, the command keeps running), FULLSCREEN_KEY and CLOSE_KEY.
+They are ctrl keys that serial consoles (Zephyr's shell, tio, west espressif
+monitor) leave alone, and that get through tmux and every terminal.
 """
 
 from __future__ import annotations
@@ -24,13 +26,17 @@ import pyte
 from rich.segment import Segment
 from rich.style import Style
 from textual import events
+from textual.binding import Binding
 from textual.geometry import Size
 from textual.message import Message
 from textual.strip import Strip
 from textual.widget import Widget
 
 LEAVE_KEY = "ctrl+o"
-FULLSCREEN_KEY = "f11"
+FULLSCREEN_KEY = "ctrl+z"
+CLOSE_KEY = "ctrl+x"
+OWN_KEYS = {LEAVE_KEY: "leave", FULLSCREEN_KEY: "fullscreen", "f11": "fullscreen",
+            CLOSE_KEY: "close"}
 SCROLLBACK = 10000
 DECCKM = 1 << 5  # private mode 1: application cursor keys
 
@@ -205,6 +211,13 @@ class MonitorTerminal(Widget, can_focus=True):
     MonitorTerminal { height: 1fr; width: 1fr; background: $surface; }
     """
 
+    # For the footer (and clicks on it); the keys themselves are handled in _on_key.
+    BINDINGS = [
+        Binding(LEAVE_KEY, "leave", "Back to configs"),
+        Binding(FULLSCREEN_KEY, "fullscreen", "Full screen"),
+        Binding(CLOSE_KEY, "close", "Close monitor"),
+    ]
+
     class Exited(Message):
         def __init__(self, returncode: int) -> None:
             super().__init__()
@@ -215,6 +228,22 @@ class MonitorTerminal(Widget, can_focus=True):
 
     class ToggleFullscreen(Message):
         pass
+
+    class Close(Message):
+        """CLOSE_KEY: end the monitor."""
+
+    def action_leave(self) -> None:
+        self.post_message(self.Leave())
+
+    def action_fullscreen(self) -> None:
+        self.post_message(self.ToggleFullscreen())
+
+    def action_close(self) -> None:
+        self.post_message(self.Close())
+
+    def check_consume_key(self, key: str, character: str | None) -> bool:
+        # Every other key goes to the monitor, so the footer hides the tab's keys.
+        return key not in OWN_KEYS
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -368,11 +397,9 @@ class MonitorTerminal(Widget, can_focus=True):
         # Every key is ours: none reaches the tab's or the app's bindings.
         event.stop()
         event.prevent_default()
-        if event.key == LEAVE_KEY:
-            self.post_message(self.Leave())
-            return
-        if event.key == FULLSCREEN_KEY:
-            self.post_message(self.ToggleFullscreen())
+        own = OWN_KEYS.get(event.key)
+        if own is not None:
+            getattr(self, f"action_{own}")()
             return
         if event.key == "shift+pageup":
             self._scroll_by(max(self.content_size.height - 1, 1))

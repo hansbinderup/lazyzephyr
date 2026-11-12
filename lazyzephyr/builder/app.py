@@ -26,7 +26,7 @@ from . import meta
 from .configs import (BuildConfig, ConfigStore, app_path, build_cmd, build_dir,
                       config_from_build, default_build_dir, dts_build_dir, is_sysbuild_image,
                       monitor_env, runner_cmd, shown, target_cmd)
-from .monitor import FULLSCREEN_KEY, LEAVE_KEY, MonitorTerminal
+from .monitor import CLOSE_KEY, FULLSCREEN_KEY, LEAVE_KEY, MonitorTerminal
 from .runner import Job, Runner, west_command
 
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -280,7 +280,8 @@ class HelpScreen(ModalScreen[None]):
     west espressif monitor -d $BUILD_DIR
   While the monitor has focus every key goes to it, except:
   ctrl+o             back to the configs (the monitor keeps running)
-  f11                full screen on/off (esc also leaves full screen)
+  ctrl+z             full screen on/off (esc also leaves full screen)
+  ctrl+x             close the monitor (ends the connection)
   shift+pgup/pgdn    scroll back (or the mouse wheel)
 [b]Anywhere in the tab[/b]
   x                  stop the running command
@@ -721,7 +722,7 @@ class BuildView(View):
         Binding("L", "clear_log", "Clear output", show=False),
         Binding("question_mark", "help", "Help"),
         Binding("z", "maximize", "Zoom", show=False),
-        Binding(FULLSCREEN_KEY, "monitor_fullscreen", "Monitor full screen", show=False),
+        Binding("f11", "monitor_fullscreen", "Monitor full screen", show=False),
     ]
 
     def __init__(self, ws: Workspace, cwd: Path, store: ConfigStore | None = None,
@@ -756,7 +757,7 @@ class BuildView(View):
                 with Panel(id="b-monitor-panel", classes="panel") as mon:
                     mon.border_title = "Monitor"
                     mon.border_subtitle = (f"{LEAVE_KEY}: back · {FULLSCREEN_KEY}: full screen"
-                                           " · O: close")
+                                           f" · {CLOSE_KEY}: close")
                     yield MonitorTerminal(id="b-monitor")
         yield Static("", id="b-statusbar")
 
@@ -1151,6 +1152,10 @@ class BuildView(View):
     @on(MonitorTerminal.ToggleFullscreen)
     def _monitor_fullscreen(self) -> None:
         self.action_monitor_fullscreen()
+
+    @on(MonitorTerminal.Close)
+    def _monitor_close(self) -> None:
+        self.action_close_monitor()
 
     @on(MonitorTerminal.Exited)
     def _monitor_exited(self, event: MonitorTerminal.Exited) -> None:
