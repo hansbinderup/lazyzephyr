@@ -378,7 +378,10 @@ class MonitorTerminal(Widget, can_focus=True):
             span = self.text_selection.get_span(absolute)
             if span is not None:
                 span = (span[0], screen.columns if span[1] == -1 else span[1])
-                selected = self.screen.get_component_rich_style("screen--selection")
+                # Only its background: its colour resolves to the same as the
+                # background here, which would hide the text.
+                selected = Style(bgcolor=self.screen.get_component_rich_style(
+                    "screen--selection").bgcolor, reverse=False)
         show_cursor = (self.has_focus and self.scroll == 0 and row == screen.cursor.y
                        and not screen.cursor.hidden)
         segments = []

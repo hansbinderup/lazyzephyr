@@ -249,6 +249,9 @@ async def test_monitor_select_and_copy():
         await pilot.mouse_up(term, offset=(2, 2))
         await pilot.pause()
         assert app.screen.get_selected_text() == "wo\nthree\nfou"
+        # The selection keeps the text readable: its own colour on the selection's background.
+        cell = next(seg for seg in term.render_line(0) if seg.text.startswith("wo")).style
+        assert cell.color != cell.bgcolor
         # More output scrolls the screen; the selection stays on the same text.
         term._output(b"\r\nsix")
         await pilot.pause()
