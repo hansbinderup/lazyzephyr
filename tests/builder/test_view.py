@@ -213,6 +213,11 @@ def test_key_bytes():
     assert _color("default") is None
 
 
+def footer_keys(app):
+    return {key for key, b in app.screen.active_bindings.items()
+            if b.binding.show and b.enabled}
+
+
 async def test_monitor_select_and_copy():
     """Dragging selects monitor text; ctrl+c copies it instead of reaching the device."""
     from textual.app import App
@@ -240,6 +245,7 @@ async def test_monitor_select_and_copy():
             def close(self):
                 pass
         term.process = FakeProcess()
+        assert "ctrl+c" not in footer_keys(app)
         term._output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive")
         await pilot.pause()
         scrolled = term.screen_.scrolled
@@ -249,6 +255,7 @@ async def test_monitor_select_and_copy():
         await pilot.mouse_up(term, offset=(2, 2))
         await pilot.pause()
         assert app.screen.get_selected_text() == "wo\nthree\nfou"
+        assert "ctrl+c" in footer_keys(app)  # the footer offers to copy it
         # The selection keeps the text readable: its own colour on the selection's background.
         cell = next(seg for seg in term.render_line(0) if seg.text.startswith("wo")).style
         assert cell.color != cell.bgcolor
@@ -265,5 +272,7 @@ async def test_monitor_select_and_copy():
         await pilot.press("ctrl+c")
         assert copied == ["one\ntwo"] and sent == []
         assert term.text_selection is None
+        await pilot.pause()
+        assert "ctrl+c" not in footer_keys(app)
         await pilot.press("ctrl+c")  # nothing selected: ctrl+c goes to the device
         assert sent == [b"\x03"]

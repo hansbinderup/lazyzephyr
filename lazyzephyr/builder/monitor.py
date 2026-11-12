@@ -234,6 +234,7 @@ class MonitorTerminal(Widget, can_focus=True):
         Binding(LEAVE_KEY, "leave", "Back to configs"),
         Binding(FULLSCREEN_KEY, "fullscreen", "Full screen"),
         Binding(CLOSE_KEY, "close", "Close monitor"),
+        Binding("ctrl+c", "copy", "Copy selection"),  # only while text is selected
     ]
 
     class Exited(Message):
@@ -258,6 +259,16 @@ class MonitorTerminal(Widget, can_focus=True):
 
     def action_close(self) -> None:
         self.post_message(self.Close())
+
+    def action_copy(self) -> None:
+        self.screen.action_copy_text()
+        self.screen.clear_selection()
+        self.app.notify("Copied to the clipboard", timeout=2)
+
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        if action == "copy":
+            return self.text_selection is not None
+        return True
 
     def check_consume_key(self, key: str, character: str | None) -> bool:
         # Every other key goes to the monitor, so the footer hides the tab's keys.
@@ -426,6 +437,7 @@ class MonitorTerminal(Widget, can_focus=True):
         return "\n".join(lines).rstrip("\n"), "\n"
 
     def selection_updated(self, selection: Selection | None) -> None:
+        self.refresh_bindings()  # the footer's "Copy selection" comes and goes
         self.refresh()
 
     def on_focus(self) -> None:
@@ -449,9 +461,7 @@ class MonitorTerminal(Widget, can_focus=True):
             getattr(self, f"action_{own}")()
             return
         if event.key == "ctrl+c" and self.text_selection is not None:
-            self.screen.action_copy_text()
-            self.screen.clear_selection()
-            self.app.notify("Copied to the clipboard", timeout=2)
+            self.action_copy()
             return
         if event.key == "shift+pageup":
             self._scroll_by(max(self.content_size.height - 1, 1))
