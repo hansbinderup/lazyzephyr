@@ -19,6 +19,12 @@ def _zephyr_base() -> Path | None:
     return None
 
 
+@pytest.fixture(autouse=True)
+def _own_cache(tmp_path: Path, monkeypatch) -> None:
+    """Never read or write the user's ~/.cache/lazyzephyr (saved layouts, configs)."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+
+
 @pytest.fixture
 def zephyr_base() -> Path:
     base = _zephyr_base()

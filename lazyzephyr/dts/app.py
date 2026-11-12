@@ -203,6 +203,10 @@ class HelpScreen(ModalScreen[None]):
   u                  undo the last edit
   r                  reload
   z                  maximize the focused panel
+  + / -              grow / shrink the focused panel (or drag a border)
+  < / >              move the focused panel back / on
+  =                  reset sizes and order
+  v                  layout: auto, side by side, stacked
   q                  quit
 
 Changes go straight into your overlay (or the file that already sets the value),
@@ -923,6 +927,7 @@ DTS_CSS = """
 
 
 class DtsView(View):
+    SPLITS = ("main", "right")
 
     BINDINGS = [
         Binding("question_mark", "help", "Help"),
@@ -976,9 +981,6 @@ class DtsView(View):
     @property
     def tree(self) -> NodeTree:
         return self.query_one("#tree", NodeTree)
-
-    def on_resize(self, event) -> None:
-        self.set_class(event.size.width < 110, "-portrait")
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._poll_changes)

@@ -67,3 +67,43 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
 def test_tab_order():
     from lazyzephyr.app import TABS
     assert TABS == ("build", "dts", "kconfig", "tests")
+
+
+async def drag(pilot, x, y, dx, dy):
+    await pilot.mouse_down(offset=(x, y))
+    await pilot.hover(offset=(x + dx, y + dy))
+    await pilot.mouse_up(offset=(x + dx, y + dy))
+    await pilot.pause()
+
+
+async def test_drag_borders_in_every_tab(workspace, tmp_path):
+    tests = tmp_path / "tests" / "t"
+    tests.mkdir(parents=True)
+    (tests / "testcase.yaml").write_text("tests:\n  demo.one: {}\n")
+    dts = DtsConfig(cwd=workspace / "app", workspace=find_workspace(workspace),
+                    choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
+                    work_dir=tmp_path / "work")
+    app = LazyZephyrApp(twister_config(tmp_path, [tmp_path / "tests"]), dts)
+    # (tab, left column, the two stacked panels on the right)
+    tabs = [("build", "#b-left", "#b-details-panel", "#b-log"),
+            ("dts", "#left", "#details-panel", "#settings-panel"),
+            ("kconfig", "#kleft", "#kdetails-panel", "#krelated-panel"),
+            ("tests", "#left", "#log", "#details-panel")]
+    async with app.run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: "s:demo.one" in app.twister.node_index)
+        for tab, left_id, upper_id, lower_id in tabs:
+            app.tabs.active = tab
+            await pilot.pause(0.3)
+            if app.screen is not app.screen_stack[0]:   # Kconfig asks for a build
+                await pilot.press("escape")
+                await pilot.pause()
+            view = app.view(tab)
+            left = view.query_one(left_id)
+            width = left.outer_size.width
+            await drag(pilot, left.region.right - 1, left.region.y + 5, 10, 0)
+            assert left.outer_size.width == width + 10, tab
+            upper, lower = view.query_one(upper_id), view.query_one(lower_id)
+            height = upper.outer_size.height
+            await drag(pilot, upper.region.x + 5, upper.region.bottom - 1, 0, 3)
+            assert upper.outer_size.height == height + 3, tab
+            assert lower.region.y == upper.region.bottom, tab

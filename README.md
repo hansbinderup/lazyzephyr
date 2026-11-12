@@ -30,6 +30,20 @@ Every other key belongs to the tab you are in, and the footer shows them. It sta
 the Build tab; `--tab dts` (or giving `-b` / `-d`) starts in Devicetree, `--tab tests` in
 Tests, `--tab kconfig` in Kconfig.
 
+### Panels
+
+Every tab's panels can be resized and moved, and each tab remembers it in
+`~/.cache/lazyzephyr/layout.json`:
+
+| Key | Action |
+| --- | --- |
+| drag a border | resize the two panels on either side of it |
+| `+` / `-` | grow / shrink the focused panel |
+| `<` / `>` | move the focused panel back / on (on the left column: swap the columns) |
+| `=` | reset sizes and order |
+| `v` | layout: auto, side by side, stacked |
+| `z` | maximize the focused panel |
+
 ## Build tab
 
 ### Features

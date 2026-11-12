@@ -250,6 +250,11 @@ class KHelpScreen(ModalScreen[None]):
   t                  pick another build
   u                  undo the last change
   r                  reload
+  z                  maximize the focused panel
+  + / -              grow / shrink the focused panel (or drag a border)
+  < / >              move the focused panel back / on
+  =                  reset sizes and order
+  v                  layout: auto, side by side, stacked
 
 Changes go into your prj.conf (or the conf file that already sets the option), never
 into .config. The values shown are what the next build will use; "not built yet"
@@ -295,6 +300,7 @@ KCONFIG_CSS = """
 
 
 class KconfigView(View):
+    SPLITS = ("kmain", "kright")
     BINDINGS = [
         Binding("question_mark", "help", "Help"),
         Binding("slash", "search", "Search"),
@@ -347,9 +353,6 @@ class KconfigView(View):
     @property
     def lib(self):
         return self.session.model.kconfiglib
-
-    def on_resize(self, event) -> None:
-        self.set_class(event.size.width < 110, "-portrait")
 
     def activated(self) -> None:
         if self.session is None and not self._asked:

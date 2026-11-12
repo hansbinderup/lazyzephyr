@@ -286,6 +286,10 @@ class HelpScreen(ModalScreen[None]):
   x                  stop the running command
   L                  clear the output
   z                  maximize the focused panel
+  + / -              grow / shrink the focused panel (or drag a border)
+  < / >              move the focused panel back / on
+  =                  reset sizes and order
+  v                  layout: auto, side by side, stacked
   f11                monitor full screen on/off
   ?                  this help
 
@@ -708,6 +712,7 @@ BUILD_CSS = """
 
 
 class BuildView(View):
+    SPLITS = ("b-main", "b-right")
     BINDINGS = [
         Binding("x", "cancel_job", "Stop"),
         Binding("L", "clear_log", "Clear output", show=False),
@@ -763,9 +768,6 @@ class BuildView(View):
     def activated(self) -> None:
         if self.focused is None or self not in self.focused.ancestors:
             self.configs_list.focus()
-
-    def on_resize(self, event) -> None:
-        self.set_class(event.size.width < 110, "-portrait")
 
     @work(thread=True, exclusive=True, group="scan")
     def scan(self) -> None:
@@ -1098,6 +1100,7 @@ class BuildView(View):
 
     def _start_monitor(self, cfg: BuildConfig) -> None:
         self.add_class("-monitor")
+        self.call_after_refresh(self.apply_panel_layout)
         mon = self.monitor
         panel = self.query_one("#b-monitor-panel", Panel)
         panel.border_title = f"Monitor · {cfg.name}"
@@ -1120,6 +1123,7 @@ class BuildView(View):
         if self.screen.maximized is not None:
             self.screen.minimize()
         self.remove_class("-monitor")
+        self.call_after_refresh(self.apply_panel_layout)
         self.monitor_config = None
         self.configs_list.focus()
         self.update_status()

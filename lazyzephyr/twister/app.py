@@ -383,6 +383,8 @@ HELP_TEXT = """\
   .          repeat the last run         ctrl+x  clear queue + stop running job
   C          clear the cache (twister build output, optionally results)
   z          maximize / restore panel    v   layout: auto → landscape → portrait
+  + / -      grow / shrink the panel     < / >   move the panel back / on
+  =          reset sizes and order       (or drag the border between two panels)
   q          quit
 
 Layout adapts to the terminal: two columns when wide, stacked when narrow or
@@ -521,6 +523,8 @@ TWISTER_CSS = """
 
 
 class TwisterView(View):
+    SPLITS = ("main", "right")
+    AUTO_PORTRAIT = False  # apply_layout() picks the orientation
 
     BINDINGS = [
         Binding("question_mark", "help", "Help"),
@@ -581,7 +585,6 @@ class TwisterView(View):
         self._dirty = False
         self._spin = 0
         self._followed_job: int | None = None
-        self.layout_mode = "auto"  # auto | landscape | portrait
         self.orientation = "landscape"
         self.compact = False
 
@@ -703,6 +706,7 @@ class TwisterView(View):
         if self.compact and self.focused is not None and self.focused.id == "details-panel":
             self.focus_here(self.tree)
         self.refresh_jobs()
+        self.call_after_refresh(self.apply_panel_layout)
 
     def on_resize(self, event) -> None:
         # Runs before App updates self.size, so use the event's size.
