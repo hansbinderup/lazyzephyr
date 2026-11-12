@@ -553,7 +553,11 @@ class KconfigView(View):
         if remember and self.current is not None and self.current is not sym:
             self.history.append(self.current)
         self.current = sym
-        self.reveal_symbol(sym)  # hidden options stay on the right only
+        # Hidden options stay on the right only. History can hold menus too.
+        if isinstance(sym, self.lib.MenuNode):
+            self.reveal_node(sym)
+        else:
+            self.reveal_symbol(sym)
         self.refresh_side()
 
     def update_status(self, message: str | None = None) -> None:

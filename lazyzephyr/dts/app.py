@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 from dataclasses import dataclass, field
@@ -132,6 +133,12 @@ class FilterInput(ForwardActions, Input):
 # --------------------------------------------------------------------------
 # Dialogs
 # --------------------------------------------------------------------------
+
+
+def prop_id(name: str) -> str:
+    """A widget id for property `name` (ids can't hold `#` or `,`, as in
+    `#gpio-cells` or `vnd,mode`)."""
+    return "prop-" + re.sub(r"[^A-Za-z0-9_-]", "_", name)
 
 
 def file_options(files: list[Path], base: Path, user: list[Path]) -> list[tuple[str, Path]]:
@@ -744,10 +751,10 @@ class NodeFormScreen(ModalScreen[EditResult | None]):
                 if spec.type == "boolean":
                     yield Static("  (set to true)", classes="hint")
                 elif spec.enum and spec.type in ("int", "string"):
-                    yield Select([(str(v), str(v)) for v in spec.enum], id=f"prop-{name}",
+                    yield Select([(str(v), str(v)) for v in spec.enum], id=prop_id(name),
                                  prompt="pick a value")
                 else:
-                    yield Input(id=f"prop-{name}", placeholder=spec.type)
+                    yield Input(id=prop_id(name), placeholder=spec.type)
             yield Static("Write to", classes="label")
             files = s.write_files(self.parent_path)
             yield Select(file_options(files, self.base, s.inputs.user_files),
@@ -804,7 +811,7 @@ class NodeFormScreen(ModalScreen[EditResult | None]):
             if spec.type == "boolean":
                 props.append((pname, None))
                 continue
-            widget = self.query_one(f"#prop-{pname}")
+            widget = self.query_one(f"#{prop_id(pname)}")
             value = widget.value
             if not isinstance(value, str) or not value:
                 self._error(f"{pname} is required")

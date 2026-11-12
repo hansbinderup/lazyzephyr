@@ -95,3 +95,21 @@ async def test_tree_values_and_problems(workspace, kbuild, tmp_path, monkeypatch
         assert isinstance(app.screen, KProblemsScreen)
         await pilot.press("enter")
         await wait_for(lambda: getattr(view.current, "name", None) == "I2C_SHELL")
+
+
+async def test_back_to_a_menu(workspace, kbuild, tmp_path, monkeypatch):
+    app = make_app(workspace, kbuild, tmp_path, monkeypatch)
+    view = app.view
+    async with app.run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: view.session is not None and view.items)
+        # A menu is selected, then a jump to an option: backspace goes back to
+        # the menu (it used to crash: menus have no .nodes).
+        menu = view.session.kconf.top_node.list
+        while menu is not None and menu.item is not view.lib.MENU:
+            menu = menu.next
+        assert view.reveal_node(menu)
+        await wait_for(lambda: view.current is menu)
+        view.show_symbol(view.session.symbol("SHELL"))
+        await pilot.pause()
+        await pilot.press("backspace")
+        await wait_for(lambda: view.current is menu)

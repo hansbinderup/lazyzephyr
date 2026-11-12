@@ -77,4 +77,17 @@ def workspace(tmp_path: Path, zephyr_base: Path, monkeypatch) -> Path:
             type: int
             default: 1
         """)
+    # One whose required properties aren't plain names (#..., vendor,...).
+    write(top / "mod" / "dts" / "bindings" / "vnd,expander.yaml", """
+        description: Test GPIO expander on I2C
+        compatible: "vnd,expander"
+        include: i2c-device.yaml
+        properties:
+          "#gpio-cells":
+            type: int
+            required: true
+          vnd,mode:
+            type: string
+            required: true
+        """)
     return top

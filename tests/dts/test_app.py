@@ -4,7 +4,7 @@ import asyncio
 
 from textual.widgets import Input
 
-from lazyzephyr.dts.app import AppConfig, LazyDtsApp
+from lazyzephyr.dts.app import AppConfig, LazyDtsApp, prop_id
 from lazyzephyr.dts.editors import PickScreen, SpecifierEditor
 from lazyzephyr.dts.state import TargetChoice
 from lazyzephyr.dts.workspace import find_workspace
@@ -246,3 +246,27 @@ async def test_enum_and_children(workspace, tmp_path, monkeypatch):
         assert isinstance(app.screen, PickScreen)
         await pilot.press(*"slo", "enter")
         await wait_for(lambda: 'mode = "slow";' in overlay.read_text())
+
+
+async def test_add_node_with_odd_property_names(workspace, tmp_path, monkeypatch):
+    app = make_app(workspace, tmp_path, monkeypatch)
+    overlay = workspace / "app" / "boards" / "native_sim.overlay"
+    async with app.run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: app.bindings_catalog)
+        i2c = next(p for p in app.node_index if p.startswith("/i2c@"))
+        app.tree.move_cursor(app.node_index[i2c])
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
+        await pilot.press(*"vnd,expander")
+        await pilot.pause()
+        await pilot.press("enter")  # the form used to crash on '#gpio-cells'
+        await pilot.pause()
+        await pilot.press(*"0x20")
+        form = app.screen
+        form.query_one(f"#{prop_id('#gpio-cells')}").value = "2"
+        form.query_one(f"#{prop_id('vnd,mode')}").value = "a"
+        await pilot.press("ctrl+s")
+        await wait_for(lambda: "expander@20 {" in overlay.read_text())
+        text = overlay.read_text()
+        assert "#gpio-cells = <2>;" in text and 'vnd,mode = "a";' in text
