@@ -10,7 +10,7 @@ from pathlib import Path
 from . import cache, folders
 from .config import CONFIG_NAME, ConfigError, FileConfig, find_config, load_config
 from .discovery import default_roots, find_workspace
-from .jobs import RunOptions
+from .jobs import Hardware, RunOptions
 
 
 def default_state_dir(anchor: Path) -> Path:
@@ -51,6 +51,15 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="don't pass -v to twister (disables live per-scenario status)")
     parser.add_argument("-j", "--jobs", type=int, default=None,
                         help="twister -j (default: twister's own default)")
+    parser.add_argument("--device-serial", default=None, metavar="PORT",
+                        help="run on a connected board: its console UART "
+                             "(twister --device-testing --device-serial)")
+    parser.add_argument("--west-runner", default=None, metavar="RUNNER",
+                        help="flash runner for --device-serial (default: the board's)")
+    parser.add_argument("-X", "--fixture", action="append", default=[],
+                        help="twister fixture the board has (repeatable)")
+    parser.add_argument("--case-results", action="store_true", default=None,
+                        help="print every case's result in Output when a job ends")
     parser.add_argument("-w", "--watch", action="append", type=Path, default=[],
                         help="extra path to watch for changes (repeatable), e.g. lib/")
     parser.add_argument("--auto-run", action="store_true", default=None,
@@ -115,6 +124,12 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
     twister = shlex.split(twister_str) if twister_str else default_twister_cmd(
         workspace.zephyr_base
     )
+    hardware = file_config.hardware or Hardware()
+    if args.device_serial:
+        hardware.enabled, hardware.serial = True, args.device_serial
+    if args.west_runner:
+        hardware.runner = args.west_runner
+    hardware.fixtures = list(dict.fromkeys([*hardware.fixtures, *args.fixture]))
     return AppConfig(
         cwd=cwd,
         roots=roots,
@@ -128,6 +143,8 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
             verbose=pick(None if args.quiet is None else False, file_config.verbose, True),
             extra_args=[*file_config.extra_args, *extra],
             jobs=pick(args.jobs, file_config.jobs, None),
+            hardware=hardware,
+            case_results=pick(args.case_results, file_config.case_results, False),
         ),
         watch_paths=[w.resolve() for w in args.watch] or file_config.watch,
         auto_run=pick(args.auto_run, file_config.auto_run, False),

@@ -33,6 +33,10 @@
 - **Jump to the failure**: lazyzephyr reads where each failed assertion happened (file,
   line and message) from the test log, and shows it in Details. Press `e` on a failed case
   or scenario to open `$EDITOR` at the failing `zassert`.
+- **Run on a board** (`d`): pick the console serial port, baud rate, flash runner and
+  debug probe, and the fixtures the board has. See [Running on a board](#running-on-a-board).
+- **Case results in Output** (`V`): when a job ends, print every scenario's result and
+  each of its cases (with the failing assert) in the Output panel.
 - **Auto-run** (`w`): when a file changes, lazyzephyr reruns the scenarios it belongs to.
   For a change outside a test directory (any path passed with `-w`), it repeats the last run.
 
@@ -82,6 +86,14 @@ watch = ["lib", "subsys"]      # extra paths that trigger auto-run
 twister = "west twister"
 jobs = 8                       # twister -j
 extra_args = ["--coverage"]
+case_results = true            # print case results in Output when a job ends
+
+[hardware]                     # run on a board (twister --device-testing)
+serial = "/dev/ttyACM0"        # console UART; setting it turns hardware on
+baud = 115200
+runner = "jlink"               # west flash runner; default: the board's
+dev_id = "000683"              # debug probe serial number
+fixtures = ["gpio_loopback"]   # twister -X
 ```
 
 Unknown keys and wrong types are rejected with a clear error.
@@ -90,6 +102,27 @@ Unknown keys and wrong types are rejected with a clear error.
 > lazyzephyr ignores it for its own imports, so the dev shell's packages can't shadow
 > lazyzephyr's dependencies. The variable is still passed on to twister. Set
 > `LAZYZEPHYR_KEEP_PYTHONPATH=1` to disable this.
+
+## Running on a board
+
+Press `d` to open the hardware settings. `enter` changes the row under the cursor,
+`ctrl+s` applies and `esc` cancels.
+
+| Setting | Twister option | Notes |
+| --- | --- | --- |
+| Run on the board | `--device-testing` | |
+| Serial port | `--device-serial` | the console UART; lists `/dev/serial/by-id/*`, `ttyACM*`, `ttyUSB*` |
+| Baud rate | `--device-serial-baud` | empty = 115200 |
+| Flash runner | `--west-runner` | lists the runners in the board's `board.cmake` |
+| Debug probe | `--west-flash=--dev-id=<id>` | lists the probes plugged in |
+| Fixtures | `-X` | a checklist of the fixtures the tests need (`harness_config: fixture`), with how many tests need each; type others below it. Also applies without a board |
+
+Twister needs exactly one platform (`p`) when it uses a serial port, so lazyzephyr
+refuses to queue a run otherwise. With `--hardware-map` in the extra arguments, no
+serial port is needed. The status bar shows `board: <port> · <runner>` while it is on.
+
+From the command line: `--device-serial PORT` (turns it on), `--west-runner RUNNER`,
+`-X FIXTURE` (repeatable) and `--case-results`.
 
 ## Keys
 
@@ -102,6 +135,8 @@ Unknown keys and wrong types are rejected with a clear error.
 | `r` | queue the marked nodes as one job |
 | `a` / `F` / `.` | queue all / queue failed / repeat the last run |
 | `p` / `g` | choose platforms / toggle integration mode `-G` |
+| `d` | hardware: run on a board, serial port, flash runner, probe, fixtures |
+| `V` | print every case's result in Output when a job ends |
 | `O` | choose the test folders (folder browser) |
 | `w` | toggle auto-run on file change |
 | `/` / `f` | filter / show failed only |

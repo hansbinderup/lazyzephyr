@@ -119,6 +119,40 @@ def parse_twister_json(path: Path) -> list[SuiteResult]:
     return results
 
 
+_ANSI = {"passed": "32", "failed": "31", "error": "1;31", "blocked": "31"}
+_MARK = {"passed": "✔", "failed": "✘", "error": "!", "blocked": "⊘"}
+
+
+def _colored(status: str, text: str) -> str:
+    return f"\x1b[{_ANSI.get(status, '2')}m{text}\x1b[0m"
+
+
+def results_lines(results: list[SuiteResult]) -> list[str]:
+    """Every scenario's result and its cases, for the Output panel."""
+    lines = [f"── results: {len(results)} scenario(s) ──"]
+    for result in sorted(results, key=lambda r: (r.scenario, r.platform)):
+        statuses = list(result.cases.values())
+        passed = statuses.count("passed")
+        mark = _MARK.get(result.status, "○")
+        line = f"{mark} {result.scenario}  {result.platform}  {result.status}"
+        if statuses:
+            line += f"  {passed}/{len(statuses)} cases"
+        if result.execution_time:
+            line += f"  run {result.execution_time:.2f}s"
+        lines.append(_colored(result.status, line))
+        if result.reason and result.status != "passed":
+            lines.append(_colored(result.status, f"    reason: {result.reason}"))
+        for case_id, status in result.cases.items():
+            case = f"    {_MARK.get(status, '○')} {case_id}  {status}"
+            failure = result.failures.get(case_id)
+            if failure:
+                case += f"  {failure['file']}:{failure['line']}"
+                if failure["message"]:
+                    case += f"  {failure['message']}"
+            lines.append(_colored(status, case))
+    return lines
+
+
 class ResultStore:
     """Latest result per (scenario, platform), persisted as JSON."""
 

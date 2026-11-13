@@ -51,6 +51,8 @@ def test_tree(tmp_path: Path) -> Path:
           drivers.beta:
             platform_allow:
               - native_sim
+            harness_config:
+              fixture: gpio_loopback
         """,
     )
     write(root / "drivers" / "beta" / "src" / "test.c", "ZTEST(beta_suite, test_one) {}\n")

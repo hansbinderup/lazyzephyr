@@ -37,6 +37,28 @@ def test_under_and_platforms(test_tree: Path):
     assert found.platforms() == ["native_sim", "qemu_x86"]
 
 
+def test_fixtures_from_harness_config(tmp_path: Path):
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "testcase.yaml").write_text(
+        "common:\n"
+        "  harness_config:\n"
+        "    fixture: uart_loopback\n"
+        "tests:\n"
+        "  t.common: {}\n"
+        "  t.own:\n"
+        "    harness_config: {fixture: gpio_loopback}\n"
+        "  t.none:\n"
+        "    harness_config: {}\n"
+        "    harness: console\n"
+    )
+    found = discover([tmp_path])
+    by_name = found.by_name()
+    assert by_name["t.common"].fixtures == ["uart_loopback"]
+    assert by_name["t.own"].fixtures == ["gpio_loopback"]
+    assert by_name["t.none"].fixtures == ["uart_loopback"]  # an empty mapping inherits
+    assert found.fixtures() == {"gpio_loopback": 1, "uart_loopback": 2}
+
+
 def test_find_workspace(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("ZEPHYR_BASE", raising=False)
     (tmp_path / ".west").mkdir()

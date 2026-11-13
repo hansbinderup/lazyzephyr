@@ -200,3 +200,63 @@ def test_no_clean_disables_clobber(tmp_path):
     assert "--clobber-output" in build_command(["tw"], target, RunOptions(), tmp_path, None)
     cmd = build_command(["tw"], target, RunOptions(extra_args=["-n"]), tmp_path, None)
     assert "--clobber-output" not in cmd
+
+
+def test_build_command_with_hardware(tmp_path):
+    from lazyzephyr.twister.jobs import Hardware, RunTarget
+
+    target = RunTarget("t", [tmp_path], ["lib.x"], [], {"lib.x"})
+    hardware = Hardware(enabled=True, serial="/dev/ttyACM0", baud=921600, runner="jlink",
+                        dev_id="683", fixtures=["gpio_loopback", "usb"])
+    cmd = build_command(["tw"], target, RunOptions(platforms=["frdm_k64f"],
+                                                   hardware=hardware), tmp_path, None)
+    hw = cmd[cmd.index("--device-testing"):cmd.index("-O")]
+    assert hw == ["--device-testing", "--device-serial", "/dev/ttyACM0",
+                  "--device-serial-baud", "921600", "--west-runner", "jlink",
+                  "--west-flash=--dev-id=683", "-X", "gpio_loopback", "-X", "usb"]
+
+    # Off: no device flags, but fixtures still apply (native fixtures exist too).
+    hardware.enabled = False
+    cmd = build_command(["tw"], target, RunOptions(hardware=hardware), tmp_path, None)
+    assert "--device-testing" not in cmd and "--device-serial" not in cmd
+    assert cmd[cmd.index("-X"):cmd.index("-O")] == ["-X", "gpio_loopback", "-X", "usb"]
+
+
+def test_hardware_problem():
+    from lazyzephyr.twister.jobs import Hardware, hardware_problem
+
+    assert hardware_problem(RunOptions()) is None
+    no_port = RunOptions(platforms=["b"], hardware=Hardware(enabled=True))
+    assert "serial port" in hardware_problem(no_port)
+    no_port.extra_args = ["--hardware-map", "map.yaml"]
+    assert hardware_problem(no_port) is None
+    two = RunOptions(platforms=["a", "b"], hardware=Hardware(enabled=True, serial="/dev/x"))
+    assert "exactly one platform" in hardware_problem(two)
+    two.platforms = ["a"]
+    assert hardware_problem(two) is None
+
+
+async def test_case_results_are_printed_when_enabled(test_tree, tmp_path, fake_twister,
+                                                     monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL", "drivers.beta")
+    found = discover([test_tree])
+    finished = []
+    manager = JobManager(fake_twister, tmp_path / "state", tmp_path, on_finished=finished.append)
+    quiet = manager.submit(make_target(refs(found, "drivers.beta"), found), RunOptions())
+    await wait_until(lambda: quiet in finished)
+    loud = manager.submit(make_target(refs(found, "drivers.beta", "lib.alpha.default"), found),
+                          RunOptions(case_results=True))
+    await wait_until(lambda: loud in finished)
+
+    from lazyzephyr.twister.jobs import ANSI_RE
+
+    assert not any("── results" in line for line in quiet.lines)
+    plain = [ANSI_RE.sub("", line) for line in loud.lines]
+    start = next(i for i, line in enumerate(plain) if line.startswith("── results"))
+    assert plain[start + 1:start + 5] == [
+        "✘ drivers.beta  native_sim  failed  0/1 cases  run 0.01s",
+        "    ✘ suite.case_a  failed",
+        "✔ lib.alpha.default  native_sim  passed  1/1 cases  run 0.01s",
+        "    ✔ suite.case_a  passed",
+    ]
+    assert plain[start + 5].startswith("── job #2 failed")
