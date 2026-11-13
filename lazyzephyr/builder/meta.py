@@ -220,3 +220,34 @@ def find_probes(sysfs: Path = Path("/sys/bus/usb/devices")) -> list[Probe]:
             continue  # plain FTDI serial cables
         probes.append(Probe(serial, kind, product))
     return probes
+
+
+# --------------------------------------------------------------------------
+# Serial ports
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SerialPort:
+    path: str  # stable /dev/serial/by-id name when there is one
+    device: str  # what it points at, e.g. /dev/ttyACM0
+
+
+def find_serial_ports(dev: Path = Path("/dev")) -> list[SerialPort]:
+    """USB serial ports, by their stable /dev/serial/by-id names where possible."""
+    ports: list[SerialPort] = []
+    named: set[str] = set()
+    by_id = dev / "serial" / "by-id"
+    try:
+        links = sorted(by_id.iterdir())
+    except OSError:
+        links = []
+    for link in links:
+        device = os.path.realpath(link)
+        named.add(device)
+        ports.append(SerialPort(str(link), device))
+    for pattern in ("ttyACM*", "ttyUSB*"):
+        for tty in sorted(dev.glob(pattern)):
+            if str(tty) not in named and os.path.realpath(tty) not in named:
+                ports.append(SerialPort(str(tty), str(tty)))
+    return ports

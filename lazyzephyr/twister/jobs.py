@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from .discovery import Discovery, ZtestCase
-from .results import SuiteResult, parse_twister_json
+from .results import SuiteResult, parse_twister_json, results_lines
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 # "INFO    - 3/12 native_sim/native/64   lib.foo.native_sim   PASSED (native 0.01s <host>)"
@@ -57,6 +57,26 @@ class NodeRef:
 
 
 @dataclass
+class Hardware:
+    """Running on a connected board (twister --device-testing)."""
+
+    enabled: bool = False
+    serial: str | None = None  # console UART, --device-serial
+    baud: int | None = None  # --device-serial-baud; None = twister's 115200
+    runner: str | None = None  # --west-runner; None = the board's default
+    dev_id: str | None = None  # debug probe serial, passed to west flash as --dev-id
+    fixtures: list[str] = field(default_factory=list)  # -X, also used without a board
+
+    @property
+    def summary(self) -> str:
+        """'/dev/ttyACM0 · jlink · 683' for the status bar."""
+        parts = [self.serial or "no serial port", self.runner or "default runner"]
+        if self.dev_id:
+            parts.append(self.dev_id)
+        return " · ".join(parts)
+
+
+@dataclass
 class RunOptions:
     platforms: list[str] = field(default_factory=list)
     integration: bool = True
@@ -64,6 +84,20 @@ class RunOptions:
     verbose: bool = True  # -v: twister prints one line per finished scenario (live status)
     extra_args: list[str] = field(default_factory=list)
     jobs: int | None = None  # twister -j; None = twister's default
+    hardware: Hardware = field(default_factory=Hardware)
+    case_results: bool = False  # print every scenario's case results when a job ends
+
+
+def hardware_problem(options: RunOptions) -> str | None:
+    """Why twister would refuse these device-testing options, if it would."""
+    hw = options.hardware
+    if not hw.enabled:
+        return None
+    if not hw.serial and "--hardware-map" not in options.extra_args:
+        return "device testing needs a serial port (d to pick one)"
+    if hw.serial and len(options.platforms) != 1:
+        return "device testing needs exactly one platform (p to pick it)"
+    return None
 
 
 @dataclass
@@ -178,6 +212,20 @@ def build_command(
         cmd.append("-v")
     if jobs:
         cmd += ["-j", str(jobs)]
+    hw = options.hardware
+    if hw.enabled:
+        cmd.append("--device-testing")
+        if hw.serial:
+            cmd += ["--device-serial", hw.serial]
+        if hw.baud:
+            cmd += ["--device-serial-baud", str(hw.baud)]
+        if hw.runner:
+            cmd += ["--west-runner", hw.runner]
+        if hw.dev_id:
+            # west flash passes what follows "--" on to the runner
+            cmd.append(f"--west-flash=--dev-id={hw.dev_id}")
+    for fixture in hw.fixtures:
+        cmd += ["-X", fixture]
     cmd += ["-O", str(outdir)]
     # Without this twister renames the previous outdir to run.1, run.2, ... so the
     # cache grows with every run (and twister gives up after 99).
@@ -349,6 +397,9 @@ class JobManager:
                 job.results = parse_twister_json(report)
             except (OSError, ValueError) as exc:
                 self._emit(job, f"could not parse {report}: {exc}")
+            if job.options.case_results and job.results:
+                for line in results_lines(job.results):
+                    self._emit(job, line)
         if job.state == "cancelled":
             self._finish(job, "cancelled")
         elif job.returncode == 0:

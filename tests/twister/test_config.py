@@ -1,4 +1,5 @@
 import argparse
+import re
 from pathlib import Path
 
 import pytest
@@ -94,3 +95,62 @@ def test_broken_config_exits_with_message(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit, match="unknown key"):
         config_from_args(parse(), [])
+
+
+def test_hardware_table(tmp_path):
+    cfg = load_config(write(tmp_path / ".lazyzephyr.toml", """
+case_results = true
+
+[hardware]
+serial = "/dev/ttyACM0"
+baud = 921600
+runner = "jlink"
+dev_id = "683"
+fixtures = ["gpio_loopback"]
+"""))
+    hw = cfg.hardware
+    assert cfg.case_results is True
+    assert hw.enabled is True  # a serial port alone turns it on
+    assert (hw.serial, hw.baud, hw.runner, hw.dev_id) == ("/dev/ttyACM0", 921600, "jlink", "683")
+    assert hw.fixtures == ["gpio_loopback"]
+
+    fixtures_only = load_config(write(tmp_path / "b.toml", '[hardware]\nfixtures = ["x"]\n'))
+    assert fixtures_only.hardware.enabled is False
+
+
+@pytest.mark.parametrize("body, message", [
+    ("hardware = 1", "'hardware' must be a table"),
+    ("[hardware]\nport = 'x'", "unknown key(s) in [hardware]: port"),
+    ("[hardware]\nenabled = 1", "'hardware.enabled' must be true or false"),
+    ("[hardware]\nserial = ''", "'hardware.serial' must be a non-empty string"),
+    ("[hardware]\nbaud = 0", "'hardware.baud' must be a positive integer"),
+    ("[hardware]\nfixtures = 'x'", "'hardware.fixtures' must be a list"),
+    ("case_results = 'yes'", "'case_results' must be true or false"),
+])
+def test_invalid_hardware_is_rejected(tmp_path, body, message):
+    with pytest.raises(ConfigError, match=re.escape(message)):
+        load_config(write(tmp_path / ".lazyzephyr.toml", body))
+
+
+def test_cli_hardware_flags_override_config(tmp_path, monkeypatch):
+    (tmp_path / "tests").mkdir()
+    write(tmp_path / ".lazyzephyr.toml", """
+roots = ["tests"]
+[hardware]
+serial = "/dev/ttyACM0"
+runner = "jlink"
+fixtures = ["a"]
+""")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ZEPHYR_BASE", raising=False)
+
+    from_file = config_from_args(parse(), [])
+    assert from_file.options.hardware.serial == "/dev/ttyACM0"
+    assert from_file.options.case_results is False
+
+    cli = config_from_args(parse("--device-serial", "/dev/ttyUSB1", "--west-runner", "pyocd",
+                                 "-X", "b", "-X", "a", "--case-results"), [])
+    hw = cli.options.hardware
+    assert (hw.enabled, hw.serial, hw.runner) == (True, "/dev/ttyUSB1", "pyocd")
+    assert hw.fixtures == ["a", "b"]
+    assert cli.options.case_results is True

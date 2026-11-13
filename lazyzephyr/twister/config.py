@@ -11,6 +11,15 @@ Example::
     twister = "west twister"
     jobs = 8                    # twister -j
     extra_args = ["--coverage"]
+    case_results = true         # print case results in Output when a job ends
+
+    [hardware]                  # twister --device-testing
+    enabled = true              # default: true if serial is set
+    serial = "/dev/ttyACM0"     # console UART
+    baud = 115200
+    runner = "jlink"            # west flash runner; default: the board's
+    dev_id = "000683"           # debug probe serial
+    fixtures = ["gpio_loopback"]
 
 Relative paths are resolved against the directory holding the file.
 Command line options override values from the file.
@@ -21,6 +30,8 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from .jobs import Hardware
 
 CONFIG_NAME = ".lazyzephyr.toml"
 
@@ -41,11 +52,47 @@ class FileConfig:
     twister: str | None = None
     jobs: int | None = None
     extra_args: list[str] = field(default_factory=list)
+    case_results: bool | None = None
+    hardware: Hardware | None = None
 
 
 _STR_LISTS = ("roots", "platforms", "watch", "extra_args")
-_BOOLS = ("integration", "verbose", "auto_run")
-_KNOWN = {*_STR_LISTS, *_BOOLS, "twister", "jobs"}
+_BOOLS = ("integration", "verbose", "auto_run", "case_results")
+_KNOWN = {*_STR_LISTS, *_BOOLS, "twister", "jobs", "hardware"}
+_HARDWARE_STRS = ("serial", "runner", "dev_id")
+_HARDWARE_KNOWN = {*_HARDWARE_STRS, "enabled", "baud", "fixtures"}
+
+
+def _positive_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def load_hardware(path: Path, data) -> Hardware:
+    if not isinstance(data, dict):
+        raise ConfigError(f"{path}: 'hardware' must be a table ([hardware])")
+    unknown = sorted(set(data) - _HARDWARE_KNOWN)
+    if unknown:
+        raise ConfigError(f"{path}: unknown key(s) in [hardware]: {', '.join(unknown)} "
+                          f"(known: {', '.join(sorted(_HARDWARE_KNOWN))})")
+    if "enabled" in data and not isinstance(data["enabled"], bool):
+        raise ConfigError(f"{path}: 'hardware.enabled' must be true or false")
+    for key in _HARDWARE_STRS:
+        if key in data and (not isinstance(data[key], str) or not data[key].strip()):
+            raise ConfigError(f"{path}: 'hardware.{key}' must be a non-empty string")
+    if "baud" in data and not _positive_int(data["baud"]):
+        raise ConfigError(f"{path}: 'hardware.baud' must be a positive integer")
+    fixtures = data.get("fixtures", [])
+    if not isinstance(fixtures, list) or not all(isinstance(f, str) and f for f in fixtures):
+        raise ConfigError(f"{path}: 'hardware.fixtures' must be a list of non-empty strings")
+    return Hardware(
+        # a serial port alone means "run on the board"
+        enabled=data.get("enabled", "serial" in data),
+        serial=data.get("serial"),
+        baud=data.get("baud"),
+        runner=data.get("runner"),
+        dev_id=data.get("dev_id"),
+        fixtures=fixtures,
+    )
 
 
 def find_config(start: Path, stop: Path | None) -> Path | None:
@@ -87,7 +134,7 @@ def load_config(path: Path) -> FileConfig:
     if twister is not None and (not isinstance(twister, str) or not twister.strip()):
         raise ConfigError(f"{path}: 'twister' must be a non-empty string")
     jobs = data.get("jobs")
-    if jobs is not None and (isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1):
+    if jobs is not None and not _positive_int(jobs):
         raise ConfigError(f"{path}: 'jobs' must be a positive integer")
 
     base = path.parent.resolve()
@@ -102,4 +149,6 @@ def load_config(path: Path) -> FileConfig:
         twister=twister,
         jobs=jobs,
         extra_args=str_list("extra_args"),
+        case_results=data.get("case_results"),
+        hardware=load_hardware(path, data["hardware"]) if "hardware" in data else None,
     )

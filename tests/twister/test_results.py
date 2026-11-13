@@ -85,3 +85,24 @@ def test_case_only_merge_keeps_other_failures():
     store.merge([SuiteResult("a.b", "p", "passed", cases={"s.two": "passed"})],
                 only_cases={"s.two"})
     assert store.for_scenario("a.b")["p"].failures == {"s.one": {"line": 1}}
+
+
+def test_results_lines_show_cases_and_failures():
+    import re
+
+    from lazyzephyr.twister.results import results_lines
+
+    failed = SuiteResult("lib.x", "frdm_k64f", "failed", execution_time=4.2,
+                         reason="Testsuite failed",
+                         cases={"s.ok": "passed", "s.bad": "failed", "s.skip": "skipped"},
+                         failures={"s.bad": {"file": "src/main.cpp", "line": 12,
+                                             "message": "a not equal to b"}})
+    plain = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in results_lines([failed])]
+    assert plain == [
+        "── results: 1 scenario(s) ──",
+        "✘ lib.x  frdm_k64f  failed  1/3 cases  run 4.20s",
+        "    reason: Testsuite failed",
+        "    ✔ s.ok  passed",
+        "    ✘ s.bad  failed  src/main.cpp:12  a not equal to b",
+        "    ○ s.skip  skipped",
+    ]

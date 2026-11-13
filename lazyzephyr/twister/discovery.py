@@ -79,6 +79,7 @@ class Scenario:
     integration_platforms: list[str] = field(default_factory=list)
     build_only: bool = False
     harness: str | None = None
+    fixtures: list[str] = field(default_factory=list)  # harness_config: fixture
     cases: list[ZtestCase] = field(default_factory=list)
 
     @property
@@ -122,6 +123,14 @@ class Discovery:
             found.update(s.integration_platforms)
         return sorted(found)
 
+    def fixtures(self) -> dict[str, int]:
+        """Fixtures the scenarios need (harness_config: fixture), with how many need each."""
+        counts: dict[str, int] = {}
+        for s in self.scenarios:
+            for fixture in s.fixtures:
+                counts[fixture] = counts.get(fixture, 0) + 1
+        return dict(sorted(counts.items()))
+
 
 def find_workspace(start: Path) -> Workspace:
     """Walk upwards from `start` looking for a west workspace (.west/config)."""
@@ -159,6 +168,10 @@ def _as_list(value: object) -> list[str]:
     if isinstance(value, (list, tuple, set)):
         return [str(v) for v in value]
     return [str(value)]
+
+
+def _as_dict(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
 
 
 def _skip_dir(name: str) -> bool:
@@ -222,6 +235,9 @@ def parse_testcase_yaml(path: Path) -> list[Scenario]:
         def merged(key: str):
             return spec.get(key, common.get(key))
 
+        harness_config = {**_as_dict(common.get("harness_config")),
+                          **_as_dict(spec.get("harness_config"))}
+
         scenarios.append(
             Scenario(
                 name=str(name),
@@ -232,6 +248,7 @@ def parse_testcase_yaml(path: Path) -> list[Scenario]:
                 integration_platforms=merged_list("integration_platforms"),
                 build_only=bool(merged("build_only")),
                 harness=merged("harness"),
+                fixtures=list(dict.fromkeys(_as_list(harness_config.get("fixture")))),
                 cases=cases,
             )
         )

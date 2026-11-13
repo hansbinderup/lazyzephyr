@@ -7,7 +7,7 @@ import os
 import shlex
 import subprocess
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from rich.text import Text
@@ -22,9 +22,11 @@ from textual.widgets.tree import TreeNode
 
 from . import cache, folders
 from .discovery import Discovery, Scenario, Workspace, default_roots, discover
-from .jobs import Job, JobManager, NodeRef, RunOptions, RunTarget, make_target
+from .hardware import HardwareScreen
+from .jobs import Job, JobManager, NodeRef, RunOptions, RunTarget, hardware_problem, make_target
 from .results import ResultStore, worst
 from .watcher import WatchError, watch_changes
+from ..builder.app import BUILD_CSS
 from ..clipboard import SystemClipboard
 from ..view import COMMON_CSS, ForwardActions, View
 
@@ -380,6 +382,8 @@ HELP_TEXT = """\
 [b]Global[/]
   a          queue all test roots        F   queue failed scenarios
   p          choose platforms            g   toggle integration mode (-G)
+  d          hardware: run on a board, serial port, flash runner, probe, fixtures
+  V          print every case's result in Output when a job ends
   w          toggle auto-run on change   ctrl+r  rediscover tests
   .          repeat the last run         ctrl+x  clear queue + stop running job
   C          clear the cache (twister build output, optionally results)
@@ -494,6 +498,9 @@ TWISTER_CSS = """
     TwisterView #jobs { height: 9; }
     TwisterView #log { height: 1fr; }
     TwisterView #details-panel { height: 40%; padding: 0 1; }
+    HardwareScreen, FixtureScreen { align: center middle; }
+    #fixture-list { height: auto; max-height: 20; margin: 1 0; }
+    #hardware-rows { height: auto; max-height: 12; margin: 1 0; }
     #platform-dialog, #help-dialog, #info-dialog, #confirm-dialog, #cache-dialog,
     #folder-dialog {
         width: 90; max-width: 95%; height: auto; max-height: 90%;
@@ -533,6 +540,8 @@ class TwisterView(View):
         Binding("F", "rerun_failed", "Queue failed"),
         Binding("full_stop", "repeat_last", "Repeat"),
         Binding("p", "platforms", "Platform"),
+        Binding("d", "hardware", "Hardware"),
+        Binding("V", "toggle_case_results", "Case results", show=False),
         Binding("O", "choose_folders", "Folders"),
         Binding("g", "toggle_integration", "-G", show=False),
         Binding("w", "toggle_autorun", "Auto-run"),
@@ -994,6 +1003,16 @@ class TwisterView(View):
         if self.options.integration:
             text.append(*sep)
             text.append("-G")
+        hw = self.options.hardware
+        if hw.enabled:
+            text.append(*sep)
+            text.append(f"board: {hw.summary}", style="cyan")
+        if hw.fixtures:
+            text.append(*sep)
+            text.append(f"-X {','.join(hw.fixtures)}")
+        if self.options.case_results:
+            text.append(*sep)
+            text.append("case results")
         if self.auto_run:
             text.append(*sep)
             text.append("auto-run", style="yellow")
@@ -1027,6 +1046,10 @@ class TwisterView(View):
         row("config", cfg.config_file or "none (.lazyzephyr.toml)")
         row("platforms", ", ".join(self.options.platforms) or "twister default")
         row("integration", on if self.options.integration else off)
+        hw = self.options.hardware
+        row("hardware", Text(hw.summary, style="cyan") if hw.enabled else off)
+        row("fixtures", ", ".join(hw.fixtures) or "none")
+        row("case results", on if self.options.case_results else off)
         row("auto-run", on if self.auto_run else off)
         current = self.jobs.current
         row("queue", f"{'running #' + str(current.id) if current else 'idle'}"
@@ -1251,6 +1274,7 @@ class TwisterView(View):
         self._submit_target(target)
 
     def _submit_target(self, target: RunTarget) -> None:
+        hw = self.options.hardware
         options = RunOptions(
             platforms=list(self.options.platforms),
             integration=self.options.integration,
@@ -1258,7 +1282,13 @@ class TwisterView(View):
             verbose=self.options.verbose,
             extra_args=list(self.options.extra_args),
             jobs=self.options.jobs,
+            hardware=replace(hw, fixtures=list(hw.fixtures)),
+            case_results=self.options.case_results,
         )
+        problem = hardware_problem(options)
+        if problem:
+            self.notify(problem, severity="error", timeout=5)
+            return
         job = self.jobs.submit(target, options)
         if job is None:
             self.notify("already queued", severity="warning", timeout=2)
@@ -1372,6 +1402,21 @@ class TwisterView(View):
                 self.update_status()
 
         self.push_screen(PlatformScreen(self.discovery.platforms(), self.options.platforms), apply)
+
+    def action_hardware(self) -> None:
+        def apply(result) -> None:
+            if result is not None:
+                self.options.hardware = result
+                self.update_status()
+
+        self.push_screen(HardwareScreen(self.options.hardware, self.options.platforms,
+                                        self.config.cwd, self.discovery.fixtures()), apply)
+
+    def action_toggle_case_results(self) -> None:
+        self.options.case_results = not self.options.case_results
+        state = "on" if self.options.case_results else "off"
+        self.notify(f"case results in Output {state}", timeout=2)
+        self.update_status()
 
     def action_toggle_integration(self) -> None:
         self.options.integration = not self.options.integration
@@ -1598,7 +1643,11 @@ class TwisterView(View):
 class LazyTwisterApp(SystemClipboard, App):
     """The twister tab on its own (used by the tests)."""
 
-    CSS = COMMON_CSS + TWISTER_CSS
+    # BUILD_CSS: the hardware screen reuses the Build tab's pickers.
+    CSS = COMMON_CSS + TWISTER_CSS + BUILD_CSS + """
+    .dialog { width: 100; max-width: 95%; height: auto; max-height: 90%; padding: 1 2; }
+    .hint { color: $text-muted; }
+    """
     BINDINGS = [Binding("q", "request_quit", "Quit")]
 
     def __init__(self, config: AppConfig):

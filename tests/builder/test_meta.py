@@ -64,3 +64,20 @@ def test_shields(tmp_path, monkeypatch):
     (s2 / "two.overlay").write_text("")
     names = [s.name for s in meta.find_shields(Workspace(tmp_path, zb))]
     assert names == ["one_a", "one_b", "two"]
+
+
+def test_serial_ports_prefer_by_id_names(tmp_path):
+    dev = tmp_path / "dev"
+    by_id = dev / "serial" / "by-id"
+    by_id.mkdir(parents=True)
+    for tty in ("ttyACM0", "ttyACM1", "ttyUSB0", "ttyS0"):
+        (dev / tty).touch()
+    (by_id / "usb-SEGGER_J-Link_000683-if00").symlink_to("../../ttyACM0")
+
+    ports = meta.find_serial_ports(dev)
+    assert [(p.path, p.device) for p in ports] == [
+        (str(by_id / "usb-SEGGER_J-Link_000683-if00"), str(dev / "ttyACM0")),
+        (str(dev / "ttyACM1"), str(dev / "ttyACM1")),
+        (str(dev / "ttyUSB0"), str(dev / "ttyUSB0")),
+    ]
+    assert meta.find_serial_ports(tmp_path / "nothing") == []

@@ -291,3 +291,45 @@ async def test_big_tree_opens_only_roots_and_builds_children_on_expand(
         await pilot.press("slash", *"g2.t1")
         await wait_for(lambda: "s:g2.t1" in app.node_index)
 
+
+
+async def test_hardware_screen_sets_device_flags(test_tree, tmp_path, fake_twister):
+    import json
+
+    from lazyzephyr.twister.hardware import FixtureScreen, HardwareScreen
+
+    app = make_app(test_tree, tmp_path, fake_twister)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await wait_for(lambda: "s:drivers.beta" in app.node_index)
+        await pilot.press("d")
+        await wait_for(lambda: isinstance(app.screen, HardwareScreen))
+        await pilot.press("enter")  # "Run on the board": on
+        await pilot.press("down", "enter")  # serial port: picker, then "other…"
+        await pilot.press(*"other", "enter")
+        await pilot.press(*"/dev/ttyFAKE", "enter")
+        await pilot.press("down", "down", "down", "down", "enter")  # fixtures
+        await wait_for(lambda: isinstance(app.screen, FixtureScreen))
+        assert app.screen.known == {"gpio_loopback": 1}  # from drivers.beta's testcase.yaml
+        await pilot.press("space", "enter")
+        await wait_for(lambda: isinstance(app.screen, HardwareScreen)
+                       and app.screen.draft.fixtures == ["gpio_loopback"])
+        await pilot.press("ctrl+s")
+        hw = app.options.hardware
+        assert (hw.enabled, hw.serial, hw.fixtures) == (True, "/dev/ttyFAKE", ["gpio_loopback"])
+        assert "board: /dev/ttyFAKE" in str(app.view._status_line())
+
+        # Twister needs exactly one platform with a serial port: refused, nothing queued.
+        app.tree.focus()
+        app.tree.move_cursor(app.node_index["s:drivers.beta"])
+        await pilot.press("enter")
+        assert app.jobs.jobs == []
+
+        app.options.platforms = ["native_sim"]
+        await pilot.press("V")  # case results in Output
+        await pilot.press("enter")
+        await wait_for(lambda: app.jobs.jobs and not app.jobs.jobs[0].active, timeout=10)
+        assert app.jobs.jobs[0].state == "passed", app.jobs.jobs[0].lines
+        argv = json.loads((tmp_path / "state" / "run" / "argv.json").read_text())
+        assert argv[argv.index("--device-testing"):argv.index("-O")] == [
+            "--device-testing", "--device-serial", "/dev/ttyFAKE", "-X", "gpio_loopback"]
+        assert any("── results" in line for line in app.jobs.jobs[0].lines)
