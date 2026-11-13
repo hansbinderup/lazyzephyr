@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from .discovery import Discovery, ZtestCase
-from .results import SuiteResult, parse_twister_json, results_lines
+from .results import SuiteResult, attach_case_logs, parse_twister_json, results_lines
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 # "INFO    - 3/12 native_sim/native/64   lib.foo.native_sim   PASSED (native 0.01s <host>)"
@@ -395,6 +395,7 @@ class JobManager:
         if job.state != "cancelled" and report.is_file():
             try:
                 job.results = parse_twister_json(report)
+                await asyncio.to_thread(attach_case_logs, job.results, job.outdir)
             except (OSError, ValueError) as exc:
                 self._emit(job, f"could not parse {report}: {exc}")
             if job.options.case_results and job.results:

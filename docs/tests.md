@@ -35,8 +35,13 @@
   or scenario to open `$EDITOR` at the failing `zassert`.
 - **Run on a board** (`d`): pick the console serial port, baud rate, flash runner and
   debug probe, and the fixtures the board has. See [Running on a board](#running-on-a-board).
+- **Output per test**: each ztest case's console output (from `START - test_x` to its
+  `PASS`/`FAIL`) is split out of the run's `handler.log` / `device.log` and kept with the
+  results. Details shows all of it for a case, and the last lines of every case for a
+  scenario. pytest tests are split per test only when the board is started per test
+  (`pytest_dut_scope` other than `session`); a session-scoped run is one log.
 - **Case results in Output** (`V`): when a job ends, print every scenario's result and
-  each of its cases (with the failing assert) in the Output panel.
+  each of its cases (with the failing assert and the case's output) in the Output panel.
 - **Auto-run** (`w`): when a file changes, lazyzephyr reruns the scenarios it belongs to.
   For a change outside a test directory (any path passed with `-w`), it repeats the last run.
 

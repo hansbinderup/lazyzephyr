@@ -260,3 +260,24 @@ async def test_case_results_are_printed_when_enabled(test_tree, tmp_path, fake_t
         "    ✔ suite.case_a  passed",
     ]
     assert plain[start + 5].startswith("── job #2 failed")
+
+
+async def test_case_output_is_kept_and_printed(test_tree, tmp_path, fake_twister, monkeypatch):
+    from lazyzephyr.twister.jobs import ANSI_RE
+
+    monkeypatch.setenv("FAKE_HANDLER_LOG", "1")
+    found = discover([test_tree])
+    finished = []
+    manager = JobManager(fake_twister, tmp_path / "state", tmp_path, on_finished=finished.append)
+    job = manager.submit(make_target(refs(found, "drivers.beta"), found),
+                         RunOptions(case_results=True))
+    await wait_until(lambda: job in finished)
+    assert job.results[0].case_logs == {"suite.case_a": (
+        "START - test_case_a\nhello from drivers.beta\n PASS - test_case_a in 0.001 seconds")}
+    plain = [ANSI_RE.sub("", line) for line in job.lines]
+    case = plain.index("    ✔ suite.case_a  passed")
+    assert plain[case + 1:case + 4] == [
+        "        │ START - test_case_a",
+        "        │ hello from drivers.beta",
+        "        │  PASS - test_case_a in 0.001 seconds",
+    ]

@@ -50,5 +50,13 @@ for index, name in enumerate(scenarios, 1):
                 else "assertion failed\n") if status == "failed" else None,
         "testcases": [{"identifier": "suite.case_a", "status": status}],
     })
+    if os.environ.get("FAKE_HANDLER_LOG"):
+        # Console output where twister keeps it: <outdir>/<platform>/<...>/<scenario>/
+        build = outdir / "native_sim" / "zephyr" / name
+        build.mkdir(parents=True, exist_ok=True)
+        (build / "build.log").write_text("build\n")
+        (build / "handler.log").write_text(
+            "Running TESTSUITE suite\nSTART - test_case_a\n"
+            f"hello from {name}\n {status[:4].upper()} - test_case_a in 0.001 seconds\n")
 (outdir / "twister.json").write_text(json.dumps({"environment": {}, "testsuites": suites}))
 sys.exit(1 if any(s["status"] == "failed" for s in suites) else 0)
