@@ -51,6 +51,7 @@ JOB_ICON = {
     "cancelled": ("⊘", "bright_black"),
 }
 FAILED_STATUSES = ("failed", "error", "blocked")
+CASE_LOG_PREVIEW = 15  # output lines per case in a scenario's Details (a case shows all)
 
 
 def count_text(statuses: list[str | None]) -> Text:
@@ -1063,6 +1064,15 @@ class TwisterView(View):
         text.rstrip()
         return text
 
+    @staticmethod
+    def _log_text(lines: list[str], indent: str) -> Text:
+        text = Text()
+        for line in lines:
+            text.append(indent, style="bright_black")
+            text.append_text(Text.from_ansi(line))
+            text.append("\n")
+        return text
+
     def _rel(self, path: Path) -> str:
         try:
             return str(path.relative_to(self.config.cwd)) or "."
@@ -1175,6 +1185,11 @@ class TwisterView(View):
             failure = self.failure_for(ref)
             if failure is not None:
                 row("failed at", self._failure_text(*failure))
+            for platform, result in self.store.for_scenario(scenario.name).items():
+                log = result.case_logs.get(ref.case.id)
+                if log:
+                    text.append(f"\noutput · {platform}\n", style="bold")
+                    text.append_text(self._log_text(log.splitlines(), indent=""))
             hint = "\nenter: queue only this case (native targets, via -test=)"
             if failure is not None and failure[1] is not None:
                 hint += " · e: open at failing assert"
@@ -1206,15 +1221,23 @@ class TwisterView(View):
             text.append("\n")
             if result.reason and result.status != "passed":
                 text.append(f"    reason: {result.reason}\n", style="red")
-            failed_cases = [c for c, s in result.cases.items() if s in ("failed", "error")]
-            for case_id in failed_cases:
-                text.append(f"    ✘ {case_id}", style="red")
-                failure = result.failures.get(case_id)
+            for case_id, status in result.cases.items():
+                failed = status in ("failed", "error")
+                if not failed and not result.case_logs.get(case_id):
+                    continue
+                icon, style = self._icon(status)
+                text.append(f"    {icon} {case_id}", style=style)
+                failure = result.failures.get(case_id) if failed else None
                 if failure is not None:
                     text.append("  ")
                     text.append(self._failure_text(
                         failure, self.resolve_source(failure["file"], scenario)))
                 text.append("\n")
+                log = result.case_logs.get(case_id, "").splitlines()
+                if len(log) > CASE_LOG_PREVIEW:
+                    text.append(f"      … {len(log) - CASE_LOG_PREVIEW} earlier lines\n",
+                                style="bright_black")
+                text.append_text(self._log_text(log[-CASE_LOG_PREVIEW:], indent="      │ "))
             if result.log and result.status in ("failed", "error"):
                 tail = result.log.strip().splitlines()[-40:]
                 text.append("    ── log tail ──\n", style="bright_black")

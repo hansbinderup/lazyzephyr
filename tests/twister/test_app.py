@@ -333,3 +333,48 @@ async def test_hardware_screen_sets_device_flags(test_tree, tmp_path, fake_twist
         assert argv[argv.index("--device-testing"):argv.index("-O")] == [
             "--device-testing", "--device-serial", "/dev/ttyFAKE", "-X", "gpio_loopback"]
         assert any("── results" in line for line in app.jobs.jobs[0].lines)
+
+
+async def test_details_show_each_case_output(test_tree, tmp_path, fake_twister, monkeypatch):
+    monkeypatch.setenv("FAKE_HANDLER_LOG", "1")
+    app = make_app(test_tree, tmp_path, fake_twister)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await wait_for(lambda: "s:drivers.beta" in app.node_index)
+        app.tree.move_cursor(app.node_index["s:drivers.beta"])
+        await pilot.press("enter")
+        await wait_for(lambda: app.store.scenario_status("drivers.beta") == "passed")
+        app.update_details()
+        details = str(app.query_one("#details").render())
+        assert "✔ suite.case_a" in details
+        assert "│ hello from drivers.beta" in details
+        # Survives a restart: kept in results.json.
+        from lazyzephyr.twister.results import ResultStore
+
+        stored = ResultStore(tmp_path / "state" / "results.json").for_scenario("drivers.beta")
+        assert "hello from drivers.beta" in stored["native_sim"].case_logs["suite.case_a"]
+
+
+async def test_case_details_show_full_output(test_tree, tmp_path, fake_twister):
+    from lazyzephyr.twister.results import SuiteResult
+
+    app = make_app(test_tree, tmp_path, fake_twister)
+    async with app.run_test(size=(160, 50)):
+        await wait_for(lambda: "s:lib.alpha.default" in app.node_index)
+        log = "\n".join(["START - test_adds", *(f"line {i}" for i in range(40)),
+                         " PASS - test_adds in 0.001 seconds"])
+        app.store.merge([SuiteResult("lib.alpha.default", "native_sim", "passed",
+                                     cases={"alpha_suite.adds": "passed"},
+                                     case_logs={"alpha_suite.adds": log})])
+        app.node_index["s:lib.alpha.default"].expand()
+        await wait_for(lambda: "c:lib.alpha.default:alpha_suite.adds" in app.node_index)
+
+        app.tree.move_cursor(app.node_index["s:lib.alpha.default"])
+        app.update_details()
+        scenario = str(app.query_one("#details").render())
+        assert "… 27 earlier lines" in scenario and "line 39" in scenario
+        assert "line 0\n" not in scenario
+
+        app.tree.move_cursor(app.node_index["c:lib.alpha.default:alpha_suite.adds"])
+        app.update_details()
+        case = str(app.query_one("#details").render())
+        assert "output · native_sim" in case and "line 0\n" in case and "line 39" in case
