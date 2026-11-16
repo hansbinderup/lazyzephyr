@@ -24,7 +24,6 @@ jobs:
         # Each Python lazyzephyr supports, against the newest Zephyr release
         # that supports that Python.
         include:
-          - { python: "3.11", zephyr: v4.3.2 }
           - { python: "3.12", zephyr: v4.5.0 }
           - { python: "3.13", zephyr: v4.5.0 }
           - { python: "3.14", zephyr: v4.5.0 }

@@ -63,7 +63,8 @@ grep -rh "python-version: \[" /tmp/z/.github/workflows/ | sort -u
    Move the Python axis entries it supports to it, add the previous newest release to
    the Zephyr axis, and drop the oldest release from it. Keep about four releases.
 3. A Python missing from the newest release stays on the newest release that still
-   supports it (like 3.11 on v4.3.2). Once no tested release supports it, drop it
-   from `requires-python` and the classifiers in `pyproject.toml`.
+   supports it. Once no tested release supports it, drop it from `requires-python`,
+   the classifiers in `pyproject.toml` and `install.sh`. lazyzephyr's oldest Python
+   follows current Zephyr's: 3.12 since Zephyr 4.4.
 4. A new Python lazyzephyr supports: add it to the classifiers and to the Python axis.
 5. If Zephyr's `main` drops or adds a Python, update the nightly matrix too.

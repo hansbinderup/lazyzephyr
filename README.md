@@ -24,7 +24,7 @@ Zephyr only; not Linux devicetrees.
 
 ### With pipx or uv
 
-lazyzephyr is on [PyPI](https://pypi.org/project/lazyzephyr/). It needs Python 3.11 or
+lazyzephyr is on [PyPI](https://pypi.org/project/lazyzephyr/). It needs Python 3.12 or
 newer. Install it as a tool, in its own environment:
 
 ```sh
@@ -47,7 +47,7 @@ pipx install git+https://github.com/hansbinderup/lazyzephyr   # or: uv tool inst
 curl -fsSL https://raw.githubusercontent.com/hansbinderup/lazyzephyr/main/install.sh | bash
 ```
 
-This needs Python 3.11 or newer with the `venv` module (on Debian/Ubuntu:
+This needs Python 3.12 or newer with the `venv` module (on Debian/Ubuntu:
 `sudo apt install python3-venv`). No root is needed. The script:
 
 - creates a virtualenv in `~/.local/share/lazyzephyr` and installs lazyzephyr and its

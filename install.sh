@@ -7,7 +7,7 @@
 #
 # Creates a Python virtualenv in ~/.local/share/lazyzephyr and links the
 # `lazyzephyr` command into ~/.local/bin. Run it again to update.
-# Needs: Python >= 3.11 with the venv module, and curl or a clone of the repo.
+# Needs: Python >= 3.12 with the venv module, and curl or a clone of the repo.
 #
 # Environment overrides:
 #   LAZYZEPHYR_REF      branch, tag or commit to install (default: main)
@@ -43,22 +43,22 @@ main() {
         fi
     fi
 
-    # Find Python >= 3.11 (tomllib).
+    # Find Python >= 3.12, the oldest that current Zephyr supports.
     local python="${PYTHON:-}"
     if [[ -z "$python" ]]; then
         local candidate
-        for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
+        for candidate in python3.14 python3.13 python3.12 python3; do
             if command -v "$candidate" >/dev/null 2>&1 &&
-                "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
+                "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null; then
                 python="$candidate"
                 break
             fi
         done
     fi
-    [[ -n "$python" ]] || die "Python 3.11 or newer is required (set PYTHON=/path/to/python3)."
+    [[ -n "$python" ]] || die "Python 3.12 or newer is required (set PYTHON=/path/to/python3)."
     command -v "$python" >/dev/null 2>&1 || die "Python not found: $python"
-    "$python" -c 'import sys; sys.exit(sys.version_info < (3, 11))' ||
-        die "$python is older than Python 3.11."
+    "$python" -c 'import sys; sys.exit(sys.version_info < (3, 12))' ||
+        die "$python is older than Python 3.12."
 
     say "Installing lazyzephyr from $source"
     say "  using $("$python" --version 2>&1) ($(command -v "$python"))"
