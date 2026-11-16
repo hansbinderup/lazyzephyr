@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -22,6 +23,7 @@ from textual.widgets.option_list import Option
 
 from ..clipboard import SystemClipboard
 from ..dts.workspace import Board, Workspace, find_boards, find_build_dirs
+from ..sdk.model import sdk_env
 from ..view import COMMON_CSS, ForwardActions, View
 from . import meta
 from .configs import (
@@ -846,7 +848,9 @@ class BuildView(View):
         self.store = store or ConfigStore(ws.topdir)
         self.options: BuildConfigOptions | None = None
         self.found: list[Path] = []
-        self.runner = Runner(ws.topdir, self._on_line, self._on_change, west)
+        self.runner = Runner(
+            ws.topdir, self._on_line, self._on_change, west, zephyr_base=ws.zephyr_base
+        )
         self.job: Job | None = None
         self.last_job: Job | None = None
         self.editing: BuildConfig | None = None
@@ -1174,7 +1178,12 @@ class BuildView(View):
             return
         with self.suspend():
             print("$ west " + " ".join(args), flush=True)
-            subprocess.run([*west, *args], cwd=self.ws.topdir, check=False)
+            subprocess.run(
+                [*west, *args],
+                cwd=self.ws.topdir,
+                env=sdk_env(dict(os.environ), self.ws.zephyr_base),
+                check=False,
+            )
 
     def _built(self, cfg: BuildConfig) -> bool:
         d = build_dir(self.ws, cfg)

@@ -12,6 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..sdk.model import sdk_env
+
 
 def west_command() -> list[str] | None:
     """How to start west: from PATH (the workspace dev shell), else this Python."""
@@ -31,6 +33,7 @@ class Job:
     config: str  # config name
     action: str  # build, pristine, flash, ...
     steps: list[list[str]]  # west arguments per step
+    program: list[str] | None = None  # run this instead of west (e.g. nix)
     status: str = "queued"  # queued, running, passed, failed, cancelled, error
     returncode: int | None = None
     started: float | None = None
@@ -54,8 +57,10 @@ class Runner:
         on_line: Callable[[Job, str], None],
         on_change: Callable[[Job], None],
         west: list[str] | None = None,
+        zephyr_base: Path | None = None,
     ):
         self.cwd = cwd
+        self.zephyr_base = zephyr_base
         self.on_line = on_line
         self.on_change = on_change
         self.west = west
@@ -68,23 +73,24 @@ class Runner:
         return self.current is not None
 
     async def run(self, job: Job) -> Job:
-        west = self.west or west_command()
-        if west is None:
+        program = job.program or self.west or west_command()
+        if program is None:
             job.status = "error"
             self.on_line(job, "west not found: start lazyzephyr from the workspace dev shell")
             self.on_change(job)
             return job
+        name = "west" if job.program is None else Path(program[0]).name
         self.current, self._cancelled = job, False
         job.status, job.started = "running", time.time()
         self.on_change(job)
-        env = dict(os.environ, CLICOLOR_FORCE="1")
+        env = sdk_env(dict(os.environ, CLICOLOR_FORCE="1"), self.zephyr_base)
         try:
             for i, args in enumerate(job.steps):
                 job.step = i
-                self.on_line(job, "$ west " + " ".join(args))
+                self.on_line(job, f"$ {name} " + " ".join(args))
                 try:
                     self._proc = await asyncio.create_subprocess_exec(
-                        *west,
+                        *program,
                         *args,
                         cwd=self.cwd,
                         env=env,
@@ -95,7 +101,7 @@ class Runner:
                     )
                 except OSError as exc:
                     job.status = "error"
-                    self.on_line(job, f"could not start west: {exc}")
+                    self.on_line(job, f"could not start {name}: {exc}")
                     return job
                 assert self._proc.stdout
                 buf = b""

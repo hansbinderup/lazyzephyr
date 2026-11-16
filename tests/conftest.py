@@ -21,8 +21,16 @@ def _zephyr_base() -> Path | None:
 
 @pytest.fixture(autouse=True)
 def _own_cache(tmp_path: Path, monkeypatch) -> None:
-    """Never read or write the user's ~/.cache/lazyzephyr (saved layouts, configs)."""
+    """Never read or write the user's ~/.cache/lazyzephyr (saved layouts, configs),
+    nor the SDKs lazyzephyr installed for them, nor take an SDK from their shell."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    monkeypatch.setenv("LAZYZEPHYR_SDK_DIR", str(tmp_path / "sdk-store"))
+    monkeypatch.delenv("ZEPHYR_SDK_INSTALL_DIR", raising=False)
+
+    def no_network(*args, **kwargs):
+        raise OSError("tests don't use the network")
+
+    monkeypatch.setattr("urllib.request.urlopen", no_network)
 
 
 @pytest.fixture

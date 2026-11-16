@@ -11,6 +11,19 @@ git clone --depth 1 --branch v4.5.0 https://github.com/zephyrproject-rtos/zephyr
 LAZYZEPHYR_TEST_ZEPHYR_BASE=/tmp/zephyr pytest
 ```
 
+## zephyr-nix in the SDK tab
+
+The SDK tab's Nix backend uses a fixed zephyr-nix commit, `ZEPHYR_NIX` in
+`lazyzephyr/sdk/backends.py`. Bump it when zephyr-nix adds an SDK version that a
+supported Zephyr needs (`sdks/` in zephyr-nix lists them):
+
+```sh
+git ls-remote https://github.com/nix-community/zephyr-nix HEAD
+```
+
+Check that the attribute names (`sdk-1_0`, `hosttools-1_0`) and `sdk.override { targets }`
+still work: `tests/sdk/fake_nix.py` copies them.
+
 ## Zephyr and Python versions in CI
 
 lazyzephyr runs Zephyr's own Python code (edtlib, kconfiglib) in its interpreter, so CI

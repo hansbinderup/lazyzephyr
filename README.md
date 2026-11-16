@@ -10,6 +10,8 @@ A lazygit-style terminal UI for Zephyr work in a **west** workspace, with one ta
   changing them in your `prj.conf`.
 - **Tests**: run **twister** tests from a live tree of scenarios, with a job queue and
   results that jump to the failing assert.
+- **SDK**: install the Zephyr SDK version your Zephyr needs, and just the toolchains you
+  pick, with Nix or `west sdk`. Builds started from lazyzephyr use it.
 
 Zephyr only; not Linux devicetrees.
 
@@ -158,7 +160,8 @@ How to use each tab, and every key:
 ([Build](https://github.com/hansbinderup/lazyzephyr/blob/main/docs/build.md),
 [Devicetree](https://github.com/hansbinderup/lazyzephyr/blob/main/docs/devicetree.md),
 [Kconfig](https://github.com/hansbinderup/lazyzephyr/blob/main/docs/kconfig.md),
-[Tests](https://github.com/hansbinderup/lazyzephyr/blob/main/docs/tests.md)). In the app,
+[Tests](https://github.com/hansbinderup/lazyzephyr/blob/main/docs/tests.md),
+[SDK](https://github.com/hansbinderup/lazyzephyr/blob/main/docs/sdk.md)). In the app,
 the footer shows the tab's keys and `?` its help.
 
 ## Development

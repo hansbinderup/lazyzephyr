@@ -648,6 +648,7 @@ class TwisterView(View):
             on_change=self._on_job_change,
             on_line=self._on_job_line,
             on_finished=self._on_job_finished,
+            zephyr_base=config.workspace.zephyr_base,
         )
         self.marks: dict[str, NodeRef] = {}
         self.node_index: dict[str, TreeNode[NodeRef]] = {}

@@ -47,7 +47,7 @@ lazyzephyr = "lazyzephyr.launcher:main"
 
 [tool.setuptools]
 packages = ["lazyzephyr", "lazyzephyr.builder", "lazyzephyr.dts", "lazyzephyr.kconfig",
-            "lazyzephyr.twister"]
+            "lazyzephyr.sdk", "lazyzephyr.twister"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

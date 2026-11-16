@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from ..sdk.model import sdk_env
 from .discovery import Discovery, ZtestCase
 from .results import SuiteResult, attach_case_logs, parse_twister_json, results_lines
 
@@ -325,8 +326,10 @@ class JobManager:
         on_change: Callable[[Job], None] | None = None,
         on_line: Callable[[Job, str], None] | None = None,
         on_finished: Callable[[Job], None] | None = None,
+        zephyr_base: Path | None = None,
     ):
         self.twister_cmd = twister_cmd
+        self.zephyr_base = zephyr_base
         self.state_dir = state_dir
         self.cwd = cwd
         self.on_change = on_change or (lambda job: None)
@@ -400,7 +403,7 @@ class JobManager:
         self._emit(job, "$ " + display_command(job.command, self.cwd))
         self.on_change(job)
 
-        env = dict(os.environ, PYTHONUNBUFFERED="1")
+        env = sdk_env(dict(os.environ, PYTHONUNBUFFERED="1"), self.zephyr_base)
         try:
             job.process = await asyncio.create_subprocess_exec(
                 *job.command,
