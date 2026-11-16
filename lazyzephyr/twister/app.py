@@ -10,17 +10,21 @@ import subprocess
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, OptionList, RichLog, SelectionList, Static, Tree
 from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 
+from ..builder.app import BUILD_CSS, PickerScreen
+from ..clipboard import SystemClipboard
+from ..view import COMMON_CSS, ForwardActions, View
 from . import boards, cache, folders, session
 from .discovery import Discovery, Scenario, Workspace, default_roots, discover
 from .hardware import HardwareScreen
@@ -37,9 +41,6 @@ from .jobs import (
 )
 from .results import ResultStore, worst
 from .watcher import WatchError, watch_changes
-from ..builder.app import BUILD_CSS, PickerScreen
-from ..clipboard import SystemClipboard
-from ..view import COMMON_CSS, ForwardActions, View
 
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 STATUS_ICON = {
@@ -163,7 +164,7 @@ class AppConfig:
 
 
 class TestTree(ForwardActions, Tree[NodeRef]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "run_cursor", "Queue"),
         Binding("space", "toggle_mark", "Mark"),
         Binding("r", "run_marked", "Queue marked", show=False),
@@ -196,7 +197,7 @@ class TestTree(ForwardActions, Tree[NodeRef]):
 
 
 class JobList(ForwardActions, OptionList):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("x", "cancel_job", "Cancel"),
         Binding("K,shift+up", "move_job(-1)", "Move up"),
         Binding("J,shift+down", "move_job(1)", "Move down"),
@@ -218,11 +219,11 @@ class ScrollPanel(VerticalScroll):
 
 
 class FilterInput(ForwardActions, Input):
-    BINDINGS = [Binding("escape", "clear_filter", "Clear filter")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "clear_filter", "Clear filter")]
 
 
 class PlatformScreen(ModalScreen[list[str] | None]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "dismiss_none", "Cancel"),
         Binding("enter,ctrl+s", "apply", "Apply", priority=True),
     ]
@@ -253,7 +254,7 @@ class PlatformScreen(ModalScreen[list[str] | None]):
 
 
 class FolderTree(Tree[Path]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("space", "screen.toggle", "Select"),
         Binding("j", "cursor_down", show=False),
         Binding("k", "cursor_up", show=False),
@@ -268,7 +269,7 @@ class FolderTree(Tree[Path]):
 class FolderScreen(ModalScreen[list[Path] | None]):
     """Browse the directories under `base` and choose the test roots."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "dismiss_none", "Cancel"),
         Binding("enter,ctrl+s", "apply", "Apply", priority=True),
     ]
@@ -474,7 +475,9 @@ so they only narrow the run on native (posix) platforms.
 
 
 class HelpScreen(ModalScreen[None]):
-    BINDINGS = [Binding("escape,q,question_mark", "app.pop_screen", "Close")]
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape,q,question_mark", "app.pop_screen", "Close")
+    ]
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="help-dialog", classes="panel") as dialog:
@@ -483,7 +486,7 @@ class HelpScreen(ModalScreen[None]):
 
 
 class ConfirmScreen(ModalScreen[bool]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("y,enter", "answer(True)", "Yes"),
         Binding("n,escape,q", "answer(False)", "No"),
     ]
@@ -503,7 +506,7 @@ class ConfirmScreen(ModalScreen[bool]):
 
 
 class CacheScreen(ModalScreen[str | None]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("b,enter", "choose('build')", "Build output"),
         Binding("a", "choose('all')", "Everything"),
         Binding("n,escape,q", "choose(None)", "Cancel"),
@@ -535,7 +538,7 @@ class CacheScreen(ModalScreen[str | None]):
 class InfoScreen(ModalScreen[None]):
     """Shows a panel that compact layout hides (status / details) as a popup."""
 
-    BINDINGS = [Binding("escape,q,2,5", "app.pop_screen", "Close")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape,q,2,5", "app.pop_screen", "Close")]
 
     def __init__(self, title: str, content: Text):
         super().__init__()
@@ -605,7 +608,7 @@ class TwisterView(View):
     SPLITS = ("main", "right")
     AUTO_PORTRAIT = False  # apply_layout() picks the orientation
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("question_mark", "help", "Help"),
         Binding("a", "run_all", "All"),
         Binding("F", "rerun_failed", "Queue failed", show=False),
@@ -1443,8 +1446,10 @@ class TwisterView(View):
                     Text.assemble(
                         p,
                         (
-                            f"  {short_port(self.options.boards[p].serial or '')}"
-                            f" · {self.options.boards[p].runner or 'default runner'}",
+                            (
+                                f"  {short_port(self.options.boards[p].serial or '')}"
+                                f" · {self.options.boards[p].runner or 'default runner'}"
+                            ),
                             "bright_black",
                         ),
                     ),
@@ -1921,7 +1926,7 @@ class LazyTwisterApp(SystemClipboard, App):
     .hint { color: $text-muted; }
     """
     )
-    BINDINGS = [Binding("q", "request_quit", "Quit")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("q", "request_quit", "Quit")]
 
     def __init__(self, config: AppConfig):
         super().__init__()

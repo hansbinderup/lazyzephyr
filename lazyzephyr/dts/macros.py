@@ -10,8 +10,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z]\w*)(\([^)]*\))?[ \t]*(.*?)[ \t]*$", re.M)
-_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+_DEFINE = re.compile(
+    r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z]\w*)(\([^)]*\))?[ \t]*(.*?)[ \t]*$", re.MULTILINE
+)
+_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
 _WORD = re.compile(r"[a-z0-9]+")
 # Words too common to say anything about which header fits.
 _NOISE = {"zephyr", "include", "dt", "bindings", "h", "cells", "flags", "cell"}

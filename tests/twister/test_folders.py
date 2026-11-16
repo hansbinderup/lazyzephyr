@@ -1,11 +1,11 @@
 import argparse
-from pathlib import Path
 
 import pytest
 
 from lazyzephyr.twister import folders
 from lazyzephyr.twister.app import FolderScreen
 from lazyzephyr.twister.cli import build_parser, config_from_args
+
 from .test_app import make_app, wait_for
 
 

@@ -235,11 +235,11 @@ def parse_testcase_yaml(path: Path) -> list[Scenario]:
         if not isinstance(spec, dict):
             raise ValueError(f"scenario {name!r} is not a mapping")
 
-        def merged_list(key: str) -> list[str]:
+        def merged_list(key: str, spec: dict = spec) -> list[str]:
             items = _as_list(common.get(key)) + _as_list(spec.get(key))
             return list(dict.fromkeys(items))
 
-        def merged(key: str):
+        def merged(key: str, spec: dict = spec):
             return spec.get(key, common.get(key))
 
         harness_config = {

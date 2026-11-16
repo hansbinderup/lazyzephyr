@@ -19,15 +19,16 @@ import struct
 import subprocess
 import termios
 from collections import deque
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable
+from typing import ClassVar
 
 import pyte
 from rich.segment import Segment
 from rich.style import Style
 from textual import events
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.geometry import Size
 from textual.message import Message
 from textual.selection import Selection
@@ -192,7 +193,7 @@ class MonitorProcess:
                 stdout=slave,
                 stderr=slave,
                 start_new_session=True,
-                preexec_fn=_take_terminal,
+                preexec_fn=_take_terminal,  # noqa: PLW1509 - needs a controlling tty
                 close_fds=True,
             )
         except OSError:
@@ -284,7 +285,7 @@ class MonitorTerminal(Widget, can_focus=True):
     """
 
     # For the footer (and clicks on it); the keys themselves are handled in _on_key.
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding(LEAVE_KEY, "leave", "Back to configs"),
         Binding(FULLSCREEN_KEY, "fullscreen", "Full screen"),
         Binding(CLOSE_KEY, "close", "Close monitor"),

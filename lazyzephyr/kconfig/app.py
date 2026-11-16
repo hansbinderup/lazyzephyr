@@ -9,21 +9,22 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, OptionList, Static, Tree
 from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 
+from ..clipboard import SystemClipboard
 from ..dts.app import ConfirmScreen
 from ..dts.editors import PickScreen
 from ..dts.workspace import Workspace, find_build_dirs
-from ..clipboard import SystemClipboard
 from ..view import COMMON_CSS, ForwardActions, View
 from . import describe, loader
 from .session import Problem, Result, Session
@@ -74,7 +75,7 @@ def save_build(cwd: Path, build: Path) -> None:
 
 
 class KTree(ForwardActions, Tree):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "change", "Change"),
         Binding("space", "switch", "On/off"),
         Binding("d", "remove", "Remove"),
@@ -105,7 +106,7 @@ class KTree(ForwardActions, Tree):
 
 
 class ResultList(ForwardActions, OptionList):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "change", "Change"),
         Binding("space", "switch", "On/off"),
         Binding("d", "remove", "Remove"),
@@ -117,7 +118,7 @@ class ResultList(ForwardActions, OptionList):
 
 
 class RelatedList(ForwardActions, OptionList):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "jump", "Go to"),
         Binding("space", "switch_related", "On/off"),
         Binding("escape,h,left", "focus_main", "Back"),
@@ -128,7 +129,7 @@ class RelatedList(ForwardActions, OptionList):
 
 
 class SearchInput(ForwardActions, Input):
-    BINDINGS = [Binding("escape", "clear_search", "Close search")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "clear_search", "Close search")]
 
 
 class Panel(Vertical):
@@ -147,7 +148,7 @@ class ScrollPanel(VerticalScroll):
 class BuildScreen(ModalScreen[Path | None]):
     """Pick the build directory whose Kconfig to show."""
 
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
 
     def __init__(self, ws: Workspace, cwd: Path, current: Path | None):
         super().__init__()
@@ -206,7 +207,7 @@ class BuildScreen(ModalScreen[Path | None]):
 
 
 class KProblemsScreen(ModalScreen[Problem | None]):
-    BINDINGS = [Binding("escape,q,p", "cancel", "Close")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape,q,p", "cancel", "Close")]
 
     def __init__(self, problems: list[Problem]):
         super().__init__()
@@ -238,7 +239,7 @@ class KProblemsScreen(ModalScreen[Problem | None]):
 
 
 class KHelpScreen(ModalScreen[None]):
-    BINDINGS = [Binding("escape,q,question_mark", "close", "Close")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape,q,question_mark", "close", "Close")]
     TEXT = """\
 [b]Options[/b] (the tree, or search results)
   j/k, arrows        move;  l/h unfold / fold
@@ -310,7 +311,7 @@ KCONFIG_CSS = """
 
 class KconfigView(View):
     SPLITS = ("kmain", "kright")
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("question_mark", "help", "Help"),
         Binding("slash", "search", "Search"),
         Binding("A", "toggle_all", "Show hidden"),
@@ -901,7 +902,7 @@ class KconfigView(View):
             return
         editor = shlex.split(os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi")
         with self.suspend():
-            subprocess.run([*editor, f"+{target[1]}", str(target[0])])
+            subprocess.run([*editor, f"+{target[1]}", str(target[0])], check=False)
         self.action_reload()
 
     def action_maximize(self) -> None:
@@ -950,7 +951,7 @@ class LazyKconfigApp(SystemClipboard, App):
     #pick-list { height: auto; max-height: 16; border: none; background: $surface; }
     """
     )
-    BINDINGS = [Binding("q", "quit", "Quit")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("q", "quit", "Quit")]
 
     def __init__(self, config: AppConfig):
         super().__init__()

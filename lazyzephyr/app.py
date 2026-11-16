@@ -3,21 +3,22 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from textual import on
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.widgets import Footer, Static, TabbedContent, TabPane
 
 from .builder.app import BUILD_CSS, BuildView
+from .clipboard import SystemClipboard
 from .dts.app import DTS_CSS, DtsView
 from .dts.app import AppConfig as DtsConfig
-from .twister.app import TWISTER_CSS, TwisterView
-from .twister.app import AppConfig as TwisterConfig
 from .dts.state import TargetChoice
 from .kconfig.app import KCONFIG_CSS, KconfigView
 from .kconfig.app import AppConfig as KconfigConfig
-from .clipboard import SystemClipboard
+from .twister.app import TWISTER_CSS, TwisterView
+from .twister.app import AppConfig as TwisterConfig
 from .view import COMMON_CSS, View
 
 TABS = ("build", "dts", "kconfig", "tests")
@@ -40,7 +41,7 @@ class LazyZephyrApp(SystemClipboard, App):
     """
     )
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "request_quit", "Quit"),
         Binding("right_square_bracket", "cycle_tab(1)", "Next tab"),
         Binding("left_square_bracket", "cycle_tab(-1)", "Prev tab", show=False),

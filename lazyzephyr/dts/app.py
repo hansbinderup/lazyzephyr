@@ -8,26 +8,27 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 from rich.markup import escape
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, OptionList, Select, Static, Tree
 from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 
+from ..clipboard import SystemClipboard
+from ..view import COMMON_CSS, ForwardActions, View
 from . import catalog, checks, macros, settings, specifiers, values
 from .catalog import BindingInfo
 from .editors import CompleteInput, Completer, PickScreen, SpecifierEditor, SpecRow, macro_choice
 from .model import import_edtlib
 from .session import REF_NODES, EditResult, Session
 from .state import TargetChoice, save_choice
-from ..clipboard import SystemClipboard
-from ..view import COMMON_CSS, ForwardActions, View
 from .workspace import (
     Board,
     DtInputs,
@@ -81,7 +82,7 @@ def rel(path: Path | str, base: Path) -> str:
 
 
 class NodeTree(ForwardActions, Tree[str]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "focus_settings", "Settings"),
         Binding("a", "add_node", "Add node"),
         Binding("s", "toggle_status", "okay/disabled"),
@@ -115,7 +116,7 @@ class NodeTree(ForwardActions, Tree[str]):
 class PropList(ForwardActions, OptionList):
     """A node's settings (see settings.rows)."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter,e", "edit_prop", "Change"),
         Binding("space", "toggle_prop", "On/off"),
         Binding("i", "info", "Info"),
@@ -137,7 +138,7 @@ class ScrollPanel(VerticalScroll):
 
 
 class FilterInput(ForwardActions, Input):
-    BINDINGS = [Binding("escape", "clear_filter", "Clear filter")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "clear_filter", "Clear filter")]
 
 
 # --------------------------------------------------------------------------
@@ -156,7 +157,7 @@ def file_options(files: list[Path], base: Path, user: list[Path]) -> list[tuple[
 
 
 class ConfirmScreen(ModalScreen[bool]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("y,enter", "answer(True)", "Yes"),
         Binding("n,escape", "answer(False)", "No"),
     ]
@@ -176,7 +177,9 @@ class ConfirmScreen(ModalScreen[bool]):
 
 
 class HelpScreen(ModalScreen[None]):
-    BINDINGS = [Binding("escape,q,question_mark", "dismiss_help", "Close")]
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape,q,question_mark", "dismiss_help", "Close")
+    ]
 
     TEXT = """\
 [b]Tree[/b]
@@ -235,7 +238,7 @@ and you see why. u undoes the last change.
 class ProblemsScreen(ModalScreen[checks.Problem | None]):
     """Everything that parses but looks wrong; enter goes to the node."""
 
-    BINDINGS = [Binding("escape,q,p", "cancel", "Close")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape,q,p", "cancel", "Close")]
 
     def __init__(self, problems: list[checks.Problem]):
         super().__init__()
@@ -279,7 +282,7 @@ def problem_text(p: checks.Problem) -> Text:
 class FileScreen(ModalScreen[Path | None]):
     """Pick the file edits go to."""
 
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
 
     def __init__(self, files: list[Path], current: Path | None, base: Path, user: list[Path]):
         super().__init__()
@@ -316,7 +319,7 @@ class FileScreen(ModalScreen[Path | None]):
 class TargetScreen(ModalScreen[TargetChoice | None]):
     """Pick an existing build directory or a board."""
 
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
 
     def __init__(self, ws: Workspace, cwd: Path, current: TargetChoice | None):
         super().__init__()
@@ -428,7 +431,7 @@ class EditScreen(ModalScreen[EditResult | None]):
     """Edit a phandle-array (gpios, pwms…): one row per entry, a controller and its
     named cells. Everything else is edited with a PickScreen."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel"),
         Binding("ctrl+s", "apply", "Apply", priority=True),
         Binding("ctrl+n", "add_entry", "Add entry", priority=True),
@@ -629,7 +632,7 @@ class InfoScreen(ModalScreen[None]):
     """A read-only card about one property: what it is, what it may be, where
     it is set, and a snippet to put in an overlay."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape,enter,q", "close", "Close"),
         Binding("y", "copy", "Copy snippet"),
     ]
@@ -658,7 +661,7 @@ class InfoScreen(ModalScreen[None]):
 class AddScreen(ModalScreen[BindingInfo | None]):
     """Search every binding, pick one to add under the selected node."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel"),
         Binding("ctrl+f", "toggle_fit", "Fits here only"),
         Binding("ctrl+d", "toggle_driver", "With driver only"),
@@ -708,7 +711,7 @@ class AddScreen(ModalScreen[BindingInfo | None]):
             mode.append("only with a driver")
         self.query_one("#add-mode", Static).update(
             ("Showing " + ", ".join(mode) if mode else "Showing all bindings")
-            + f"  ·  ✓ = a driver uses it"
+            + "  ·  ✓ = a driver uses it"
         )
         shown = []
         for b in self.bindings:
@@ -798,13 +801,13 @@ class AddScreen(ModalScreen[BindingInfo | None]):
 class NodeFormScreen(ModalScreen[EditResult | None]):
     """Name, label, reg and required properties for a new node."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel"),
         Binding("ctrl+s", "apply", "Add", priority=True),
     ]
 
     # Written by the form itself, or with sensible defaults.
-    SKIP = {"compatible", "reg", "status", "phandle"}
+    SKIP = frozenset({"compatible", "reg", "status", "phandle"})
 
     def __init__(self, session: Session, parent_path: str, info: BindingInfo, base: Path):
         super().__init__()
@@ -1035,7 +1038,7 @@ DTS_CSS = """
 class DtsView(View):
     SPLITS = ("main", "right")
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("question_mark", "help", "Help"),
         Binding("slash", "filter", "Filter"),
         Binding("w", "pick_file", "Write to"),
@@ -1646,7 +1649,7 @@ class DtsView(View):
         current = values.to_input(type_, raw) if raw is not None else ""
         title = settings.friendly(name)
         desc = " ".join((spec.description or "").split())
-        apply = lambda v: self._set(path, name, v)  # noqa: E731
+        apply = lambda v: self._set(path, name, v)
         if spec.enum:
             default = spec.default
 
@@ -1838,7 +1841,7 @@ class DtsView(View):
             target = (Path(node._node.filename), node._node.lineno)
         editor = shlex.split(os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi")
         with self.suspend():
-            subprocess.run([*editor, f"+{target[1]}", str(target[0])])
+            subprocess.run([*editor, f"+{target[1]}", str(target[0])], check=False)
         self.action_reload()
 
     def action_maximize(self) -> None:
@@ -1849,7 +1852,7 @@ class LazyDtsApp(SystemClipboard, App):
     """The devicetree tab on its own (used by the tests)."""
 
     CSS = COMMON_CSS + DTS_CSS
-    BINDINGS = [Binding("q", "quit", "Quit")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("q", "quit", "Quit")]
 
     def __init__(self, config: AppConfig):
         super().__init__()

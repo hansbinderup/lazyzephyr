@@ -57,3 +57,16 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
+ignore = [
+    # edtlib, dtlib and kconfiglib are imported from the user's Zephyr tree at
+    # runtime, so their error classes can't be named here. A TUI must not crash
+    # on a broken devicetree or Kconfig file either.
+    "BLE001",
+    "S112",
+    # Parsers raise ValueError for any malformed input, and callers catch that.
+    "TRY004",
+    # Nested `with` blocks in compose() mirror the widget tree.
+    "SIM117",
+]

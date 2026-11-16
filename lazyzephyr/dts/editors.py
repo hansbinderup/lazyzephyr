@@ -4,12 +4,13 @@ a phandle-array editor with one row per entry (controller + named cells)."""
 from __future__ import annotations
 
 import re
-from typing import Callable
+from collections.abc import Callable
+from typing import ClassVar
 
 from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Select, Static
@@ -63,7 +64,7 @@ class Completer(OptionList):
     `esc` (or `up` at the top) goes back to the input.
     """
 
-    BINDINGS = [Binding("escape", "back", "Back", show=False)]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "back", "Back", show=False)]
     LIMIT = 50
 
     def __init__(self, provider: Callable[[str, CompleteInput], list[Choice]], **kwargs):
@@ -219,7 +220,7 @@ class PickScreen(ModalScreen):
     stays open with the error if it fails.
     """
 
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
 
     def __init__(
         self,

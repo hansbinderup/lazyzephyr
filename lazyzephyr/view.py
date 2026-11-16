@@ -7,13 +7,14 @@ app, and child widgets forward their actions to the View that owns them.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 from pathlib import Path
 from typing import ClassVar
 
 from textual import events
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.widget import Widget
 
@@ -87,7 +88,7 @@ class View(Vertical):
     SPLITS: ClassVar[tuple[str, ...]] = ()
     AUTO_PORTRAIT: ClassVar[bool] = True  # toggle -portrait on resize (else the tab does)
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("plus", "panel_grow(1)", "Grow panel", show=False),
         Binding("minus", "panel_grow(-1)", "Shrink panel", show=False),
         Binding("less_than_sign", "panel_move(-1)", "Move panel back", show=False),
@@ -311,7 +312,7 @@ class View(Vertical):
         for c in self._split_containers():
             shown = self._panels_shown(c)
             horizontal = self._axis(c) == "horizontal"
-            for a, b in zip(shown, shown[1:]):
+            for a, b in itertools.pairwise(shown):
                 ra, rb = a.region, b.region
                 if horizontal:
                     if ra.y <= y < ra.bottom and x in (ra.right - 1, rb.x):

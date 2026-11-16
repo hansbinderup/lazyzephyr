@@ -5,7 +5,7 @@ one address, overlapping partitions, enabled nodes that need disabled ones…)."
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # dtlib marker types (dtlib._MarkerType): &foo in a string, <&foo> in cells.
 _MARKER_PATH, _MARKER_PHANDLE = 0, 1

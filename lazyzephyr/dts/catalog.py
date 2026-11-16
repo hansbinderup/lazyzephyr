@@ -133,7 +133,7 @@ def _grep(roots: list[Path], patterns: list[str]) -> str:
         cmd += ["-e", p]
     try:
         return subprocess.run(
-            cmd + [str(r) for r in roots], capture_output=True, text=True, timeout=60
+            cmd + [str(r) for r in roots], capture_output=True, text=True, timeout=60, check=False
         ).stdout
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -144,8 +144,10 @@ def driver_tokens(roots: list[Path]) -> set[str]:
     text = _grep(
         roots,
         [
-            r"(DT_DRV_COMPAT|DT_HAS_COMPAT_STATUS_OKAY|DT_FOREACH_STATUS_OKAY)"
-            r"[[:space:](]*[A-Za-z0-9_]+",
+            (
+                r"(DT_DRV_COMPAT|DT_HAS_COMPAT_STATUS_OKAY|DT_FOREACH_STATUS_OKAY)"
+                r"[[:space:](]*[A-Za-z0-9_]+"
+            ),
             r"DT_HAS_[A-Za-z0-9_]+_ENABLED",
         ],
     )

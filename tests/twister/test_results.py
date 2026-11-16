@@ -147,8 +147,10 @@ def test_split_case_logs_ztest_from_real_log():
     assert logs["demo_suite.fails"].splitlines() == [
         "START - test_fails",
         "",
-        "    Assertion failed at CMAKE_SOURCE_DIR/src/main.c:12: demo_suite_test_fails: "
-        "(value not equal to 3)",
+        (
+            "    Assertion failed at CMAKE_SOURCE_DIR/src/main.c:12: demo_suite_test_fails: "
+            "(value not equal to 3)"
+        ),
         "value was 2",
         " FAIL - test_fails in 0.000 seconds",
     ]

@@ -8,9 +8,9 @@ import re
 import shlex
 import signal
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Callable
 
 from .discovery import Discovery, ZtestCase
 from .results import SuiteResult, attach_case_logs, parse_twister_json, results_lines

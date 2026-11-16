@@ -77,7 +77,7 @@ def find_suite_logs(outdir: Path) -> dict[tuple[str, str], Path]:
     return found
 
 
-def attach_case_logs(results: list["SuiteResult"], outdir: Path) -> None:
+def attach_case_logs(results: list[SuiteResult], outdir: Path) -> None:
     """Fill in each result's per-case output from the console logs in `outdir`."""
     logs = find_suite_logs(outdir)
     for result in results:

@@ -68,8 +68,9 @@ def test_chosen_and_aliases(workspace, tmp_path):
 
 
 def test_chosen_names():
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
+
     from lazyzephyr.dts import catalog
 
     with tempfile.TemporaryDirectory() as d:

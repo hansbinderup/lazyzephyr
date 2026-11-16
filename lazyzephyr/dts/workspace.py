@@ -423,9 +423,8 @@ def find_build_dirs(ws: Workspace, start: Path, max_depth: int = 3) -> list[Path
         for dirpath, dirnames, filenames in os.walk(base):
             here = Path(dirpath)
             depth = len(here.relative_to(base).parts)
-            if "build_info.yml" in filenames and (here / "zephyr").is_dir():
-                if here not in found:
-                    found.append(here)
+            if "build_info.yml" in filenames and (here / "zephyr").is_dir() and here not in found:
+                found.append(here)
             dirnames[:] = [
                 d
                 for d in dirnames

@@ -99,6 +99,7 @@ def test_problems(workspace, tmp_path):
 
 def test_pin_decoders():
     from pathlib import Path
+
     from lazyzephyr.dts.macros import Macro
 
     h = Path("x.h")
