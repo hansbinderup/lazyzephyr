@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shlex
 import subprocess
 from collections import defaultdict
@@ -54,6 +55,57 @@ FAILED_STATUSES = ("failed", "error", "blocked")
 CASE_LOG_PREVIEW = 15  # output lines per case in a scenario's Details (a case shows all)
 
 
+SEP = Text(" · ", style="bright_black")
+
+
+def fit_status(left: list[tuple[int, Text]], right: Text, width: int | None = None) -> Text:
+    """One status line: `left` parts, then `right` against the right edge.
+
+    Each left part has a priority. When the line is wider than `width`, the
+    lowest-priority parts go first; `right` (the counts) always stays.
+    """
+    parts = list(left)
+
+    def joined() -> Text:
+        return SEP.join(t for _, t in parts)
+
+    if width is None:
+        return Text.assemble(joined(), SEP, right) if parts else right.copy()
+    while parts and joined().cell_len + 2 + right.cell_len > width:
+        parts.remove(min(parts, key=lambda p: p[0]))
+    if not parts:
+        line = right.copy()
+        line.truncate(width, overflow="ellipsis")
+        return line
+    line = joined()
+    line.append(" " * (width - line.cell_len - right.cell_len))
+    line.append_text(right)
+    return line
+
+
+def short_port(path: str) -> str:
+    """`/dev/serial/by-id/usb-SEGGER_J-Link_000683-if00` -> `SEGGER_J-Link_000683`."""
+    if "/serial/by-id/" not in path:
+        return path
+    name = Path(path).name.removeprefix("usb-")
+    return re.sub(r"-if\d+(-port\d+)?$", "", name)
+
+
+class StatusBar(Static):
+    """The one-line status bar; fits its parts to its width."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.parts: tuple[list[tuple[int, Text]], Text] = ([], Text())
+
+    def set_parts(self, left: list[tuple[int, Text]], right: Text) -> None:
+        self.parts = (left, right)
+        self.refresh()
+
+    def render(self) -> Text:
+        return fit_status(*self.parts, self.content_size.width or None)
+
+
 def count_text(statuses: list[str | None]) -> Text:
     """`passed/failed/not run` counts in green/red/blue, e.g. `2/0/1`.
 
@@ -100,9 +152,9 @@ class TestTree(ForwardActions, Tree[NodeRef]):
     BINDINGS = [
         Binding("enter", "run_cursor", "Queue"),
         Binding("space", "toggle_mark", "Mark"),
-        Binding("r", "run_marked", "Queue marked"),
+        Binding("r", "run_marked", "Queue marked", show=False),
         Binding("c", "clear_marks", "Unmark", show=False),
-        Binding("e", "edit", "Edit"),
+        Binding("e", "edit", "Edit", show=False),
         Binding("j", "cursor_down", show=False),
         Binding("k", "cursor_up", show=False),
         Binding("l,right", "expand", show=False),
@@ -538,13 +590,13 @@ class TwisterView(View):
 
     BINDINGS = [
         Binding("question_mark", "help", "Help"),
-        Binding("a", "run_all", "Queue all"),
-        Binding("F", "rerun_failed", "Queue failed"),
-        Binding("full_stop", "repeat_last", "Repeat"),
+        Binding("a", "run_all", "All"),
+        Binding("F", "rerun_failed", "Queue failed", show=False),
+        Binding("full_stop", "repeat_last", "Repeat", show=False),
         Binding("p", "platforms", "Platform"),
         Binding("d", "hardware", "Hardware"),
         Binding("V", "toggle_case_results", "Case results", show=False),
-        Binding("O", "choose_folders", "Folders"),
+        Binding("O", "choose_folders", "Folders", show=False),
         Binding("g", "toggle_integration", "-G", show=False),
         Binding("w", "toggle_autorun", "Auto-run"),
         Binding("slash", "filter", "Filter"),
@@ -625,7 +677,7 @@ class TwisterView(View):
                 with ScrollPanel(id="details-panel", classes="panel") as details:
                     details.border_title = "[5] Details"
                     yield Static(id="details")
-        yield Static(id="statusbar")
+        yield StatusBar(id="statusbar")
 
     @property
     def tree(self) -> TestTree:
@@ -993,46 +1045,50 @@ class TwisterView(View):
     # -- panels ---------------------------------------------------------------
 
     def update_status(self) -> None:
-        self.query_one("#statusbar", Static).update(self._status_line())
+        self.query_one("#statusbar", StatusBar).set_parts(*self._status_parts())
 
     def _status_line(self) -> Text:
-        """The one-line status bar at the bottom; `2` shows the full status."""
+        """The whole status line, before it is fitted to the bar's width."""
+        return fit_status(*self._status_parts())
+
+    def _status_parts(self) -> tuple[list[tuple[int, Text]], Text]:
+        """Status bar parts with priorities (higher stays longer), and the counts.
+
+        `2` shows the full status.
+        """
         names = [s.name for s in self.discovery.scenarios]
         statuses = [self.store.scenario_status(n) for n in names]
         topdir = self.config.workspace.topdir
-        sep = (" · ", "bright_black")
-        text = Text(no_wrap=True, overflow="ellipsis")
-        text.append(topdir.name if topdir else "no west workspace", style="bold")
-        text.append(*sep)
-        text.append(", ".join(self._rel(r) for r in self.config.roots))
-        text.append(*sep)
-        text.append(", ".join(self.options.platforms) or "default platforms")
+        left: list[tuple[int, Text]] = [
+            (1, Text(topdir.name if topdir else "no west workspace", style="bold")),
+            (2, Text(", ".join(self._rel(r) for r in self.config.roots))),
+            (8, Text(", ".join(self.options.platforms) or "default platforms")),
+        ]
         if self.options.integration:
-            text.append(*sep)
-            text.append("-G")
+            left.append((5, Text("-G")))
         hw = self.options.hardware
         if hw.enabled:
-            text.append(*sep)
-            text.append(f"board: {hw.summary}", style="cyan")
+            port = short_port(hw.serial) if hw.serial else "no serial port"
+            board = [port, hw.runner or "default runner"]
+            if hw.dev_id and hw.dev_id not in port:
+                board.append(hw.dev_id)
+            left.append((7, Text(f"board: {' · '.join(board)}", style="cyan")))
         if hw.fixtures:
-            text.append(*sep)
-            text.append(f"-X {','.join(hw.fixtures)}")
+            left.append((4, Text(f"-X {','.join(hw.fixtures)}")))
         if self.options.case_results:
-            text.append(*sep)
-            text.append("case results")
+            left.append((3, Text("case results")))
         if self.auto_run:
-            text.append(*sep)
-            text.append("auto-run", style="yellow")
-        text.append(*sep)
+            left.append((6, Text("auto-run", style="yellow")))
+
         if self.loading_tests:
-            text.append("loading tests…", style="yellow")
+            right = Text("loading tests…", style="yellow")
         else:
-            text.append(f"{len(names)} scenarios ")
-            text.append_text(count_text(statuses))
+            right = Text(f"{len(names)} scenarios ")
+            right.append_text(count_text(statuses))
         if self.discovery.errors:
-            text.append(*sep)
-            text.append(f"{len(self.discovery.errors)} yaml errors", style="bold red")
-        return text
+            right.append_text(SEP)
+            right.append(f"{len(self.discovery.errors)} yaml errors", style="bold red")
+        return left, right
 
     def _status_text(self) -> Text:
         cfg = self.config
@@ -1707,7 +1763,7 @@ class LazyTwisterApp(SystemClipboard, App):
 
     def compose(self) -> ComposeResult:
         yield self.view
-        yield Footer()
+        yield Footer(compact=True, show_command_palette=False)
 
     def on_mount(self) -> None:
         self.call_after_refresh(self.view.activated)
