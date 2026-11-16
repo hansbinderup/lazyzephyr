@@ -1,0 +1,27 @@
+# Tests against Zephyr's main every night, so a change upstream that breaks
+# lazyzephyr shows up the next morning instead of in someone's PR. See
+# docs/development.md.
+name: Nightly
+
+on:
+  schedule:
+    # GitHub's cron is UTC: 03:00 in Central European winter time, 04:00 in
+    # summer time. Scheduled runs can start some minutes late.
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  zephyr-main:
+    name: Zephyr main / Python ${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest and newest Python that Zephyr's main supports.
+        python: ["3.12", "3.14"]
+    uses: ./.github/workflows/test.yml
+    with:
+      python: ${{ matrix.python }}
+      zephyr: main
