@@ -86,6 +86,16 @@ class Scenario:
     def suites(self) -> list[str]:
         return sorted({c.suite for c in self.cases})
 
+    def names_platform(self, platforms: list[str]) -> bool:
+        """True if platform_allow or integration_platforms names one of `platforms`.
+
+        A board name also matches its qualified targets and back again:
+        `nrf52840dk` and `nrf52840dk/nrf52840` match each other.
+        """
+        named = {*self.platform_allow, *self.integration_platforms}
+        return any(p == n or n.startswith(f"{p}/") or p.startswith(f"{n}/")
+                   for p in platforms for n in named)
+
 
 @dataclass
 class Workspace:

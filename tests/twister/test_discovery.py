@@ -59,6 +59,19 @@ def test_fixtures_from_harness_config(tmp_path: Path):
     assert found.fixtures() == {"gpio_loopback": 1, "uart_loopback": 2}
 
 
+def test_names_platform(test_tree: Path):
+    by_name = discover([test_tree]).by_name()
+    variant, beta = by_name["lib.alpha.variant"], by_name["drivers.beta"]
+    assert variant.names_platform(["qemu_x86"])
+    assert not beta.names_platform(["qemu_x86"])
+    assert by_name["lib.alpha.default"].names_platform(["native_sim"])  # integration
+    assert beta.names_platform(["native_sim/native/64"])  # qualified target
+    beta.platform_allow = ["nrf52840dk/nrf52840"]
+    assert beta.names_platform(["nrf52840dk"])  # board name
+    assert not beta.names_platform(["nrf52840dk_x"])
+    assert not beta.names_platform([])
+
+
 def test_find_workspace(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("ZEPHYR_BASE", raising=False)
     (tmp_path / ".west").mkdir()

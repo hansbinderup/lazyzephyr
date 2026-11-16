@@ -293,6 +293,25 @@ async def test_big_tree_opens_only_roots_and_builds_children_on_expand(
 
 
 
+async def test_platform_only_filter(test_tree, tmp_path, fake_twister):
+    app = make_app(test_tree, tmp_path, fake_twister)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await wait_for(lambda: "s:drivers.beta" in app.node_index)
+        await pilot.press("P")  # no platform chosen yet: refused
+        assert not app.view.platform_only and "s:drivers.beta" in app.node_index
+
+        app.options.platforms = ["qemu_x86"]
+        await pilot.press("P")
+        await wait_for(lambda: "s:drivers.beta" not in app.node_index)
+        assert "s:lib.alpha.variant" in app.node_index
+        assert "s:lib.alpha.default" not in app.node_index
+        assert "qemu_x86" in str(app.query_one("#tests-panel").border_title)
+
+        await pilot.press("P")
+        await wait_for(lambda: "s:drivers.beta" in app.node_index)
+        assert str(app.query_one("#tests-panel").border_title) == "[1] Tests"
+
+
 async def test_hardware_screen_sets_device_flags(test_tree, tmp_path, fake_twister):
     import json
 
