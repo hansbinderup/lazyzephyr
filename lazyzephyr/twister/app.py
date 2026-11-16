@@ -21,7 +21,7 @@ from textual.widgets import Footer, Input, OptionList, RichLog, SelectionList, S
 from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 
-from . import boards, cache, folders
+from . import boards, cache, folders, session
 from .discovery import Discovery, Scenario, Workspace, default_roots, discover
 from .hardware import HardwareScreen
 from .jobs import (
@@ -147,6 +147,9 @@ class AppConfig:
     # Platforms whose board setup comes from the config file or the command line:
     # changes made in the app to these last only until quit.
     fixed_boards: set[str] = field(default_factory=set)
+    # From the saved session (see session.py).
+    platform_only: bool = False
+    board_choice: str | None = None
 
 
 # --------------------------------------------------------------------------
@@ -641,10 +644,10 @@ class TwisterView(View):
         self.live: dict[str, str] = {}  # scenario -> queued/running/live result
         self.filter_text = ""
         self.failed_only = False
-        self.platform_only = False  # only scenarios whose yaml names a chosen platform
+        self.platform_only = config.platform_only  # only scenarios naming a chosen platform
         self.viewed_job: int | None = None
         self.last_target: RunTarget | None = None
-        self.board_choice: str | None = None  # board picked last when several are enabled
+        self.board_choice = config.board_choice  # board picked last when several are enabled
         self._tree_built = False
         self.expanded: set[str] | None = None  # open folder/scenario keys
         self.seen_folders: set[str] = set()
@@ -695,6 +698,7 @@ class TwisterView(View):
         self.apply_layout()
         self.focus_here(self.tree)
         self.update_status()
+        self._update_tests_title()  # a restored platform filter
         self.set_interval(0.15, self._tick)
         if self.config.pick_folders:
             # Asked once the tab is shown (see activated()).
@@ -1391,6 +1395,7 @@ class TwisterView(View):
             def picked(result: list[str] | None) -> None:
                 if result:
                     self.board_choice = result[0]
+                    self._save_session()
                     self._queue_runs(target, plan_runs(self.options, platforms, result[0]))
 
             items = [(p, Text.assemble(p, (f"  {short_port(self.options.boards[p].serial or '')}"
@@ -1535,6 +1540,7 @@ class TwisterView(View):
                 if self.platform_only:
                     self.rebuild_tree()
                 self.update_status()
+                self._save_session()
 
         configured = [p for p, hw in self.options.boards.items() if not hw.is_empty]
         known = sorted({*configured, *self.discovery.platforms()})
@@ -1588,15 +1594,18 @@ class TwisterView(View):
         state = "on" if self.options.case_results else "off"
         self.notify(f"case results in Output {state}", timeout=2)
         self.update_status()
+        self._save_session()
 
     def action_toggle_integration(self) -> None:
         self.options.integration = not self.options.integration
         self.update_status()
+        self._save_session()
 
     def action_toggle_autorun(self) -> None:
         self.auto_run = not self.auto_run
         self.notify(f"auto-run on file change {'on' if self.auto_run else 'off'}", timeout=2)
         self.update_status()
+        self._save_session()
 
     def action_filter(self) -> None:
         box = self.query_one("#filter", FilterInput)
@@ -1646,6 +1655,22 @@ class TwisterView(View):
         self.platform_only = not self.platform_only
         self.rebuild_tree()
         self._update_tests_title()
+        self._save_session()
+
+    def _save_session(self) -> None:
+        """Remember the settings for the next start (see session.py)."""
+        current = session.Session(
+            platforms=list(self.options.platforms),
+            case_results=self.options.case_results,
+            integration=self.options.integration,
+            auto_run=self.auto_run,
+            platform_only=self.platform_only,
+            board_choice=self.board_choice,
+        )
+        try:
+            session.save(self.config.state_dir, current)
+        except OSError as exc:
+            self.notify(f"could not save settings: {exc}", severity="error")
 
     def _update_tests_title(self) -> None:
         shown = []

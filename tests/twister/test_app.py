@@ -334,6 +334,24 @@ async def test_platform_only_filter(test_tree, tmp_path, fake_twister):
         assert str(app.query_one("#tests-panel").border_title) == "[1] Tests"
 
 
+async def test_settings_are_saved_for_next_time(test_tree, tmp_path, fake_twister):
+    import json
+
+    from lazyzephyr.twister import session
+
+    app = make_app(test_tree, tmp_path, fake_twister)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await wait_for(lambda: "s:drivers.beta" in app.node_index)
+        await pilot.press("V")
+        app.options.platforms = ["qemu_x86"]
+        await pilot.press("P")
+        await pilot.pause()
+    saved = json.loads((tmp_path / "state" / "session.json").read_text())
+    assert saved["case_results"] is True and saved["platform_only"] is True
+    assert saved["platforms"] == ["qemu_x86"]
+    assert session.load(tmp_path / "state").case_results is True
+
+
 async def test_hardware_setup_is_per_platform(test_tree, tmp_path, fake_twister):
     import json
 

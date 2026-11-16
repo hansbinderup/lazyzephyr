@@ -7,7 +7,7 @@ import shlex
 import shutil
 from pathlib import Path
 
-from . import boards, cache, folders
+from . import boards, cache, folders, session
 from .config import CONFIG_NAME, ConfigError, FileConfig, find_config, load_config
 from .discovery import default_roots, find_workspace
 from .jobs import Hardware, RunOptions
@@ -124,7 +124,9 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
     twister = shlex.split(twister_str) if twister_str else default_twister_cmd(
         workspace.zephyr_base
     )
-    platforms = args.platform or file_config.platforms
+    saved_session = session.load(state_dir)
+    platforms = args.platform or (saved_session.platforms if saved_session.platforms is not None
+                                  else file_config.platforms)
     # Board setups: saved in the app, then the config file, then the flags.
     board_setups = {**boards.load_saved(state_dir), **file_config.boards}
     fixed_boards = set(file_config.boards)
@@ -149,15 +151,21 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
         options=RunOptions(
             platforms=platforms,
             integration=pick(None if args.no_integration is None else False,
-                             file_config.integration, True),
+                             pick(saved_session.integration, file_config.integration, None),
+                             True),
             verbose=pick(None if args.quiet is None else False, file_config.verbose, True),
             extra_args=[*file_config.extra_args, *extra],
             jobs=pick(args.jobs, file_config.jobs, None),
             boards=board_setups,
-            case_results=pick(args.case_results, file_config.case_results, False),
+            case_results=pick(args.case_results,
+                              pick(saved_session.case_results, file_config.case_results, None),
+                              False),
         ),
         watch_paths=[w.resolve() for w in args.watch] or file_config.watch,
-        auto_run=pick(args.auto_run, file_config.auto_run, False),
+        auto_run=pick(args.auto_run, pick(saved_session.auto_run, file_config.auto_run, None),
+                      False),
+        platform_only=bool(saved_session.platform_only) and bool(platforms),
+        board_choice=saved_session.board_choice,
         config_file=file_config.path,
         roots_source=source,
         fixed_boards=fixed_boards,
