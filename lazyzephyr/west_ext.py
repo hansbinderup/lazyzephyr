@@ -9,9 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from west.commands import WestCommand  # noqa: E402
+from west.commands import WestCommand
 
-from lazyzephyr.cli import add_arguments, run  # noqa: E402
+from lazyzephyr.cli import add_arguments, run
 
 
 class LazyZephyrCommand(WestCommand):

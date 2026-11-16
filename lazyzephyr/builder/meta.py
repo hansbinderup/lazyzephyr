@@ -50,9 +50,12 @@ def find_apps(ws: Workspace, max_depth: int = 5) -> list[Path]:
                 dirnames.clear()
                 continue
             depth = len(here.relative_to(base).parts)
-            if "CMakeLists.txt" in filenames and "prj.conf" in filenames:
-                if not (here / "testcase.yaml").exists():
-                    out.append(here)
+            if (
+                "CMakeLists.txt" in filenames
+                and "prj.conf" in filenames
+                and not (here / "testcase.yaml").exists()
+            ):
+                out.append(here)
             dirnames[:] = sorted(d for d in dirnames if not _skip(d)) if depth < depth_limit else []
     return own + samples
 

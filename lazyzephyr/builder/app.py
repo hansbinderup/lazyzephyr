@@ -2,26 +2,26 @@
 
 from __future__ import annotations
 
-import os
 import shlex
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import ClassVar
 
 from rich.markup import escape
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
-from ..dts.workspace import Board, Workspace, find_boards, find_build_dirs
 from ..clipboard import SystemClipboard
+from ..dts.workspace import Board, Workspace, find_boards, find_build_dirs
 from ..view import COMMON_CSS, ForwardActions, View
 from . import meta
 from .configs import (
@@ -106,7 +106,7 @@ def split_list(text: str) -> list[str]:
 
 
 class ConfigList(ForwardActions, OptionList):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter,space", "actions", "Actions"),
         Binding("b", "do('build')", "Build"),
         Binding("B", "do('pristine')", "Pristine"),
@@ -142,7 +142,7 @@ class ScrollPanel(VerticalScroll):
 class PickerScreen(ModalScreen[list[str] | None]):
     """Searchable list; one pick, or several with space."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel"),
         Binding("ctrl+s", "done", "Done", priority=True),
     ]
@@ -260,7 +260,7 @@ class PickerScreen(ModalScreen[list[str] | None]):
 
 
 class ConfirmScreen(ModalScreen[bool]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("y,enter", "answer(True)", "Yes"),
         Binding("n,escape", "answer(False)", "No"),
     ]
@@ -280,7 +280,7 @@ class ConfirmScreen(ModalScreen[bool]):
 
 
 class HelpScreen(ModalScreen[None]):
-    BINDINGS = [Binding("escape,q,question_mark", "close", "Close")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape,q,question_mark", "close", "Close")]
 
     TEXT = """\
 [b]Configs[/b]
@@ -336,7 +336,7 @@ Only one command runs at a time. Configs are saved per workspace in
 class TextEditScreen(ModalScreen[str | None]):
     """Edit one value. enter keeps it, esc throws it away."""
 
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
 
     def __init__(self, title: str, value: str, placeholder: str = "", hint: str = ""):
         super().__init__()
@@ -408,7 +408,7 @@ FIELDS = [
 
 
 class SettingsList(OptionList):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "screen.edit", "Change"),
         Binding("e", "screen.edit_text", "Type it"),
         Binding("j", "cursor_down", show=False),
@@ -419,7 +419,7 @@ class SettingsList(OptionList):
 class ConfigScreen(ModalScreen[BuildConfig | None]):
     """Create or edit a build config: move freely, change a setting with enter."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel"),
         Binding("ctrl+s", "save", "Save", priority=True),
     ]
@@ -602,9 +602,7 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
                     self._error(f"{f.label}: {exc}")
             elif f.kind in ("list", "shields", "snippets"):
                 self._set(f.key, split_list(value))
-            elif f.key == "build_dir":
-                self._set(f.key, value or None)
-            elif f.key == "dev_id":
+            elif f.key == "build_dir" or f.key == "dev_id":
                 self._set(f.key, value or None)
             else:
                 self._set(f.key, value)
@@ -827,7 +825,7 @@ BUILD_CSS = """
 
 class BuildView(View):
     SPLITS = ("b-main", "b-left", "b-right")
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("x", "cancel_job", "Stop"),
         Binding("L", "clear_log", "Clear output", show=False),
         Binding("question_mark", "help", "Help"),
@@ -1176,7 +1174,7 @@ class BuildView(View):
             return
         with self.suspend():
             print("$ west " + " ".join(args), flush=True)
-            subprocess.run([*west, *args], cwd=self.ws.topdir)
+            subprocess.run([*west, *args], cwd=self.ws.topdir, check=False)
 
     def _built(self, cfg: BuildConfig) -> bool:
         d = build_dir(self.ws, cfg)
@@ -1525,7 +1523,7 @@ class LazyBuildApp(SystemClipboard, App):
     .label { margin-top: 1; }
     """
     )
-    BINDINGS = [Binding("q", "quit", "Quit")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("q", "quit", "Quit")]
 
     def __init__(self, view: BuildView):
         super().__init__()

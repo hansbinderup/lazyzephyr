@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import ClassVar
 
 from rich.text import Text
 from textual import on, work
 from textual.app import ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, SelectionList, Static
@@ -49,7 +50,7 @@ def board_info(cwd: Path, platform: str) -> tuple[meta.Runners | None, str | Non
 class FixtureScreen(ModalScreen[list[str] | None]):
     """Tick the fixtures the board has, from the ones the tests need, or type others."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel"),
         Binding("enter,ctrl+s", "apply", "Apply", priority=True),
     ]
@@ -103,7 +104,7 @@ class FixtureScreen(ModalScreen[list[str] | None]):
 class HardwareScreen(ModalScreen[Hardware | None]):
     """Edit a copy of the hardware settings; ctrl+s applies them."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel"),
         Binding("ctrl+s", "apply", "Apply", priority=True),
     ]

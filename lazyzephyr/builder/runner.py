@@ -8,9 +8,9 @@ import shutil
 import signal
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 
 def west_command() -> list[str] | None:
@@ -19,7 +19,7 @@ def west_command() -> list[str] | None:
     if west:
         return [west]
     try:
-        import west  # noqa: F401
+        import west
     except ImportError:
         return None
     return [sys.executable, "-m", "west"]

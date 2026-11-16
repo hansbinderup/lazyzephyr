@@ -1,5 +1,4 @@
 import textwrap
-from pathlib import Path
 
 from lazyzephyr.builder.configs import (
     BuildConfig,

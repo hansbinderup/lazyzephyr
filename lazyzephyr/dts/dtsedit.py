@@ -11,8 +11,8 @@ Edits are plain text changes, so the rest of the file stays untouched.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 _PREPROCESSOR = re.compile(
     r"#\s*(include|define|undef|if|ifdef|ifndef|else|elif|endif|error|warning|pragma|line)\b"
@@ -22,7 +22,7 @@ _LABEL = re.compile(r"^([A-Za-z_]\w*)\s*:\s*")
 PROP_NAME = re.compile(r"^[A-Za-z0-9,._+?#-]+$")
 NODE_NAME = re.compile(r"^[A-Za-z0-9,._+-]+(@[A-Za-z0-9,._+-]+)?$")
 LABEL_NAME = re.compile(r"^[A-Za-z_]\w*$")
-_INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*[<"]([^>"]+)[>"]', re.M)
+_INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*[<"]([^>"]+)[>"]', re.MULTILINE)
 
 
 @dataclass
@@ -115,7 +115,7 @@ def _skip_space(text: str, i: int) -> int:
     return i
 
 
-_CONDITIONAL = re.compile(r"^[ \t]*#[ \t]*(if|ifdef|ifndef|endif)\b", re.M)
+_CONDITIONAL = re.compile(r"^[ \t]*#[ \t]*(if|ifdef|ifndef|endif)\b", re.MULTILINE)
 
 
 def _skip_branch(text: str, i: int) -> int:
@@ -176,7 +176,7 @@ def _child_path(parent: str | None, name: str) -> str | None:
 
 
 def _strip_comments(s: str) -> str:
-    s = re.sub(r"/\*.*?\*/", " ", s, flags=re.S)
+    s = re.sub(r"/\*.*?\*/", " ", s, flags=re.DOTALL)
     return re.sub(r"//[^\n]*", " ", s).strip()
 
 

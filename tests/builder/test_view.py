@@ -2,9 +2,8 @@
 
 import asyncio
 import sys
-from pathlib import Path
-
 from dataclasses import replace
+from pathlib import Path
 
 from lazyzephyr.builder.app import FIELDS, BuildView, LazyBuildApp
 from lazyzephyr.builder.configs import BuildConfig, ConfigStore

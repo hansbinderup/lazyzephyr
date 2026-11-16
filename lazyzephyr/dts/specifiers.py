@@ -140,7 +140,11 @@ def check(entries: list[Entry], ctrls: list[Controller]) -> str | None:
         for name, cell in zip(ctrl.cells, cells):
             if not cell.strip():
                 return f"{where}{name} is empty"
-            if name == "pin" and ctrl.limit is not None and re.fullmatch(r"\d+", cell.strip()):
-                if int(cell) >= ctrl.limit:
-                    return f"{where}pin {cell} is out of range: {ctrl.ref} has {ctrl.limit} pins"
+            if (
+                name == "pin"
+                and ctrl.limit is not None
+                and re.fullmatch(r"\d+", cell.strip())
+                and int(cell) >= ctrl.limit
+            ):
+                return f"{where}pin {cell} is out of range: {ctrl.ref} has {ctrl.limit} pins"
     return None

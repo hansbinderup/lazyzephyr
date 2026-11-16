@@ -253,7 +253,6 @@ class Session:
     def problems(self) -> list[Problem]:
         """Lines in the application's conf files that don't do what they say."""
         out = []
-        lib = self.model.kconfiglib
         for name, lst in self.assignments().items():
             mine = [a for a in lst if a.file in self.build.user_files]
             if not mine:

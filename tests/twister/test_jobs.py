@@ -1,5 +1,4 @@
 import asyncio
-import json
 from pathlib import Path
 
 from lazyzephyr.twister.discovery import discover
@@ -195,7 +194,7 @@ async def test_missing_twister_reports_error(test_tree, tmp_path):
 
 
 def test_parses_real_twister_lines():
-    from lazyzephyr.twister.jobs import FAILURE_LINE_RE, RESULT_LINE_RE, ANSI_RE
+    from lazyzephyr.twister.jobs import ANSI_RE, FAILURE_LINE_RE, RESULT_LINE_RE
 
     verbose = (
         "INFO    -  3/12 native_sim/native/64      libraries.encoding.json"

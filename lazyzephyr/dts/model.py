@@ -60,6 +60,7 @@ def preprocess(inputs: DtInputs, zephyr_base: Path, out_dir: Path) -> tuple[Path
         capture_output=True,
         text=True,
         cwd=inputs.workdir if inputs.workdir and inputs.workdir.is_dir() else None,
+        check=False,
     )
     if proc.returncode:
         raise DtError(proc.stderr.strip() or f"preprocessor failed ({proc.returncode})")
