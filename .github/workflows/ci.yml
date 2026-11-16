@@ -1,0 +1,55 @@
+# Checks every pull request into main: the test suite on each supported
+# Python, and ruff lint and format.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: python -m pip install -e '.[dev]'
+      - name: Test
+        # Tests that need a Zephyr tree skip themselves. The live-reload test relies
+        # on file watching, which is unreliable on CI runners.
+        run: python -m pytest -q -k "not test_new_testcase_is_picked_up_live"
+
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        # Pinned, so a new ruff release can't turn a passing PR red.
+        run: python -m pip install ruff==0.16.9
+      - name: Lint
+        run: ruff check --output-format=github .
+      - name: Format
+        if: ${{ !cancelled() }}
+        run: ruff format --check --diff .
