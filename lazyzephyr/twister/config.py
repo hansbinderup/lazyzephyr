@@ -13,13 +13,18 @@ Example::
     extra_args = ["--coverage"]
     case_results = true         # print case results in Output when a job ends
 
-    [hardware]                  # twister --device-testing
+    [hardware.frdm_k64f]        # this platform's board (twister --device-testing)
     enabled = true              # default: true if serial is set
     serial = "/dev/ttyACM0"     # console UART
     baud = 115200
     runner = "jlink"            # west flash runner; default: the board's
     dev_id = "000683"           # debug probe serial
     fixtures = ["gpio_loopback"]
+
+    [hardware."nrf52840dk/nrf52840"]   # quote names that contain "/"
+    serial = "/dev/ttyACM1"
+
+A platform's board setup only applies when it is the one chosen platform.
 
 Relative paths are resolved against the directory holding the file.
 Command line options override values from the file.
@@ -53,7 +58,7 @@ class FileConfig:
     jobs: int | None = None
     extra_args: list[str] = field(default_factory=list)
     case_results: bool | None = None
-    hardware: Hardware | None = None
+    boards: dict[str, Hardware] = field(default_factory=dict)  # [hardware.<platform>]
 
 
 _STR_LISTS = ("roots", "platforms", "watch", "extra_args")
@@ -67,23 +72,33 @@ def _positive_int(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 1
 
 
-def load_hardware(path: Path, data) -> Hardware:
+def load_boards(path: Path, data) -> dict[str, Hardware]:
+    """`[hardware.<platform>]` tables: one board setup per platform."""
     if not isinstance(data, dict):
-        raise ConfigError(f"{path}: 'hardware' must be a table ([hardware])")
+        raise ConfigError(f"{path}: 'hardware' must be a table ([hardware.<platform>])")
+    flat = sorted(k for k, v in data.items() if not isinstance(v, dict))
+    if flat:
+        raise ConfigError(f"{path}: put board settings under [hardware.<platform>], "
+                          f"e.g. [hardware.frdm_k64f] (found: {', '.join(flat)})")
+    return {platform: load_hardware(path, platform, table) for platform, table in data.items()}
+
+
+def load_hardware(path: Path, platform: str, data: dict) -> Hardware:
+    where = f"hardware.{platform}" if "/" not in platform else f'hardware."{platform}"'
     unknown = sorted(set(data) - _HARDWARE_KNOWN)
     if unknown:
-        raise ConfigError(f"{path}: unknown key(s) in [hardware]: {', '.join(unknown)} "
+        raise ConfigError(f"{path}: unknown key(s) in [{where}]: {', '.join(unknown)} "
                           f"(known: {', '.join(sorted(_HARDWARE_KNOWN))})")
     if "enabled" in data and not isinstance(data["enabled"], bool):
-        raise ConfigError(f"{path}: 'hardware.enabled' must be true or false")
+        raise ConfigError(f"{path}: '{where}.enabled' must be true or false")
     for key in _HARDWARE_STRS:
         if key in data and (not isinstance(data[key], str) or not data[key].strip()):
-            raise ConfigError(f"{path}: 'hardware.{key}' must be a non-empty string")
+            raise ConfigError(f"{path}: '{where}.{key}' must be a non-empty string")
     if "baud" in data and not _positive_int(data["baud"]):
-        raise ConfigError(f"{path}: 'hardware.baud' must be a positive integer")
+        raise ConfigError(f"{path}: '{where}.baud' must be a positive integer")
     fixtures = data.get("fixtures", [])
     if not isinstance(fixtures, list) or not all(isinstance(f, str) and f for f in fixtures):
-        raise ConfigError(f"{path}: 'hardware.fixtures' must be a list of non-empty strings")
+        raise ConfigError(f"{path}: '{where}.fixtures' must be a list of non-empty strings")
     return Hardware(
         # a serial port alone means "run on the board"
         enabled=data.get("enabled", "serial" in data),
@@ -150,5 +165,5 @@ def load_config(path: Path) -> FileConfig:
         jobs=jobs,
         extra_args=str_list("extra_args"),
         case_results=data.get("case_results"),
-        hardware=load_hardware(path, data["hardware"]) if "hardware" in data else None,
+        boards=load_boards(path, data["hardware"]) if "hardware" in data else {},
     )

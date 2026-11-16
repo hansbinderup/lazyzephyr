@@ -208,16 +208,23 @@ def test_build_command_with_hardware(tmp_path):
     target = RunTarget("t", [tmp_path], ["lib.x"], [], {"lib.x"})
     hardware = Hardware(enabled=True, serial="/dev/ttyACM0", baud=921600, runner="jlink",
                         dev_id="683", fixtures=["gpio_loopback", "usb"])
-    cmd = build_command(["tw"], target, RunOptions(platforms=["frdm_k64f"],
-                                                   hardware=hardware), tmp_path, None)
+    boards = {"frdm_k64f": hardware}
+    cmd = build_command(["tw"], target, RunOptions(platforms=["frdm_k64f"], boards=boards),
+                        tmp_path, None)
     hw = cmd[cmd.index("--device-testing"):cmd.index("-O")]
     assert hw == ["--device-testing", "--device-serial", "/dev/ttyACM0",
                   "--device-serial-baud", "921600", "--west-runner", "jlink",
                   "--west-flash=--dev-id=683", "-X", "gpio_loopback", "-X", "usb"]
 
+    # Another platform doesn't get this board's setup.
+    cmd = build_command(["tw"], target, RunOptions(platforms=["native_sim"], boards=boards),
+                        tmp_path, None)
+    assert "--device-testing" not in cmd and "-X" not in cmd
+
     # Off: no device flags, but fixtures still apply (native fixtures exist too).
     hardware.enabled = False
-    cmd = build_command(["tw"], target, RunOptions(hardware=hardware), tmp_path, None)
+    cmd = build_command(["tw"], target, RunOptions(platforms=["frdm_k64f"], boards=boards),
+                        tmp_path, None)
     assert "--device-testing" not in cmd and "--device-serial" not in cmd
     assert cmd[cmd.index("-X"):cmd.index("-O")] == ["-X", "gpio_loopback", "-X", "usb"]
 
@@ -226,14 +233,46 @@ def test_hardware_problem():
     from lazyzephyr.twister.jobs import Hardware, hardware_problem
 
     assert hardware_problem(RunOptions()) is None
-    no_port = RunOptions(platforms=["b"], hardware=Hardware(enabled=True))
-    assert "serial port" in hardware_problem(no_port)
+    no_port = RunOptions(platforms=["b"], boards={"b": Hardware(enabled=True)})
+    assert "device testing on b needs a serial port" in hardware_problem(no_port)
     no_port.extra_args = ["--hardware-map", "map.yaml"]
     assert hardware_problem(no_port) is None
-    two = RunOptions(platforms=["a", "b"], hardware=Hardware(enabled=True, serial="/dev/x"))
-    assert "exactly one platform" in hardware_problem(two)
-    two.platforms = ["a"]
-    assert hardware_problem(two) is None
+    ok = RunOptions(platforms=["a"], boards={"a": Hardware(enabled=True, serial="/dev/x")})
+    assert hardware_problem(ok) is None
+
+
+def test_plan_runs_puts_each_board_in_its_own_run():
+    from lazyzephyr.twister.jobs import Hardware, plan_runs
+
+    options = RunOptions(boards={
+        "board_a": Hardware(enabled=True, serial="/dev/a"),
+        "board_b": Hardware(enabled=True, serial="/dev/b"),
+        "native_sim": Hardware(fixtures=["f"]),  # fixtures only: no board
+    })
+    assert plan_runs(options, []) == [[]]  # twister's default platforms
+    assert plan_runs(options, ["native_sim", "qemu_x86"]) == [["native_sim", "qemu_x86"]]
+    assert plan_runs(options, ["board_a"]) == [["board_a"]]
+    assert plan_runs(options, ["board_a", "native_sim"]) == [["board_a"], ["native_sim"]]
+    # Two boards: the caller has to say which.
+    assert plan_runs(options, ["board_a", "board_b", "native_sim"]) is None
+    assert plan_runs(options, ["board_a", "board_b", "native_sim"], "board_b") == [
+        ["board_b"], ["native_sim"]]
+    assert plan_runs(options, ["board_a", "board_b"], "other") is None
+
+    # Several platforms in one run get the fixtures of their setups, never a board.
+    together = RunOptions(platforms=["native_sim", "board_a"], boards=options.boards)
+    assert together.hardware == Hardware(fixtures=["f"])
+
+
+def test_identical_target_on_another_platform_is_not_a_duplicate(tmp_path):
+    from lazyzephyr.twister.jobs import JobManager, RunTarget
+
+    manager = JobManager(["true"], tmp_path / "state", tmp_path)
+    manager._start_next = lambda: None  # keep everything queued
+    target = RunTarget("t", [tmp_path], ["lib.x"], [], {"lib.x"})
+    assert manager.submit(target, RunOptions(platforms=["a"])) is not None
+    assert manager.submit(target, RunOptions(platforms=["b"])) is not None
+    assert manager.submit(target, RunOptions(platforms=["a"])) is None
 
 
 async def test_case_results_are_printed_when_enabled(test_tree, tmp_path, fake_twister,
