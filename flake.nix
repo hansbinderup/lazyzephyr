@@ -35,6 +35,7 @@
             (pkgs.python3.withPackages (ps: with ps; [
               textual watchfiles pyyaml pyte pytest pytest-asyncio
             ]))
+            pkgs.ruff
           ];
         };
       });
