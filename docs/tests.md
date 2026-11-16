@@ -82,6 +82,12 @@ Put a `.lazyzephyr.toml` in your workspace, so running it there needs no flags.
 lazyzephyr looks in the current directory and its parents, up to the west workspace
 root. Command line options override the file, and `--no-config` ignores it.
 
+The settings you change in the app are remembered for the workspace and come back next
+time: the chosen platforms (`p`), case results (`V`), `-G` (`g`), auto-run (`w`), the
+platform filter (`P`) and the board picked last. They're saved in the state dir
+(`session.json`), not in your repo. Each of these comes from, in order: the command line,
+what you used last, `.lazyzephyr.toml`, or the default.
+
 ```toml
 roots = ["tests"]              # relative to this file
 platforms = ["native_sim/native/64"]

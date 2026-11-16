@@ -27,7 +27,9 @@ Example::
 A platform's board setup only applies when it is the one chosen platform.
 
 Relative paths are resolved against the directory holding the file.
-Command line options override values from the file.
+Command line options override values from the file. Settings changed in the app
+(platforms, case_results, integration, auto_run) are remembered and override the
+file too, see session.py.
 """
 
 from __future__ import annotations
