@@ -44,9 +44,14 @@ def hardware_from_dict(data: object) -> Hardware:
     fixtures = data.get("fixtures", [])
     if not isinstance(fixtures, list) or not all(isinstance(f, str) and f for f in fixtures):
         raise ValueError("fixtures must be a list of non-empty strings")
-    return Hardware(enabled=bool(data.get("enabled", False)), serial=data.get("serial"),
-                    baud=baud, runner=data.get("runner"), dev_id=data.get("dev_id"),
-                    fixtures=list(fixtures))
+    return Hardware(
+        enabled=bool(data.get("enabled", False)),
+        serial=data.get("serial"),
+        baud=baud,
+        runner=data.get("runner"),
+        dev_id=data.get("dev_id"),
+        fixtures=list(fixtures),
+    )
 
 
 def load_saved(state_dir: Path) -> dict[str, Hardware]:

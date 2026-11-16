@@ -15,14 +15,17 @@ def write(path: Path, text: str) -> Path:
 
 
 def test_load_valid_config_resolves_paths_relative_to_file(tmp_path):
-    path = write(tmp_path / ".lazyzephyr.toml", """
+    path = write(
+        tmp_path / ".lazyzephyr.toml",
+        """
 roots = ["tests"]
 platforms = ["native_sim/native/64"]
 integration = false
 watch = ["lib"]
 jobs = 4
 extra_args = ["--coverage"]
-""")
+""",
+    )
     cfg = load_config(path)
     assert cfg.roots == [tmp_path / "tests"]
     assert cfg.watch == [tmp_path / "lib"]
@@ -31,15 +34,18 @@ extra_args = ["--coverage"]
     assert cfg.jobs == 4 and cfg.extra_args == ["--coverage"]
 
 
-@pytest.mark.parametrize("body, message", [
-    ("platform = ['x']", "unknown key(s): platform"),
-    ("roots = 'tests'", "'roots' must be a list"),
-    ("integration = 'yes'", "'integration' must be true or false"),
-    ("jobs = 0", "'jobs' must be a positive integer"),
-    ("jobs = true", "'jobs' must be a positive integer"),
-    ("twister = ''", "'twister' must be a non-empty string"),
-    ("roots = [", "invalid TOML"),
-])
+@pytest.mark.parametrize(
+    "body, message",
+    [
+        ("platform = ['x']", "unknown key(s): platform"),
+        ("roots = 'tests'", "'roots' must be a list"),
+        ("integration = 'yes'", "'integration' must be true or false"),
+        ("jobs = 0", "'jobs' must be a positive integer"),
+        ("jobs = true", "'jobs' must be a positive integer"),
+        ("twister = ''", "'twister' must be a non-empty string"),
+        ("roots = [", "invalid TOML"),
+    ],
+)
 def test_invalid_config_is_rejected_with_a_clear_message(tmp_path, body, message):
     path = write(tmp_path / ".lazyzephyr.toml", body)
     with pytest.raises(ConfigError, match=message.replace("(", r"\(").replace(")", r"\)")):
@@ -63,13 +69,16 @@ def parse(*argv: str) -> argparse.Namespace:
 def test_cli_overrides_config(tmp_path, monkeypatch):
     (tmp_path / "tests").mkdir()
     (tmp_path / "other").mkdir()
-    write(tmp_path / ".lazyzephyr.toml", """
+    write(
+        tmp_path / ".lazyzephyr.toml",
+        """
 platforms = ["qemu_x86"]
 integration = false
 auto_run = true
 twister = "my-twister --flag"
 extra_args = ["--coverage"]
-""")
+""",
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ZEPHYR_BASE", raising=False)
 
@@ -98,7 +107,10 @@ def test_broken_config_exits_with_message(tmp_path, monkeypatch):
 
 
 def test_hardware_tables_per_platform(tmp_path):
-    cfg = load_config(write(tmp_path / ".lazyzephyr.toml", """
+    cfg = load_config(
+        write(
+            tmp_path / ".lazyzephyr.toml",
+            """
 case_results = true
 
 [hardware.frdm_k64f]
@@ -110,7 +122,9 @@ fixtures = ["gpio_loopback"]
 
 [hardware."nrf52840dk/nrf52840"]
 fixtures = ["x"]
-"""))
+""",
+        )
+    )
     assert cfg.case_results is True
     assert set(cfg.boards) == {"frdm_k64f", "nrf52840dk/nrf52840"}
     hw = cfg.boards["frdm_k64f"]
@@ -120,17 +134,20 @@ fixtures = ["x"]
     assert cfg.boards["nrf52840dk/nrf52840"].enabled is False
 
 
-@pytest.mark.parametrize("body, message", [
-    ("hardware = 1", "'hardware' must be a table"),
-    ("[hardware]\nserial = 'x'", "put board settings under [hardware.<platform>]"),
-    ("[hardware.b]\nport = 'x'", "unknown key(s) in [hardware.b]: port"),
-    ("[hardware.b]\nenabled = 1", "'hardware.b.enabled' must be true or false"),
-    ("[hardware.b]\nserial = ''", "'hardware.b.serial' must be a non-empty string"),
-    ("[hardware.b]\nbaud = 0", "'hardware.b.baud' must be a positive integer"),
-    ("[hardware.b]\nfixtures = 'x'", "'hardware.b.fixtures' must be a list"),
-    ('[hardware."b/soc"]\nbaud = 0', "'hardware.\"b/soc\".baud' must be a positive integer"),
-    ("case_results = 'yes'", "'case_results' must be true or false"),
-])
+@pytest.mark.parametrize(
+    "body, message",
+    [
+        ("hardware = 1", "'hardware' must be a table"),
+        ("[hardware]\nserial = 'x'", "put board settings under [hardware.<platform>]"),
+        ("[hardware.b]\nport = 'x'", "unknown key(s) in [hardware.b]: port"),
+        ("[hardware.b]\nenabled = 1", "'hardware.b.enabled' must be true or false"),
+        ("[hardware.b]\nserial = ''", "'hardware.b.serial' must be a non-empty string"),
+        ("[hardware.b]\nbaud = 0", "'hardware.b.baud' must be a positive integer"),
+        ("[hardware.b]\nfixtures = 'x'", "'hardware.b.fixtures' must be a list"),
+        ('[hardware."b/soc"]\nbaud = 0', "'hardware.\"b/soc\".baud' must be a positive integer"),
+        ("case_results = 'yes'", "'case_results' must be true or false"),
+    ],
+)
 def test_invalid_hardware_is_rejected(tmp_path, body, message):
     with pytest.raises(ConfigError, match=re.escape(message)):
         load_config(write(tmp_path / ".lazyzephyr.toml", body))
@@ -138,14 +155,17 @@ def test_invalid_hardware_is_rejected(tmp_path, body, message):
 
 def test_cli_hardware_flags_override_config(tmp_path, monkeypatch):
     (tmp_path / "tests").mkdir()
-    write(tmp_path / ".lazyzephyr.toml", """
+    write(
+        tmp_path / ".lazyzephyr.toml",
+        """
 roots = ["tests"]
 platforms = ["frdm_k64f"]
 [hardware.frdm_k64f]
 serial = "/dev/ttyACM0"
 runner = "jlink"
 fixtures = ["a"]
-""")
+""",
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ZEPHYR_BASE", raising=False)
 
@@ -154,8 +174,20 @@ fixtures = ["a"]
     assert from_file.options.case_results is False
     assert from_file.fixed_boards == {"frdm_k64f"}
 
-    cli = config_from_args(parse("--device-serial", "/dev/ttyUSB1", "--west-runner", "pyocd",
-                                 "-X", "b", "-X", "a", "--case-results"), [])
+    cli = config_from_args(
+        parse(
+            "--device-serial",
+            "/dev/ttyUSB1",
+            "--west-runner",
+            "pyocd",
+            "-X",
+            "b",
+            "-X",
+            "a",
+            "--case-results",
+        ),
+        [],
+    )
     hw = cli.options.hardware
     assert (hw.enabled, hw.serial, hw.runner) == (True, "/dev/ttyUSB1", "pyocd")
     assert hw.fixtures == ["a", "b"]
@@ -171,16 +203,24 @@ def test_saved_board_setups_are_loaded(tmp_path, monkeypatch):
     from lazyzephyr.twister.jobs import Hardware
 
     (tmp_path / "tests").mkdir()
-    write(tmp_path / ".lazyzephyr.toml", """
+    write(
+        tmp_path / ".lazyzephyr.toml",
+        """
 roots = ["tests"]
 [hardware.frdm_k64f]
 serial = "/dev/from-file"
-""")
+""",
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ZEPHYR_BASE", raising=False)
     state = tmp_path / "state"
-    boards.save(state, {"frdm_k64f": Hardware(enabled=True, serial="/dev/saved"),
-                        "nucleo_f429zi": Hardware(enabled=True, serial="/dev/ttyACM3")})
+    boards.save(
+        state,
+        {
+            "frdm_k64f": Hardware(enabled=True, serial="/dev/saved"),
+            "nucleo_f429zi": Hardware(enabled=True, serial="/dev/ttyACM3"),
+        },
+    )
 
     cfg = config_from_args(parse("--state-dir", str(state)), [])
     assert cfg.options.boards["nucleo_f429zi"].serial == "/dev/ttyACM3"

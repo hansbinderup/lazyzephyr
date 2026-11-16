@@ -66,9 +66,13 @@ class SourceFile:
         return [b for b in self.blocks if b.path == path]
 
     def props_for(self, path: str, name: str | None = None) -> list[Statement]:
-        return [s for s in self.statements
-                if s.node == path and s.kind in ("set", "delete-property")
-                and (name is None or s.name == name)]
+        return [
+            s
+            for s in self.statements
+            if s.node == path
+            and s.kind in ("set", "delete-property")
+            and (name is None or s.name == name)
+        ]
 
 
 class ScanError(ValueError):
@@ -176,9 +180,12 @@ def _strip_comments(s: str) -> str:
     return re.sub(r"//[^\n]*", " ", s).strip()
 
 
-def scan(text: str, resolve: Callable[[str], str | None],
-         child: Callable[[str, str, list[str]], str | None] | None = None,
-         root: str | None = None) -> SourceFile:
+def scan(
+    text: str,
+    resolve: Callable[[str], str | None],
+    child: Callable[[str, str, list[str]], str | None] | None = None,
+    root: str | None = None,
+) -> SourceFile:
     """Scan devicetree source.
 
     `resolve` maps a label to its node path (or None). `child(parent, name, labels)`
@@ -211,8 +218,15 @@ def scan(text: str, resolve: Callable[[str], str | None],
         header = _strip_comments(text[start:j])
         parent = stack[-1].path if stack else root
         if term == "{":
-            block = _block(header, parent, start, j, resolve, bool(stack) or root is not None,
-                           _line(text, start))
+            block = _block(
+                header,
+                parent,
+                start,
+                j,
+                resolve,
+                bool(stack) or root is not None,
+                _line(text, start),
+            )
             if block.by_name and child and parent is not None:
                 block.path = child(parent, block.header, block.labels)
             stack.append(block)
@@ -242,13 +256,20 @@ def _line(text: str, i: int) -> int:
     return text.count("\n", 0, i) + 1
 
 
-def _block(header: str, parent: str | None, start: int, open_: int,
-           resolve: Callable[[str], str | None], nested: bool, line: int) -> Block:
+def _block(
+    header: str,
+    parent: str | None,
+    start: int,
+    open_: int,
+    resolve: Callable[[str], str | None],
+    nested: bool,
+    line: int,
+) -> Block:
     header = header.replace("/omit-if-no-ref/", "").strip()
     labels = []
     while m := _LABEL.match(header):
         labels.append(m.group(1))
-        header = header[m.end():]
+        header = header[m.end() :]
     name = header.strip()
     if name == "/":
         path, by_name = "/", False
@@ -261,18 +282,21 @@ def _block(header: str, parent: str | None, start: int, open_: int,
     return Block(path, name, labels, start, open_, by_name=by_name, line=line)
 
 
-def _statement(header: str, parent: str | None, start: int, end: int,
-               line: int) -> Statement | None:
+def _statement(
+    header: str, parent: str | None, start: int, end: int, line: int
+) -> Statement | None:
     if header.startswith("/delete-property/"):
-        return Statement(parent, "delete-property", header.split(None, 1)[-1].strip(), None,
-                         start, end, line)
+        return Statement(
+            parent, "delete-property", header.split(None, 1)[-1].strip(), None, start, end, line
+        )
     if header.startswith("/delete-node/"):
-        return Statement(parent, "delete-node", header.split(None, 1)[-1].strip(), None,
-                         start, end, line)
+        return Statement(
+            parent, "delete-node", header.split(None, 1)[-1].strip(), None, start, end, line
+        )
     if header.startswith("/") or not header:
         return None  # /dts-v1/, /plugin/, /memreserve/
     while m := _LABEL.match(header):
-        header = header[m.end():]
+        header = header[m.end() :]
     name, eq, value = header.partition("=")
     name = name.strip()
     if not PROP_NAME.match(name):
@@ -312,7 +336,7 @@ def _body_indent(sf: SourceFile, block: Block) -> str:
     """Indentation used for statements inside `block`."""
     text = sf.text
     j = _skip_space(text, block.open + 1)
-    if j < block.close and text[block.open + 1:j].count("\n"):
+    if j < block.close and text[block.open + 1 : j].count("\n"):
         return _indent_of(text, j)
     return _indent_of(text, block.start) + "\t"
 
@@ -323,14 +347,19 @@ def _insert_in_block(sf: SourceFile, block: Block, lines: list[str], blank_befor
     indent = _body_indent(sf, block)
     body = "".join(f"{indent}{ln}\n" if ln else "\n" for ln in lines)
     ls = _line_start(text, block.close)
-    if text[ls:block.close].strip() == "":
+    if text[ls : block.close].strip() == "":
         prev = text[:ls].rstrip(" \t")
         if blank_before and not prev.endswith("{\n") and not prev.endswith("\n\n"):
             body = "\n" + body
         return text[:ls] + body + text[ls:]
     # Closing brace shares a line with other text, e.g. `foo { };`.
-    return (text[:block.close].rstrip(" \t") + "\n" + body
-            + _indent_of(text, block.start) + text[block.close:])
+    return (
+        text[: block.close].rstrip(" \t")
+        + "\n"
+        + body
+        + _indent_of(text, block.start)
+        + text[block.close :]
+    )
 
 
 def _append_block(text: str, ref: str, lines: list[str]) -> str:
@@ -349,18 +378,17 @@ def _remove_range(text: str, start: int, end: int) -> str:
         start = ls
         # Don't leave two blank lines behind.
         if text[start:].startswith("\n") and text[:start].endswith("\n\n"):
-            end = min(end + 1, len(text)) if text[end:end + 1] == "\n" else end
+            end = min(end + 1, len(text)) if text[end : end + 1] == "\n" else end
     return text[:start] + text[end:]
 
 
-def set_property(sf: SourceFile, path: str, labels: list[str], name: str,
-                 value: str | None) -> str:
+def set_property(sf: SourceFile, path: str, labels: list[str], name: str, value: str | None) -> str:
     """Set `name` (value None: boolean true) on node `path` in this file."""
     stmts = [s for s in sf.props_for(path, name)]
     line = prop_text(name, value)
     if stmts and stmts[-1].kind == "set":
         s = stmts[-1]
-        return sf.text[:s.start] + line + sf.text[s.end:]
+        return sf.text[: s.start] + line + sf.text[s.end :]
     if stmts:  # last one deletes it: put the new value after that
         s = stmts[-1]
         indent = _indent_of(sf.text, s.start)

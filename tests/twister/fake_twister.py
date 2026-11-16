@@ -38,18 +38,27 @@ suites = []
 for index, name in enumerate(scenarios, 1):
     time.sleep(delay)
     status = "failed" if name in fail else "passed"
-    print(f"INFO    - {index}/{len(scenarios)} native_sim  {name}  {status.upper()} (native 0.01s)",
-          flush=True)
-    suites.append({
-        "name": name,
-        "platform": "native_sim",
-        "status": status,
-        "execution_time": "0.01",
-        "build_time": "1.5",
-        "log": (Path(os.environ["FAKE_LOG"]).read_text() if os.environ.get("FAKE_LOG")
-                else "assertion failed\n") if status == "failed" else None,
-        "testcases": [{"identifier": "suite.case_a", "status": status}],
-    })
+    print(
+        f"INFO    - {index}/{len(scenarios)} native_sim  {name}  {status.upper()} (native 0.01s)",
+        flush=True,
+    )
+    suites.append(
+        {
+            "name": name,
+            "platform": "native_sim",
+            "status": status,
+            "execution_time": "0.01",
+            "build_time": "1.5",
+            "log": (
+                Path(os.environ["FAKE_LOG"]).read_text()
+                if os.environ.get("FAKE_LOG")
+                else "assertion failed\n"
+            )
+            if status == "failed"
+            else None,
+            "testcases": [{"identifier": "suite.case_a", "status": status}],
+        }
+    )
     if os.environ.get("FAKE_HANDLER_LOG"):
         # Console output where twister keeps it: <outdir>/<platform>/<...>/<scenario>/
         build = outdir / "native_sim" / "zephyr" / name
@@ -57,6 +66,7 @@ for index, name in enumerate(scenarios, 1):
         (build / "build.log").write_text("build\n")
         (build / "handler.log").write_text(
             "Running TESTSUITE suite\nSTART - test_case_a\n"
-            f"hello from {name}\n {status[:4].upper()} - test_case_a in 0.001 seconds\n")
+            f"hello from {name}\n {status[:4].upper()} - test_case_a in 0.001 seconds\n"
+        )
 (outdir / "twister.json").write_text(json.dumps({"environment": {}, "testsuites": suites}))
 sys.exit(1 if any(s["status"] == "failed" for s in suites) else 0)

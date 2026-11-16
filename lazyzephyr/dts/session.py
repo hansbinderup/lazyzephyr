@@ -97,8 +97,11 @@ class Session:
         binding = getattr(node, "_binding", None)
         if not binding:
             return []
-        return [n for n, s in binding.prop2specs.items()
-                if n not in READ_ONLY and s.type in values.EDITABLE]
+        return [
+            n
+            for n, s in binding.prop2specs.items()
+            if n not in READ_ONLY and s.type in values.EDITABLE
+        ]
 
     def write_files(self, node_path: str | None = None) -> list[Path]:
         """Files an edit of `node_path` may go to: writable inputs at or after the
@@ -117,8 +120,9 @@ class Session:
                 idx = i
         return [f for f in files if self.inputs.files.index(f) >= idx]
 
-    def default_write_file(self, node_path: str | None = None,
-                           prop: str | None = None) -> Path | None:
+    def default_write_file(
+        self, node_path: str | None = None, prop: str | None = None
+    ) -> Path | None:
         """Where an edit goes unless the user says otherwise: the writable file
         that already sets the property, else the one that already touches the
         node, else the app overlay."""
@@ -190,8 +194,9 @@ class Session:
             return f"{file.name} can't be edited here"
         return None
 
-    def set_property(self, node_path: str, name: str, text: str | None, file: Path,
-                     delete: bool = False) -> EditResult:
+    def set_property(
+        self, node_path: str, name: str, text: str | None, file: Path, delete: bool = False
+    ) -> EditResult:
         """Set property `name` from user input `text` (None: boolean true).
 
         delete=True removes it: drops the assignment from `file` if that is the
@@ -242,8 +247,9 @@ class Session:
             result = self._check_effect(result, node_path, name, file, delete)
         return result
 
-    def _check_effect(self, result: EditResult, node_path: str, name: str, file: Path,
-                      delete: bool) -> EditResult:
+    def _check_effect(
+        self, result: EditResult, node_path: str, name: str, file: Path, delete: bool
+    ) -> EditResult:
         eff = self.effective(node_path, name)
         if delete:
             if eff:
@@ -262,8 +268,14 @@ class Session:
         new = "disabled" if node.status == "okay" else "okay"
         return self.set_property(node_path, "status", new, file)
 
-    def add_node(self, parent_path: str, name: str, label: str | None,
-                 props: list[tuple[str, str | None]], file: Path) -> EditResult:
+    def add_node(
+        self,
+        parent_path: str,
+        name: str,
+        label: str | None,
+        props: list[tuple[str, str | None]],
+        file: Path,
+    ) -> EditResult:
         """Add node `name` under `parent_path`. `props` hold DTS values, already
         formatted (see values.format_value)."""
         parent = self.node(parent_path)
@@ -301,8 +313,10 @@ class Session:
             return None
         first = Path(node._node.filename).resolve()
         if first == file:
-            return (f"Remove the node's definition (and its other blocks) from {file.name}",
-                    "remove")
+            return (
+                f"Remove the node's definition (and its other blocks) from {file.name}",
+                "remove",
+            )
         ref = node_ref_text(node_path, list(node.labels))
         return (f"Add /delete-node/ {ref}; to {file.name}", "delete-node")
 
@@ -317,12 +331,18 @@ class Session:
         if plan[1] == "remove":
             prefix = node_path + "/"
             text = sf.text
-            for block in sorted((b for b in sf.blocks
-                                 if b.path == node_path or (b.path or "").startswith(prefix)),
-                                key=lambda b: b.start, reverse=True):
-                if any(o is not block and o.start < block.start and o.end >= block.end
-                       and (o.path == node_path or (o.path or "").startswith(prefix))
-                       for o in sf.blocks):
+            for block in sorted(
+                (b for b in sf.blocks if b.path == node_path or (b.path or "").startswith(prefix)),
+                key=lambda b: b.start,
+                reverse=True,
+            ):
+                if any(
+                    o is not block
+                    and o.start < block.start
+                    and o.end >= block.end
+                    and (o.path == node_path or (o.path or "").startswith(prefix))
+                    for o in sf.blocks
+                ):
                     continue  # inside a block that goes anyway
                 text = dtsedit.remove_block(dtsedit.SourceFile(text, [block]), block)
             new = text

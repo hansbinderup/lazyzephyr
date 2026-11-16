@@ -14,6 +14,7 @@ _MARKER_PATH, _MARKER_PHANDLE = 0, 1
 @dataclass
 class Ref:
     """Property `prop` of node `source` points at a node."""
+
     source: str
     prop: str
     detail: str = ""  # the cells after the phandle, e.g. "pin=13 flags=1"
@@ -38,7 +39,7 @@ class Problem:
 
 
 def _cell(value: bytes, i: int) -> int | None:
-    chunk = value[i:i + 4]
+    chunk = value[i : i + 4]
     return int.from_bytes(chunk, "big") if len(chunk) == 4 else None
 
 
@@ -60,7 +61,7 @@ def references(edt) -> dict[str, list[Ref]]:
     # (nexus nodes such as an Arduino header).
     known: dict[tuple[str, int], list[str]] = {}
     for n in edt.nodes:
-        for sp, names in (n._binding.specifier2cells.items() if n._binding else ()):
+        for sp, names in n._binding.specifier2cells.items() if n._binding else ():
             if names:
                 known.setdefault((sp, len(names)), list(names))
     for node in dt.node_iter():
@@ -85,8 +86,9 @@ def references(edt) -> dict[str, list[Ref]]:
     return out
 
 
-def _specifier_detail(edt, target, space: str, value: bytes, pos: int,
-                      known: dict[tuple[str, int], list[str]]) -> str:
+def _specifier_detail(
+    edt, target, space: str, value: bytes, pos: int, known: dict[tuple[str, int], list[str]]
+) -> str:
     cells_prop = target.props.get(f"#{space}-cells")
     try:
         count = cells_prop.to_num() if cells_prop else 0
@@ -137,6 +139,7 @@ def _int(text: str) -> int | None:
 @dataclass
 class PinDecoder:
     """Turns a vendor's pinctrl cell into a pin name."""
+
     prop: str
     decode: object  # Callable[[int], str | None]
 
@@ -152,12 +155,19 @@ def pin_decoders(macros) -> list[PinDecoder]:
         def nrf(v: int) -> str | None:
             pin = v & mask
             return None if pin == mask else f"P{pin // 32}.{pin % 32:02d}"
+
         out.append(PinDecoder("psels", nrf))
     if "STM32_PORT_SHIFT" in values:
         port_shift = _int(values["STM32_PORT_SHIFT"]) or 9
         line_shift = _int(values.get("STM32_LINE_SHIFT", "5")) or 5
-        out.append(PinDecoder("pinmux", lambda v: "P" + chr(ord("A") + ((v >> port_shift) & 0x1F))
-                              + str((v >> line_shift) & 0xF)))
+        out.append(
+            PinDecoder(
+                "pinmux",
+                lambda v: (
+                    "P" + chr(ord("A") + ((v >> port_shift) & 0x1F)) + str((v >> line_shift) & 0xF)
+                ),
+            )
+        )
     for name, value in values.items():
         m = re.fullmatch(r"(APOLLO\d+)_PIN_NUM_POS", name)
         if m and f"{m.group(1)}_PIN_NUM_MASK" in values:
@@ -202,8 +212,9 @@ def _pin_users(edt, decoders: list[PinDecoder]) -> dict[str, list[tuple[object, 
         if not decoders:
             continue
         pinctrls = node.pinctrls
-        state = next((p for p in pinctrls if p.name == "default"),
-                     pinctrls[0] if pinctrls else None)
+        state = next(
+            (p for p in pinctrls if p.name == "default"), pinctrls[0] if pinctrls else None
+        )
         for conf in state.conf_nodes if state else []:
             for part in [conf, *conf.children.values()]:
                 for dec in decoders:
@@ -229,8 +240,11 @@ def problems(edt, macros=(), refs: dict[str, list[Ref]] | None = None) -> list[P
     for pin, users in sorted(_pin_users(edt, pin_decoders(macros)).items()):
         if len(users) > 1:
             who = ", ".join(f"{_name(n)} ({how})" for n, how in users)
-            out.append(Problem("warning", f"{pin} is used by {who}",
-                               [n.path for n, _ in users], kind="pin"))
+            out.append(
+                Problem(
+                    "warning", f"{pin} is used by {who}", [n.path for n, _ in users], kind="pin"
+                )
+            )
 
     # Two enabled devices at one address on a bus; two enabled bus controllers
     # on one register block (nRF's spi0 and i2c0); overlapping flash partitions.
@@ -251,14 +265,25 @@ def problems(edt, macros=(), refs: dict[str, list[Ref]] | None = None) -> list[P
         bus = edt.get_node(bus_path)
         for addr, same in sorted(by_addr.items()):
             if len(same) > 1:
-                out.append(Problem("error", f"{', '.join(map(_name, same))} are all at "
-                                   f"{addr:#x} on {_name(bus)}", [n.path for n in same],
-                                   kind="address"))
+                out.append(
+                    Problem(
+                        "error",
+                        f"{', '.join(map(_name, same))} are all at {addr:#x} on {_name(bus)}",
+                        [n.path for n in same],
+                        kind="address",
+                    )
+                )
     for addr, same in sorted(controllers.items()):
         if len(same) > 1:
-            out.append(Problem("error", f"{', '.join(map(_name, same))} share the registers at "
-                               f"{addr:#x}; only one of them can be enabled",
-                               [n.path for n in same], kind="address"))
+            out.append(
+                Problem(
+                    "error",
+                    f"{', '.join(map(_name, same))} share the registers at "
+                    f"{addr:#x}; only one of them can be enabled",
+                    [n.path for n in same],
+                    kind="address",
+                )
+            )
     for nodes in partitions.values():
         out += _overlaps(nodes)
 
@@ -273,9 +298,15 @@ def problems(edt, macros=(), refs: dict[str, list[Ref]] | None = None) -> list[P
             continue
         for ref in lst:
             if ref.source == "/chosen":
-                out.append(Problem("warning", f"chosen {ref.prop} is {_name(target)}, which "
-                                   "is disabled", [target_path, "/chosen"], ref.prop,
-                                   kind="disabled"))
+                out.append(
+                    Problem(
+                        "warning",
+                        f"chosen {ref.prop} is {_name(target)}, which is disabled",
+                        [target_path, "/chosen"],
+                        ref.prop,
+                        kind="disabled",
+                    )
+                )
                 continue
             try:
                 source = edt.get_node(ref.source)
@@ -283,16 +314,29 @@ def problems(edt, macros=(), refs: dict[str, list[Ref]] | None = None) -> list[P
                 continue
             if ref.source == "/aliases" or not enabled(source) or not source._binding:
                 continue
-            out.append(Problem("warning", f"{_name(source)} {ref.prop} needs {_name(target)}, "
-                               "which is disabled", [ref.source, target_path], ref.prop,
-                               kind="disabled"))
+            out.append(
+                Problem(
+                    "warning",
+                    f"{_name(source)} {ref.prop} needs {_name(target)}, which is disabled",
+                    [ref.source, target_path],
+                    ref.prop,
+                    kind="disabled",
+                )
+            )
 
     # Deprecated properties that are set.
     for node in edt.nodes:
         for name, prop in node.props.items():
             if prop.spec.deprecated and name in node._node.props:
-                out.append(Problem("warning", f"{_name(node)} sets {name}, which is deprecated",
-                                   [node.path], name, kind="deprecated"))
+                out.append(
+                    Problem(
+                        "warning",
+                        f"{_name(node)} sets {name}, which is deprecated",
+                        [node.path],
+                        name,
+                        kind="deprecated",
+                    )
+                )
     out.sort(key=lambda p: p.severity != "error")
     return out
 
@@ -306,18 +350,26 @@ def _overlaps(nodes: list) -> list[Problem]:
     spans.sort(key=lambda s: (s[0], -s[1]))
     out, seen = [], set()
     for i, (start, end, node) in enumerate(spans):
-        for start2, end2, other in spans[i + 1:]:
+        for start2, end2, other in spans[i + 1 :]:
             if start2 >= end:
                 break
-            if other is node or node.path.startswith(other.path + "/") or \
-                    other.path.startswith(node.path + "/"):
+            if (
+                other is node
+                or node.path.startswith(other.path + "/")
+                or other.path.startswith(node.path + "/")
+            ):
                 continue
             key = tuple(sorted((node.path, other.path)))
             if key in seen:
                 continue
             seen.add(key)
-            out.append(Problem(
-                "error", f"{_name(node)} ({start:#x}-{end - 1:#x}) and {_name(other)} "
-                f"({start2:#x}-{end2 - 1:#x}) overlap", [node.path, other.path],
-                kind="partition"))
+            out.append(
+                Problem(
+                    "error",
+                    f"{_name(node)} ({start:#x}-{end - 1:#x}) and {_name(other)} "
+                    f"({start2:#x}-{end2 - 1:#x}) overlap",
+                    [node.path, other.path],
+                    kind="partition",
+                )
+            )
     return out

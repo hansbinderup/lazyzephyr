@@ -89,7 +89,7 @@ async def test_keys_grow_move_reset_and_layout_mode():
         await pilot.press("greater_than_sign")
         await pilot.pause()
         assert ids(view, "right") == ["two", "one", "three"]
-        assert one.outer_size.height == start + 4   # its size goes with it
+        assert one.outer_size.height == start + 4  # its size goes with it
         # Moving the left column swaps the columns.
         view.query_one("#list").focus()
         await pilot.press("greater_than_sign")

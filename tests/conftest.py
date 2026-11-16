@@ -38,15 +38,20 @@ def workspace(tmp_path: Path, zephyr_base: Path, monkeypatch) -> Path:
     """A west workspace using the real Zephyr, with an app overlay for native_sim."""
     monkeypatch.delenv("ZEPHYR_BASE", raising=False)
     top = tmp_path / "ws"
-    write(top / ".west" / "config", f"""
+    write(
+        top / ".west" / "config",
+        f"""
         [manifest]
         path = app
 
         [zephyr]
         base = {zephyr_base}
-        """)
+        """,
+    )
     write(top / "app" / "CMakeLists.txt", "# app\n")
-    write(top / "app" / "boards" / "native_sim.overlay", """
+    write(
+        top / "app" / "boards" / "native_sim.overlay",
+        """
         / {
         	aliases {
         		led0 = &led0;
@@ -63,14 +68,20 @@ def workspace(tmp_path: Path, zephyr_base: Path, monkeypatch) -> Path:
         &i2c0 {
         	status = "okay";
         };
-        """)
+        """,
+    )
     # A module with its own binding.
-    write(top / "mod" / "zephyr" / "module.yml", """
+    write(
+        top / "mod" / "zephyr" / "module.yml",
+        """
         build:
           settings:
             dts_root: .
-        """)
-    write(top / "mod" / "dts" / "bindings" / "vnd,widget.yaml", """
+        """,
+    )
+    write(
+        top / "mod" / "dts" / "bindings" / "vnd,widget.yaml",
+        """
         description: Test widget on I2C
         compatible: "vnd,widget"
         include: i2c-device.yaml
@@ -82,9 +93,12 @@ def workspace(tmp_path: Path, zephyr_base: Path, monkeypatch) -> Path:
           gain:
             type: int
             default: 1
-        """)
+        """,
+    )
     # One whose required properties aren't plain names (#..., vendor,...).
-    write(top / "mod" / "dts" / "bindings" / "vnd,expander.yaml", """
+    write(
+        top / "mod" / "dts" / "bindings" / "vnd,expander.yaml",
+        """
         description: Test GPIO expander on I2C
         compatible: "vnd,expander"
         include: i2c-device.yaml
@@ -95,5 +109,6 @@ def workspace(tmp_path: Path, zephyr_base: Path, monkeypatch) -> Path:
           vnd,mode:
             type: string
             required: true
-        """)
+        """,
+    )
     return top

@@ -158,9 +158,11 @@ class BuildScreen(ModalScreen[Path | None]):
         with Vertical(id="kbuild-dialog", classes="panel dialog") as dialog:
             dialog.border_title = "Which build?"
             dialog.border_subtitle = "enter: open · esc: cancel"
-            yield Static("Kconfig is read from a build directory (build in the Build tab "
-                         "first). Changes go to the application's conf files.",
-                         classes="hint")
+            yield Static(
+                "Kconfig is read from a build directory (build in the Build tab "
+                "first). Changes go to the application's conf files.",
+                classes="hint",
+            )
             yield OptionList(id="kbuild-list")
 
     def on_mount(self) -> None:
@@ -177,8 +179,12 @@ class BuildScreen(ModalScreen[Path | None]):
         lst.loading = False
         self.builds = builds
         if not builds:
-            lst.add_option(Option(Text("No build directories found. Build first.",
-                                       style="bright_black"), disabled=True))
+            lst.add_option(
+                Option(
+                    Text("No build directories found. Build first.", style="bright_black"),
+                    disabled=True,
+                )
+            )
             return
         for b in builds:
             try:
@@ -215,8 +221,10 @@ class KProblemsScreen(ModalScreen[Problem | None]):
                 return
             opts = []
             for p in self.problems:
-                t = Text("✖ " if p.severity == "error" else "⚠ ",
-                         style="red" if p.severity == "error" else "yellow")
+                t = Text(
+                    "✖ " if p.severity == "error" else "⚠ ",
+                    style="red" if p.severity == "error" else "yellow",
+                )
                 t.append(p.message)
                 opts.append(Option(t))
             yield OptionList(*opts, id="kproblems-list")
@@ -367,7 +375,8 @@ class KconfigView(View):
             else:
                 self.query_one("#kdetails", Static).update(
                     "Pick a build directory (t). Kconfig is read from a build, so build "
-                    "in the Build tab first.")
+                    "in the Build tab first."
+                )
                 self.action_pick_build()
         elif self.focused is None or self not in self.focused.ancestors:
             self.tree.focus()
@@ -375,8 +384,9 @@ class KconfigView(View):
     # -- loading ---------------------------------------------------------
 
     def open_build(self, build: Path) -> None:
-        self.query_one("#kdetails", Static).update(Text(f"Loading Kconfig of {build}…",
-                                                        style="bright_black"))
+        self.query_one("#kdetails", Static).update(
+            Text(f"Loading Kconfig of {build}…", style="bright_black")
+        )
         self._load(Path(build))
 
     @work(thread=True, exclusive=True, group="kconfig-load")
@@ -440,8 +450,10 @@ class KconfigView(View):
             sym = item
             if describe.is_bool(s, sym):
                 v = sym.str_value
-                t.append("● " if v == "y" else "◐ " if v == "m" else "○ ",
-                         style="green" if v in ("y", "m") and not dim else "bright_black")
+                t.append(
+                    "● " if v == "y" else "◐ " if v == "m" else "○ ",
+                    style="green" if v in ("y", "m") and not dim else "bright_black",
+                )
                 t.append(prompt or sym.name, style="bright_black" if dim else "")
             else:
                 t.append(prompt or sym.name, style="bright_black" if dim else "")
@@ -454,8 +466,9 @@ class KconfigView(View):
             if sym.name in self._user_set:
                 t.append("  ✎", style="yellow")
             built = s.model.built.get(sym.name)
-            if (built if built is not None else "n") != (sym.str_value or "n") and \
-                    sym.config_string:
+            if (built if built is not None else "n") != (
+                sym.str_value or "n"
+            ) and sym.config_string:
                 t.append("  *", style="magenta")
         return t
 
@@ -472,11 +485,13 @@ class KconfigView(View):
         if self.session is None:
             return
         tree = self.tree
-        expanded = [n.data for n in self.items.values()
-                    if n.data is not None and n.is_expanded]
+        expanded = [n.data for n in self.items.values() if n.data is not None and n.is_expanded]
         cursor = tree.cursor_node.data if tree.cursor_node else None
-        self._user_set = {name for name, lst in self.session.assignments().items()
-                          if any(a.file in self.session.build.user_files for a in lst)}
+        self._user_set = {
+            name
+            for name, lst in self.session.assignments().items()
+            if any(a.file in self.session.build.user_files for a in lst)
+        }
         tree.clear()
         self.items, self.populated = {}, set()
         self._add_children(tree.root, self.session.kconf.top_node)
@@ -550,8 +565,9 @@ class KconfigView(View):
         panel = self.query_one("#krelated-panel")
         panel.border_title = f"Related ({len(rows)})" if rows else "Related"
         file = self.session.write_file(getattr(self.current, "name", None))
-        panel.border_subtitle = (f"changes go to {describe.rel(file, self.ws.topdir)}"
-                                 if file else "")
+        panel.border_subtitle = (
+            f"changes go to {describe.rel(file, self.ws.topdir)}" if file else ""
+        )
 
     def show_symbol(self, sym, remember: bool = True) -> None:
         if remember and self.current is not None and self.current is not sym:
@@ -590,8 +606,9 @@ class KconfigView(View):
 
     def _target(self):
         """The option the keys act on: the highlighted search result or tree item."""
-        if self.query_one("#kresults").has_class("visible") and \
-                self.focused is self.query_one("#kresults"):
+        if self.query_one("#kresults").has_class("visible") and self.focused is self.query_one(
+            "#kresults"
+        ):
             lst = self.query_one("#kresults", ResultList)
             if lst.highlighted is not None and lst.highlighted < len(self.results):
                 return self.results[lst.highlighted]
@@ -620,11 +637,17 @@ class KconfigView(View):
         def confirmed(yes: bool) -> None:
             if yes:
                 self.report(s.set_values([(n, "y") for n in needs] + [(sym.name, value)]))
+
         listing = ", ".join(f"CONFIG_{n}" for n in needs)
-        self.push_screen(ConfirmScreen(f"Turn on CONFIG_{sym.name}?",
-                                       f"It needs {listing}. Turn "
-                                       f"{'that' if len(needs) == 1 else 'those'} on too? "
-                                       "(y / n)"), confirmed)
+        self.push_screen(
+            ConfirmScreen(
+                f"Turn on CONFIG_{sym.name}?",
+                f"It needs {listing}. Turn "
+                f"{'that' if len(needs) == 1 else 'those'} on too? "
+                "(y / n)",
+            ),
+            confirmed,
+        )
 
     def action_switch(self) -> None:
         item = self._target()
@@ -650,6 +673,7 @@ class KconfigView(View):
                 tree_item.toggle()
             return
         if isinstance(item, lib.Choice):
+
             def choices(token: str) -> list:
                 out = []
                 for sym in item.syms:
@@ -661,30 +685,48 @@ class KconfigView(View):
                             t.append("  current", style="green italic")
                         out.append((sym.name, t))
                 return out
+
             current = item.selection.name if item.selection else ""
-            self.push_screen(PickScreen(describe.prompt_of(item) or "Choice",
-                                        "Pick one.", choices,
-                                        lambda v: s.set_values([(v, "y")]), current,
-                                        free=False, placeholder="type to search"),
-                             self.report)
+            self.push_screen(
+                PickScreen(
+                    describe.prompt_of(item) or "Choice",
+                    "Pick one.",
+                    choices,
+                    lambda v: s.set_values([(v, "y")]),
+                    current,
+                    free=False,
+                    placeholder="type to search",
+                ),
+                self.report,
+            )
             return
         sym = item
         if describe.is_bool(s, sym):
             self.action_switch()
             return
         if not describe.can_set(sym):
-            self.notify(f"CONFIG_{sym.name} can't be set in a conf file (no prompt)",
-                        severity="warning")
+            self.notify(
+                f"CONFIG_{sym.name} can't be set in a conf file (no prompt)", severity="warning"
+            )
             return
-        hint = {lib.INT: "a number", lib.HEX: "a hex number, e.g. 0x1000",
-                lib.STRING: "text"}.get(sym.type, "a value")
+        hint = {lib.INT: "a number", lib.HEX: "a hex number, e.g. 0x1000", lib.STRING: "text"}.get(
+            sym.type, "a value"
+        )
         rng = describe.range_text(s, sym) if sym.type in (lib.INT, lib.HEX) else ""
         desc = describe.prompt_of(sym)
         if rng:
             desc += f"  ·  range{rng}"
-        self.push_screen(PickScreen(f"CONFIG_{sym.name}", desc, lambda t: [],
-                                    lambda v: s.set_values([(sym.name, v)]), sym.str_value,
-                                    placeholder=hint), self.report)
+        self.push_screen(
+            PickScreen(
+                f"CONFIG_{sym.name}",
+                desc,
+                lambda t: [],
+                lambda v: s.set_values([(sym.name, v)]),
+                sym.str_value,
+                placeholder=hint,
+            ),
+            self.report,
+        )
 
     def action_remove(self) -> None:
         item = self._target()
@@ -769,8 +811,10 @@ class KconfigView(View):
             t = Text()
             v = describe.value_text(s, sym)
             if describe.is_bool(s, sym):
-                t.append("● " if sym.str_value == "y" else "○ ",
-                         style="green" if sym.str_value == "y" else "bright_black")
+                t.append(
+                    "● " if sym.str_value == "y" else "○ ",
+                    style="green" if sym.str_value == "y" else "bright_black",
+                )
             t.append(sym.name, style="bold")
             if not describe.is_bool(s, sym):
                 t.append(" = ")
@@ -809,8 +853,9 @@ class KconfigView(View):
             return
         self.show_all = not self.show_all
         self.rebuild_tree()
-        self.notify("showing hidden options too" if self.show_all
-                    else "showing only options you can change")
+        self.notify(
+            "showing hidden options too" if self.show_all else "showing only options you can change"
+        )
 
     def action_problems(self) -> None:
         if self.session is None:
@@ -821,12 +866,14 @@ class KconfigView(View):
                 sym = self.session.symbol(problem.symbol)
                 if sym is not None:
                     self.show_symbol(sym)
+
         self.push_screen(KProblemsScreen(self.session.problems()), go)
 
     def action_pick_build(self) -> None:
         def done(build: Path | None) -> None:
             if build is not None:
                 self.open_build(build)
+
         self.push_screen(BuildScreen(self.ws, self.config.cwd, self.config.build_dir), done)
 
     def action_help(self) -> None:
@@ -890,7 +937,10 @@ def search(session: Session, query: str, limit: int = 300) -> list:
 class LazyKconfigApp(SystemClipboard, App):
     """The Kconfig tab on its own (used by the tests)."""
 
-    CSS = COMMON_CSS + KCONFIG_CSS + """
+    CSS = (
+        COMMON_CSS
+        + KCONFIG_CSS
+        + """
     ConfirmScreen, PickScreen { align: center middle; }
     .dialog { width: 100; max-width: 95%; height: auto; max-height: 90%; padding: 1 2; }
     .hint { color: $text-muted; }
@@ -899,6 +949,7 @@ class LazyKconfigApp(SystemClipboard, App):
     #pick-input { margin-top: 1; }
     #pick-list { height: auto; max-height: 16; border: none; background: $surface; }
     """
+    )
     BINDINGS = [Binding("q", "quit", "Quit")]
 
     def __init__(self, config: AppConfig):

@@ -42,7 +42,8 @@ def test_case_plus_scenario_uses_suite_wildcards(test_tree: Path):
     found = discover([test_tree])
     alpha = found.by_name()["lib.alpha.default"]
     target = make_target(
-        [NodeRef("case", alpha.directory, alpha.name, alpha.cases[0])] + refs(found, "drivers.beta"),
+        [NodeRef("case", alpha.directory, alpha.name, alpha.cases[0])]
+        + refs(found, "drivers.beta"),
         found,
     )
     assert target.test_filters == ["alpha_suite::test_adds", "beta_suite::*"]
@@ -53,13 +54,33 @@ def test_build_command(test_tree: Path, tmp_path: Path):
     found = discover([test_tree])
     alpha = found.by_name()["lib.alpha.default"]
     target = make_target([NodeRef("case", alpha.directory, alpha.name, alpha.cases[0])], found)
-    cmd = build_command(["west", "twister"], target,
-                        RunOptions(platforms=["native_sim"], extra_args=["-v"]), tmp_path, 4)
+    cmd = build_command(
+        ["west", "twister"],
+        target,
+        RunOptions(platforms=["native_sim"], extra_args=["-v"]),
+        tmp_path,
+        4,
+    )
     assert cmd == [
-        "west", "twister", "-T", str(alpha.directory), "-s", "lib.alpha.default",
-        "-p", "native_sim", "-G", "-i", "-v", "-j", "4", "-O", str(tmp_path), "--clobber-output",
+        "west",
+        "twister",
+        "-T",
+        str(alpha.directory),
+        "-s",
+        "lib.alpha.default",
+        "-p",
+        "native_sim",
+        "-G",
+        "-i",
         "-v",
-        "--", "-test=alpha_suite::test_adds",
+        "-j",
+        "4",
+        "-O",
+        str(tmp_path),
+        "--clobber-output",
+        "-v",
+        "--",
+        "-test=alpha_suite::test_adds",
     ]
 
 
@@ -71,15 +92,20 @@ async def wait_until(predicate, timeout=10.0):
     raise AssertionError("condition not met")
 
 
-async def test_queue_runs_one_job_at_a_time_in_order(test_tree, tmp_path, fake_twister,
-                                                     monkeypatch):
+async def test_queue_runs_one_job_at_a_time_in_order(
+    test_tree, tmp_path, fake_twister, monkeypatch
+):
     monkeypatch.setenv("FAKE_DELAY", "0.2")
     monkeypatch.setenv("FAKE_FAIL", "drivers.beta")
     found = discover([test_tree])
     finished, max_running = [], []
-    manager = JobManager(fake_twister, tmp_path / "state", tmp_path,
-                         on_finished=finished.append,
-                         on_change=lambda job: max_running.append(len(manager.running())))
+    manager = JobManager(
+        fake_twister,
+        tmp_path / "state",
+        tmp_path,
+        on_finished=finished.append,
+        on_change=lambda job: max_running.append(len(manager.running())),
+    )
     options = RunOptions()
     a = manager.submit(make_target(refs(found, "lib.alpha.default"), found), options)
     b = manager.submit(make_target(refs(found, "drivers.beta"), found), options)
@@ -123,8 +149,9 @@ async def test_cancel_and_reorder_queued_jobs(test_tree, tmp_path, fake_twister,
     assert finished == [b, a, d, c]
 
 
-async def test_next_job_waits_for_cancelled_process_to_exit(test_tree, tmp_path, fake_twister,
-                                                            monkeypatch):
+async def test_next_job_waits_for_cancelled_process_to_exit(
+    test_tree, tmp_path, fake_twister, monkeypatch
+):
     monkeypatch.setenv("FAKE_DELAY", "10")
     found = discover([test_tree])
     finished = []
@@ -158,8 +185,9 @@ async def test_cancel_running_job(test_tree, tmp_path, fake_twister, monkeypatch
 async def test_missing_twister_reports_error(test_tree, tmp_path):
     found = discover([test_tree])
     finished = []
-    manager = JobManager(["definitely-not-a-real-binary-xyz"], tmp_path, tmp_path,
-                         on_finished=finished.append)
+    manager = JobManager(
+        ["definitely-not-a-real-binary-xyz"], tmp_path, tmp_path, on_finished=finished.append
+    )
     job = manager.submit(make_target(refs(found, "drivers.beta"), found), RunOptions())
     await asyncio.sleep(0.2)
     assert job.state == "error"
@@ -169,8 +197,10 @@ async def test_missing_twister_reports_error(test_tree, tmp_path):
 def test_parses_real_twister_lines():
     from lazyzephyr.twister.jobs import FAILURE_LINE_RE, RESULT_LINE_RE, ANSI_RE
 
-    verbose = ("INFO    -  3/12 native_sim/native/64      libraries.encoding.json"
-               "                            \x1b[32mPASSED\x1b[39m (native 0.004s <host>)")
+    verbose = (
+        "INFO    -  3/12 native_sim/native/64      libraries.encoding.json"
+        "                            \x1b[32mPASSED\x1b[39m (native 0.004s <host>)"
+    )
     match = RESULT_LINE_RE.search(ANSI_RE.sub("", verbose))
     assert match and match.group(4) == "libraries.encoding.json" and match.group(5) == "PASSED"
     quiet = "ERROR   - native_sim/native/64      lib.x.native_sim   \x1b[31mFAILED\x1b[39m: Failed"
@@ -188,8 +218,16 @@ def test_job_title_and_display_command(test_tree, tmp_path):
     assert job_title(many) == "drivers.beta, lib.alpha.default +1"
     assert make_target(many, found).title == "drivers.beta, lib.alpha.default +1"
 
-    cmd = ["west", "twister", "-T", str(test_tree / "lib"), "-O", str(tmp_path / "out"),
-           "--", "-test=a::b c"]
+    cmd = [
+        "west",
+        "twister",
+        "-T",
+        str(test_tree / "lib"),
+        "-O",
+        str(tmp_path / "out"),
+        "--",
+        "-test=a::b c",
+    ]
     assert display_command(cmd, test_tree.parent) == "west twister -T tests/lib -- '-test=a::b c'"
 
 
@@ -206,27 +244,47 @@ def test_build_command_with_hardware(tmp_path):
     from lazyzephyr.twister.jobs import Hardware, RunTarget
 
     target = RunTarget("t", [tmp_path], ["lib.x"], [], {"lib.x"})
-    hardware = Hardware(enabled=True, serial="/dev/ttyACM0", baud=921600, runner="jlink",
-                        dev_id="683", fixtures=["gpio_loopback", "usb"])
+    hardware = Hardware(
+        enabled=True,
+        serial="/dev/ttyACM0",
+        baud=921600,
+        runner="jlink",
+        dev_id="683",
+        fixtures=["gpio_loopback", "usb"],
+    )
     boards = {"frdm_k64f": hardware}
-    cmd = build_command(["tw"], target, RunOptions(platforms=["frdm_k64f"], boards=boards),
-                        tmp_path, None)
-    hw = cmd[cmd.index("--device-testing"):cmd.index("-O")]
-    assert hw == ["--device-testing", "--device-serial", "/dev/ttyACM0",
-                  "--device-serial-baud", "921600", "--west-runner", "jlink",
-                  "--west-flash=--dev-id=683", "-X", "gpio_loopback", "-X", "usb"]
+    cmd = build_command(
+        ["tw"], target, RunOptions(platforms=["frdm_k64f"], boards=boards), tmp_path, None
+    )
+    hw = cmd[cmd.index("--device-testing") : cmd.index("-O")]
+    assert hw == [
+        "--device-testing",
+        "--device-serial",
+        "/dev/ttyACM0",
+        "--device-serial-baud",
+        "921600",
+        "--west-runner",
+        "jlink",
+        "--west-flash=--dev-id=683",
+        "-X",
+        "gpio_loopback",
+        "-X",
+        "usb",
+    ]
 
     # Another platform doesn't get this board's setup.
-    cmd = build_command(["tw"], target, RunOptions(platforms=["native_sim"], boards=boards),
-                        tmp_path, None)
+    cmd = build_command(
+        ["tw"], target, RunOptions(platforms=["native_sim"], boards=boards), tmp_path, None
+    )
     assert "--device-testing" not in cmd and "-X" not in cmd
 
     # Off: no device flags, but fixtures still apply (native fixtures exist too).
     hardware.enabled = False
-    cmd = build_command(["tw"], target, RunOptions(platforms=["frdm_k64f"], boards=boards),
-                        tmp_path, None)
+    cmd = build_command(
+        ["tw"], target, RunOptions(platforms=["frdm_k64f"], boards=boards), tmp_path, None
+    )
     assert "--device-testing" not in cmd and "--device-serial" not in cmd
-    assert cmd[cmd.index("-X"):cmd.index("-O")] == ["-X", "gpio_loopback", "-X", "usb"]
+    assert cmd[cmd.index("-X") : cmd.index("-O")] == ["-X", "gpio_loopback", "-X", "usb"]
 
 
 def test_hardware_problem():
@@ -244,11 +302,13 @@ def test_hardware_problem():
 def test_plan_runs_puts_each_board_in_its_own_run():
     from lazyzephyr.twister.jobs import Hardware, plan_runs
 
-    options = RunOptions(boards={
-        "board_a": Hardware(enabled=True, serial="/dev/a"),
-        "board_b": Hardware(enabled=True, serial="/dev/b"),
-        "native_sim": Hardware(fixtures=["f"]),  # fixtures only: no board
-    })
+    options = RunOptions(
+        boards={
+            "board_a": Hardware(enabled=True, serial="/dev/a"),
+            "board_b": Hardware(enabled=True, serial="/dev/b"),
+            "native_sim": Hardware(fixtures=["f"]),  # fixtures only: no board
+        }
+    )
     assert plan_runs(options, []) == [[]]  # twister's default platforms
     assert plan_runs(options, ["native_sim", "qemu_x86"]) == [["native_sim", "qemu_x86"]]
     assert plan_runs(options, ["board_a"]) == [["board_a"]]
@@ -256,7 +316,9 @@ def test_plan_runs_puts_each_board_in_its_own_run():
     # Two boards: the caller has to say which.
     assert plan_runs(options, ["board_a", "board_b", "native_sim"]) is None
     assert plan_runs(options, ["board_a", "board_b", "native_sim"], "board_b") == [
-        ["board_b"], ["native_sim"]]
+        ["board_b"],
+        ["native_sim"],
+    ]
     assert plan_runs(options, ["board_a", "board_b"], "other") is None
 
     # Several platforms in one run get the fixtures of their setups, never a board.
@@ -275,16 +337,19 @@ def test_identical_target_on_another_platform_is_not_a_duplicate(tmp_path):
     assert manager.submit(target, RunOptions(platforms=["a"])) is None
 
 
-async def test_case_results_are_printed_when_enabled(test_tree, tmp_path, fake_twister,
-                                                     monkeypatch):
+async def test_case_results_are_printed_when_enabled(
+    test_tree, tmp_path, fake_twister, monkeypatch
+):
     monkeypatch.setenv("FAKE_FAIL", "drivers.beta")
     found = discover([test_tree])
     finished = []
     manager = JobManager(fake_twister, tmp_path / "state", tmp_path, on_finished=finished.append)
     quiet = manager.submit(make_target(refs(found, "drivers.beta"), found), RunOptions())
     await wait_until(lambda: quiet in finished)
-    loud = manager.submit(make_target(refs(found, "drivers.beta", "lib.alpha.default"), found),
-                          RunOptions(case_results=True))
+    loud = manager.submit(
+        make_target(refs(found, "drivers.beta", "lib.alpha.default"), found),
+        RunOptions(case_results=True),
+    )
     await wait_until(lambda: loud in finished)
 
     from lazyzephyr.twister.jobs import ANSI_RE
@@ -292,7 +357,7 @@ async def test_case_results_are_printed_when_enabled(test_tree, tmp_path, fake_t
     assert not any("── results" in line for line in quiet.lines)
     plain = [ANSI_RE.sub("", line) for line in loud.lines]
     start = next(i for i, line in enumerate(plain) if line.startswith("── results"))
-    assert plain[start + 1:start + 5] == [
+    assert plain[start + 1 : start + 5] == [
         "✘ drivers.beta  native_sim  failed  0/1 cases  run 0.01s",
         "    ✘ suite.case_a  failed",
         "✔ lib.alpha.default  native_sim  passed  1/1 cases  run 0.01s",
@@ -308,14 +373,18 @@ async def test_case_output_is_kept_and_printed(test_tree, tmp_path, fake_twister
     found = discover([test_tree])
     finished = []
     manager = JobManager(fake_twister, tmp_path / "state", tmp_path, on_finished=finished.append)
-    job = manager.submit(make_target(refs(found, "drivers.beta"), found),
-                         RunOptions(case_results=True))
+    job = manager.submit(
+        make_target(refs(found, "drivers.beta"), found), RunOptions(case_results=True)
+    )
     await wait_until(lambda: job in finished)
-    assert job.results[0].case_logs == {"suite.case_a": (
-        "START - test_case_a\nhello from drivers.beta\n PASS - test_case_a in 0.001 seconds")}
+    assert job.results[0].case_logs == {
+        "suite.case_a": (
+            "START - test_case_a\nhello from drivers.beta\n PASS - test_case_a in 0.001 seconds"
+        )
+    }
     plain = [ANSI_RE.sub("", line) for line in job.lines]
     case = plain.index("    ✔ suite.case_a  passed")
-    assert plain[case + 1:case + 4] == [
+    assert plain[case + 1 : case + 4] == [
         "        │ START - test_case_a",
         "        │ hello from drivers.beta",
         "        │  PASS - test_case_a in 0.001 seconds",

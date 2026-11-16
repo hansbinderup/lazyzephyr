@@ -25,13 +25,20 @@ TABS = ("build", "dts", "kconfig", "tests")
 
 class LazyZephyrApp(SystemClipboard, App):
     TITLE = "lazyzephyr"
-    CSS = COMMON_CSS + TWISTER_CSS + DTS_CSS + BUILD_CSS + KCONFIG_CSS + """
+    CSS = (
+        COMMON_CSS
+        + TWISTER_CSS
+        + DTS_CSS
+        + BUILD_CSS
+        + KCONFIG_CSS
+        + """
     #tabs { height: 1fr; }
     #tabs > ContentSwitcher { height: 1fr; }
     #tabs TabPane { padding: 0; height: 1fr; }
     TwisterView, DtsView, BuildView, KconfigView { height: 1fr; }
     .tab-error { padding: 1 2; color: $error; }
     """
+    )
 
     BINDINGS = [
         Binding("q", "request_quit", "Quit"),
@@ -43,8 +50,14 @@ class LazyZephyrApp(SystemClipboard, App):
         Binding("f4", "show_tab('tests')", show=False),
     ]
 
-    def __init__(self, twister: TwisterConfig, dts: DtsConfig | None, tab: str = "build",
-                 dts_error: str | None = None, build: BuildView | None = None):
+    def __init__(
+        self,
+        twister: TwisterConfig,
+        dts: DtsConfig | None,
+        tab: str = "build",
+        dts_error: str | None = None,
+        build: BuildView | None = None,
+    ):
         super().__init__()
         self.twister_config, self.dts_config = twister, dts
         self.build_view = build
@@ -64,15 +77,15 @@ class LazyZephyrApp(SystemClipboard, App):
                 if self.dts_config is not None:
                     yield DtsView(self.dts_config, id="devicetree")
                 else:
-                    yield Static(f"Devicetree unavailable: {self.dts_error}",
-                                 classes="tab-error")
+                    yield Static(f"Devicetree unavailable: {self.dts_error}", classes="tab-error")
             with TabPane("Kconfig", id="kconfig"):
                 if self.dts_config is not None:
                     choice = self.dts_config.choice
                     build = Path(choice.build_dir) if choice and choice.build_dir else None
-                    yield KconfigView(KconfigConfig(self.dts_config.cwd,
-                                                    self.dts_config.workspace, build),
-                                      id="kconfig-view")
+                    yield KconfigView(
+                        KconfigConfig(self.dts_config.cwd, self.dts_config.workspace, build),
+                        id="kconfig-view",
+                    )
                 else:
                     yield Static(f"Kconfig unavailable: {self.dts_error}", classes="tab-error")
             with TabPane("Tests", id="tests"):

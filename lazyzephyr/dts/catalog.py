@@ -65,8 +65,11 @@ def _load(path: Path):
 def _includes(raw: dict) -> list[str]:
     inc = raw.get("include")
     items = inc if isinstance(inc, list) else ([inc] if inc else [])
-    return [i if isinstance(i, str) else i.get("name") for i in items
-            if isinstance(i, str) or isinstance(i, dict) and i.get("name")]
+    return [
+        i if isinstance(i, str) else i.get("name")
+        for i in items
+        if isinstance(i, str) or isinstance(i, dict) and i.get("name")
+    ]
 
 
 def scan_bindings(bindings_dirs: list[Path], drivers: set[str] | None = None) -> list[BindingInfo]:
@@ -95,11 +98,16 @@ def scan_bindings(bindings_dirs: list[Path], drivers: set[str] | None = None) ->
         bus = inherited(raw, "bus", set())
         buses = tuple(bus) if isinstance(bus, list) else ((bus,) if bus else ())
         compat = raw["compatible"]
-        out.append(BindingInfo(
-            compat, path, str(raw.get("description") or raw.get("title") or ""),
-            inherited(raw, "on-bus", set()), buses,
-            drivers is not None and compat_token(compat) in drivers,
-        ))
+        out.append(
+            BindingInfo(
+                compat,
+                path,
+                str(raw.get("description") or raw.get("title") or ""),
+                inherited(raw, "on-bus", set()),
+                buses,
+                drivers is not None and compat_token(compat) in drivers,
+            )
+        )
     return sorted(out, key=lambda b: (b.compatible, b.on_bus or ""))
 
 
@@ -112,21 +120,35 @@ def _grep(roots: list[Path], patterns: list[str]) -> str:
     if grep.endswith("rg"):
         cmd = [grep, "--no-filename", "-o", "-g", "*.{c,h,cpp,cc}", "-g", "Kconfig*"]
     else:
-        cmd = [grep, "-rhoE", "--include=*.c", "--include=*.h", "--include=*.cpp",
-               "--include=*.cc", "--include=Kconfig*"]
+        cmd = [
+            grep,
+            "-rhoE",
+            "--include=*.c",
+            "--include=*.h",
+            "--include=*.cpp",
+            "--include=*.cc",
+            "--include=Kconfig*",
+        ]
     for p in patterns:
         cmd += ["-e", p]
     try:
-        return subprocess.run(cmd + [str(r) for r in roots], capture_output=True, text=True,
-                              timeout=60).stdout
+        return subprocess.run(
+            cmd + [str(r) for r in roots], capture_output=True, text=True, timeout=60
+        ).stdout
     except (OSError, subprocess.TimeoutExpired):
         return ""
 
 
 def driver_tokens(roots: list[Path]) -> set[str]:
     """Compatibles (as tokens) that some C code or Kconfig in `roots` uses."""
-    text = _grep(roots, [r"(DT_DRV_COMPAT|DT_HAS_COMPAT_STATUS_OKAY|DT_FOREACH_STATUS_OKAY)"
-                         r"[[:space:](]*[A-Za-z0-9_]+", r"DT_HAS_[A-Za-z0-9_]+_ENABLED"])
+    text = _grep(
+        roots,
+        [
+            r"(DT_DRV_COMPAT|DT_HAS_COMPAT_STATUS_OKAY|DT_FOREACH_STATUS_OKAY)"
+            r"[[:space:](]*[A-Za-z0-9_]+",
+            r"DT_HAS_[A-Za-z0-9_]+_ENABLED",
+        ],
+    )
     tokens = set()
     for m in _DRIVER_RE.finditer(text):
         token = next(g for g in m.groups() if g)
@@ -140,8 +162,13 @@ _CHOSEN_RE = re.compile(r"CHOSEN\(\s*(\w+)|:=\s*([\w.-]+,[\w.,-]+)")
 def chosen_names(roots: list[Path]) -> set[str]:
     """/chosen properties that code in `roots` reads: DT_CHOSEN(zephyr_console) in C,
     DT_CHOSEN_Z_CONSOLE := zephyr,console in Kconfig."""
-    text = _grep(roots, [r"DT_(HAS_)?CHOSEN\([[:space:]]*[A-Za-z0-9_]+",
-                         r"DT_CHOSEN_[A-Za-z0-9_]+[[:space:]]*:=[[:space:]]*[A-Za-z0-9_.,-]+"])
+    text = _grep(
+        roots,
+        [
+            r"DT_(HAS_)?CHOSEN\([[:space:]]*[A-Za-z0-9_]+",
+            r"DT_CHOSEN_[A-Za-z0-9_]+[[:space:]]*:=[[:space:]]*[A-Za-z0-9_.,-]+",
+        ],
+    )
     names = set()
     for m in _CHOSEN_RE.finditer(text):
         if m.group(2):

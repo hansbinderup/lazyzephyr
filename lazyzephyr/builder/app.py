@@ -24,9 +24,21 @@ from ..dts.workspace import Board, Workspace, find_boards, find_build_dirs
 from ..clipboard import SystemClipboard
 from ..view import COMMON_CSS, ForwardActions, View
 from . import meta
-from .configs import (BuildConfig, ConfigStore, app_path, build_cmd, build_dir,
-                      config_from_build, default_build_dir, dts_build_dir, is_sysbuild_image,
-                      monitor_env, runner_cmd, shown, target_cmd)
+from .configs import (
+    BuildConfig,
+    ConfigStore,
+    app_path,
+    build_cmd,
+    build_dir,
+    config_from_build,
+    default_build_dir,
+    dts_build_dir,
+    is_sysbuild_image,
+    monitor_env,
+    runner_cmd,
+    shown,
+    target_cmd,
+)
 from .monitor import CLOSE_KEY, FULLSCREEN_KEY, LEAVE_KEY, MonitorTerminal
 from .runner import Job, Runner, west_command
 
@@ -135,8 +147,14 @@ class PickerScreen(ModalScreen[list[str] | None]):
         Binding("ctrl+s", "done", "Done", priority=True),
     ]
 
-    def __init__(self, title: str, items: list[tuple[str, Text | str, str]],
-                 multi: bool = False, selected: list[str] = (), hint: str = ""):
+    def __init__(
+        self,
+        title: str,
+        items: list[tuple[str, Text | str, str]],
+        multi: bool = False,
+        selected: list[str] = (),
+        hint: str = "",
+    ):
         super().__init__()
         self.title_text, self.items, self.multi = title, items, multi
         self.selected = list(selected)
@@ -146,8 +164,11 @@ class PickerScreen(ModalScreen[list[str] | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="picker-dialog", classes="panel dialog") as dialog:
             dialog.border_title = self.title_text
-            dialog.border_subtitle = ("space: toggle · enter/ctrl+s: done · esc: cancel"
-                                      if self.multi else "enter: pick · esc: cancel")
+            dialog.border_subtitle = (
+                "space: toggle · enter/ctrl+s: done · esc: cancel"
+                if self.multi
+                else "enter: pick · esc: cancel"
+            )
             if self.hint:
                 yield Static(self.hint, classes="hint")
             yield Input(placeholder="type to filter", id="picker-filter")
@@ -180,15 +201,18 @@ class PickerScreen(ModalScreen[list[str] | None]):
     def _label(self, item_id: str, label) -> Text:
         text = Text()
         if self.multi:
-            text.append("[✔] " if item_id in self.selected else "[ ] ",
-                        style="green" if item_id in self.selected else "bright_black")
+            text.append(
+                "[✔] " if item_id in self.selected else "[ ] ",
+                style="green" if item_id in self.selected else "bright_black",
+            )
         text.append(label if isinstance(label, Text) else Text(label))
         return text
 
     def _show_selected(self) -> None:
         if self.multi:
             self.query_one("#picker-selected", Static).update(
-                "selected: " + (", ".join(self.selected) or "none"))
+                "selected: " + (", ".join(self.selected) or "none")
+            )
 
     def _toggle(self) -> None:
         lst = self.query_one("#picker-list", OptionList)
@@ -341,8 +365,8 @@ class TextEditScreen(ModalScreen[str | None]):
 class Field:
     key: str
     label: str
-    kind: str          # text, list, args, app, board, shields, snippets, revision,
-                       # sysbuild, runner, probe
+    kind: str  # text, list, args, app, board, shields, snippets, revision,
+    # sysbuild, runner, probe
     hint: str = ""
 
 
@@ -354,19 +378,32 @@ FIELDS = [
     Field("shields", "Shields", "shields", "order matters: later shields go on top"),
     Field("snippets", "Snippets", "snippets"),
     Field("sysbuild", "Sysbuild", "sysbuild"),
-    Field("build_dir", "Build directory", "text",
-          "relative to the workspace; empty for the default"),
-    Field("extra_conf", "Extra Kconfig files", "list",
-          "EXTRA_CONF_FILE, comma separated, relative to the app"),
-    Field("extra_overlays", "Extra overlays", "list",
-          "EXTRA_DTC_OVERLAY_FILE, comma separated, relative to the app"),
+    Field(
+        "build_dir", "Build directory", "text", "relative to the workspace; empty for the default"
+    ),
+    Field(
+        "extra_conf",
+        "Extra Kconfig files",
+        "list",
+        "EXTRA_CONF_FILE, comma separated, relative to the app",
+    ),
+    Field(
+        "extra_overlays",
+        "Extra overlays",
+        "list",
+        "EXTRA_DTC_OVERLAY_FILE, comma separated, relative to the app",
+    ),
     Field("cmake_args", "More CMake args", "args", "e.g. -DCONFIG_LOG=y"),
     Field("runner", "Flash runner", "runner"),
     Field("dev_id", "Probe (--dev-id)", "probe"),
     Field("flash_args", "More flash args", "args", "e.g. --erase"),
-    Field("monitor", "Monitor command", "text",
-          "shell command; $BUILD_DIR and $BOARD are set. "
-          "e.g. tio /dev/ttyACM0 or west espressif monitor -d $BUILD_DIR"),
+    Field(
+        "monitor",
+        "Monitor command",
+        "text",
+        "shell command; $BUILD_DIR and $BOARD are set. "
+        "e.g. tio /dev/ttyACM0 or west espressif monitor -d $BUILD_DIR",
+    ),
 ]
 
 
@@ -398,8 +435,7 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="config-dialog", classes="panel dialog") as dialog:
             dialog.border_title = self.title_text
-            dialog.border_subtitle = ("enter: change · e: type it · ctrl+s: save · "
-                                      "esc: cancel")
+            dialog.border_subtitle = "enter: change · e: type it · ctrl+s: save · esc: cancel"
             yield SettingsList(id="settings")
             yield Static("", id="f-hint", classes="hint")
             yield Static("", id="f-preview", classes="preview")
@@ -433,28 +469,40 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
         if f.key == "revision":
             board = self._board()
             default = meta.board_revisions(board).default if board else None
-            return Text(v) if v else Text("board default" + (f" ({default})" if default
-                                                            else ""), style=dim)
+            return (
+                Text(v)
+                if v
+                else Text("board default" + (f" ({default})" if default else ""), style=dim)
+            )
         if f.key == "sysbuild":
-            return Text({None: "west default", True: "on", False: "off"}[v],
-                        style=dim if v is None else "")
+            return Text(
+                {None: "west default", True: "on", False: "off"}[v], style=dim if v is None else ""
+            )
         if f.key == "build_dir":
-            return Text(v) if v else Text(
-                f"default: {rel(default_build_dir(self.ws, d), self.ws.topdir)}", style=dim)
+            return (
+                Text(v)
+                if v
+                else Text(
+                    f"default: {rel(default_build_dir(self.ws, d), self.ws.topdir)}", style=dim
+                )
+            )
         if f.key == "runner":
             board = self._board()
-            default = meta.board_runners(board, build_dir(self.ws, d)).flash_default \
-                if board else None
-            return Text(v) if v else Text("board default" + (f" ({default})" if default
-                                                            else ""), style=dim)
+            default = (
+                meta.board_runners(board, build_dir(self.ws, d)).flash_default if board else None
+            )
+            return (
+                Text(v)
+                if v
+                else Text("board default" + (f" ({default})" if default else ""), style=dim)
+            )
         if f.kind in ("list", "shields", "snippets"):
             return Text(", ".join(v)) if v else Text("none", style=dim)
         if f.kind == "args":
             return Text(shlex.join(v)) if v else Text("none", style=dim)
         if f.key == "app" and v and not (app_path(self.ws, d) / "CMakeLists.txt").is_file():
             return Text(v, style="red")
-        return Text(v) if v else Text("not set", style="red" if f.key in ("name", "app")
-                                      else dim)
+        return Text(v) if v else Text("not set", style="red" if f.key in ("name", "app") else dim)
 
     def refresh_rows(self) -> None:
         lst = self.query_one(SettingsList)
@@ -560,16 +608,27 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
                 self._set(f.key, value or None)
             else:
                 self._set(f.key, value)
+
         self.app.push_screen(TextEditScreen(f.label, text, hint=f.hint), done)
 
-    def _pick(self, title: str, items, key: str, multi: bool = False, selected=(),
-              hint: str = "", convert=lambda r: r[0]) -> None:
+    def _pick(
+        self,
+        title: str,
+        items,
+        key: str,
+        multi: bool = False,
+        selected=(),
+        hint: str = "",
+        convert=lambda r: r[0],
+    ) -> None:
         def done(result: list[str] | None) -> None:
             if result is None or (not multi and not result):
                 return
             self._set(key, convert(result))
-        self.app.push_screen(PickerScreen(title, items, multi=multi, selected=selected,
-                                          hint=hint), done)
+
+        self.app.push_screen(
+            PickerScreen(title, items, multi=multi, selected=selected, hint=hint), done
+        )
 
     def _pick_app(self, f: Field) -> None:
         items = []
@@ -580,20 +639,40 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
         self._pick("Application", items, "app", hint="e on the setting types a path instead")
 
     def _pick_board(self, f: Field) -> None:
-        items = [(b.target, Text.assemble(b.target, (f"  {b.full_name or ''}", "bright_black")),
-                  f"{b.target} {b.vendor or ''} {b.full_name or ''}") for b in self.opts.boards]
+        items = [
+            (
+                b.target,
+                Text.assemble(b.target, (f"  {b.full_name or ''}", "bright_black")),
+                f"{b.target} {b.vendor or ''} {b.full_name or ''}",
+            )
+            for b in self.opts.boards
+        ]
         self._pick("Board", items, "board")
 
     def _pick_shields(self, f: Field) -> None:
-        items = [(s.name, Text.assemble(s.name, (f"  {s.full_name or ''}", "bright_black")),
-                  f"{s.name} {s.full_name or ''} {s.vendor or ''}") for s in self.opts.shields]
-        self._pick("Shields", items, "shields", multi=True, selected=self.draft.shields,
-                   hint=f.hint, convert=list)
+        items = [
+            (
+                s.name,
+                Text.assemble(s.name, (f"  {s.full_name or ''}", "bright_black")),
+                f"{s.name} {s.full_name or ''} {s.vendor or ''}",
+            )
+            for s in self.opts.shields
+        ]
+        self._pick(
+            "Shields",
+            items,
+            "shields",
+            multi=True,
+            selected=self.draft.shields,
+            hint=f.hint,
+            convert=list,
+        )
 
     def _pick_snippets(self, f: Field) -> None:
         items = [(s.name, s.name, s.name) for s in self.opts.snippets]
-        self._pick("Snippets", items, "snippets", multi=True, selected=self.draft.snippets,
-                   convert=list)
+        self._pick(
+            "Snippets", items, "snippets", multi=True, selected=self.draft.snippets, convert=list
+        )
 
     def _pick_revision(self, f: Field) -> None:
         board = self._board()
@@ -604,27 +683,50 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
         if not revs.names:
             self._error(f"{board.name} has no revisions")
             return
-        items = [("", Text("board default" + (f" ({revs.default})" if revs.default else ""),
-                           style="bright_black"), "default")]
+        items = [
+            (
+                "",
+                Text(
+                    "board default" + (f" ({revs.default})" if revs.default else ""),
+                    style="bright_black",
+                ),
+                "default",
+            )
+        ]
         items += [(r, r + ("  (default)" if r == revs.default else ""), r) for r in revs.names]
         self._pick("Revision", items, "revision", convert=lambda r: r[0] or None)
 
     def _pick_sysbuild(self, f: Field) -> None:
-        items = [("default", "west default (build.sysbuild)", "default"),
-                 ("on", "on", "on"), ("off", "off", "off")]
-        self._pick("Sysbuild", items, "sysbuild",
-                   convert=lambda r: {"default": None, "on": True, "off": False}[r[0]])
+        items = [
+            ("default", "west default (build.sysbuild)", "default"),
+            ("on", "on", "on"),
+            ("off", "off", "off"),
+        ]
+        self._pick(
+            "Sysbuild",
+            items,
+            "sysbuild",
+            convert=lambda r: {"default": None, "on": True, "off": False}[r[0]],
+        )
 
     def _pick_runner(self, f: Field) -> None:
         board = self._board()
         runners = meta.board_runners(board, build_dir(self.ws, self.draft)) if board else None
         names = list(runners.names) if runners else []
         default = runners.flash_default if runners else None
-        items = [("", Text("board default" + (f" ({default})" if default else ""),
-                           style="bright_black"), "default")]
+        items = [
+            (
+                "",
+                Text("board default" + (f" ({default})" if default else ""), style="bright_black"),
+                "default",
+            )
+        ]
         items += [(n, n + ("  (default)" if n == default else ""), n) for n in names]
-        hint = ("from the build's runners.yaml" if runners and runners.exact
-                else "from the board's board.cmake; exact once built")
+        hint = (
+            "from the build's runners.yaml"
+            if runners and runners.exact
+            else "from the board's board.cmake; exact once built"
+        )
         self._pick("Flash runner", items, "runner", hint=hint, convert=lambda r: r[0] or None)
 
     def _pick_probe(self, f: Field) -> None:
@@ -633,9 +735,14 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
             self._error("no debug probes found on USB; e types a serial number")
             return
         items = [("", Text("none (runner picks)", style="bright_black"), "none")]
-        items += [(p.dev_id, Text.assemble(p.dev_id, (f"  {p.kind} · {p.product}",
-                                                      "bright_black")),
-                   f"{p.dev_id} {p.kind} {p.product}") for p in probes]
+        items += [
+            (
+                p.dev_id,
+                Text.assemble(p.dev_id, (f"  {p.kind} · {p.product}", "bright_black")),
+                f"{p.dev_id} {p.kind} {p.product}",
+            )
+            for p in probes
+        ]
         self._pick("Debug probe", items, "dev_id", convert=lambda r: r[0] or None)
 
     # -- save --
@@ -643,8 +750,7 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
     def _problem(self, cfg: BuildConfig) -> str | None:
         if not cfg.name:
             return "give the config a name"
-        if any(c.name == cfg.name and c is not self.view.editing
-               for c in self.view.store.configs):
+        if any(c.name == cfg.name and c is not self.view.editing for c in self.view.store.configs):
             return f"there is already a config called {cfg.name}"
         if not cfg.app or not (app_path(self.ws, cfg) / "CMakeLists.txt").is_file():
             return "the application folder needs a CMakeLists.txt"
@@ -680,8 +786,10 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
         def answered(yes: bool) -> None:
             if yes:
                 self.dismiss(None)
-        self.app.push_screen(ConfirmScreen("Discard changes?",
-                                           "Leave without saving this config?"), answered)
+
+        self.app.push_screen(
+            ConfirmScreen("Discard changes?", "Leave without saving this config?"), answered
+        )
 
 
 # --------------------------------------------------------------------------
@@ -727,8 +835,14 @@ class BuildView(View):
         Binding("f11", "monitor_fullscreen", "Monitor full screen", show=False),
     ]
 
-    def __init__(self, ws: Workspace, cwd: Path, store: ConfigStore | None = None,
-                 west: list[str] | None = None, **kwargs):
+    def __init__(
+        self,
+        ws: Workspace,
+        cwd: Path,
+        store: ConfigStore | None = None,
+        west: list[str] | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.ws, self.cwd = ws, cwd
         self.store = store or ConfigStore(ws.topdir)
@@ -738,7 +852,7 @@ class BuildView(View):
         self.job: Job | None = None
         self.last_job: Job | None = None
         self.editing: BuildConfig | None = None
-        self.monitor_config: str | None = None   # config the monitor was opened for
+        self.monitor_config: str | None = None  # config the monitor was opened for
         self._spin = 0
         self._ids: list[str] = []
 
@@ -752,14 +866,21 @@ class BuildView(View):
                     details.border_title = "Details"
                     yield Static("", id="b-details")
             with Vertical(id="b-right"):
-                log = RichLog(id="b-log", classes="panel", markup=False, highlight=False,
-                              wrap=False, max_lines=20000)
+                log = RichLog(
+                    id="b-log",
+                    classes="panel",
+                    markup=False,
+                    highlight=False,
+                    wrap=False,
+                    max_lines=20000,
+                )
                 log.border_title = "Output"
                 yield log
                 with Panel(id="b-monitor-panel", classes="panel") as mon:
                     mon.border_title = "Monitor"
-                    mon.border_subtitle = (f"{LEAVE_KEY}: back · {FULLSCREEN_KEY}: full screen"
-                                           f" · {CLOSE_KEY}: close")
+                    mon.border_subtitle = (
+                        f"{LEAVE_KEY}: back · {FULLSCREEN_KEY}: full screen · {CLOSE_KEY}: close"
+                    )
                     yield MonitorTerminal(id="b-monitor")
         yield Static("", id="b-statusbar")
 
@@ -778,8 +899,12 @@ class BuildView(View):
 
     @work(thread=True, exclusive=True, group="scan")
     def scan(self) -> None:
-        opts = BuildConfigOptions(find_boards(self.ws), meta.find_shields(self.ws),
-                                  meta.find_snippets(self.ws), meta.find_apps(self.ws))
+        opts = BuildConfigOptions(
+            find_boards(self.ws),
+            meta.find_shields(self.ws),
+            meta.find_snippets(self.ws),
+            meta.find_apps(self.ws),
+        )
         found = self._find_builds()
         self.call_from_thread(self._scanned, opts, found)
 
@@ -798,9 +923,11 @@ class BuildView(View):
 
     def refresh_list(self, select: str | None = None) -> None:
         lst = self.configs_list
-        current = select or (self._ids[lst.highlighted]
-                             if lst.highlighted is not None and lst.highlighted < len(self._ids)
-                             else None)
+        current = select or (
+            self._ids[lst.highlighted]
+            if lst.highlighted is not None and lst.highlighted < len(self._ids)
+            else None
+        )
         lst.clear_options()
         self._ids = []
         opts = []
@@ -810,16 +937,20 @@ class BuildView(View):
         known = self._known_dirs()
         found = [d for d in self.found if d.resolve() not in known]
         if found:
-            opts.append(Option(Text("found builds (enter: import)", style="bold bright_black"),
-                               disabled=True))
+            opts.append(
+                Option(
+                    Text("found builds (enter: import)", style="bold bright_black"), disabled=True
+                )
+            )
             self._ids.append("-")
             for d in found:
                 self._ids.append(f"found:{d}")
                 label = Text.assemble(("+ ", "bright_black"), (rel(d, self.ws.topdir), "italic"))
                 opts.append(Option(label, id=f"found:{d}"))
         if not self.store.configs and not found:
-            opts.append(Option(Text("no configs yet: press n", style="bright_black"),
-                               disabled=True))
+            opts.append(
+                Option(Text("no configs yet: press n", style="bright_black"), disabled=True)
+            )
             self._ids.append("-")
         lst.add_options(opts)
         if current in self._ids:
@@ -829,8 +960,9 @@ class BuildView(View):
         self.show_details()
 
     def _cfg_label(self, cfg: BuildConfig) -> Text:
-        running = self.job is not None and self.job.config == cfg.name \
-            and self.job.status == "running"
+        running = (
+            self.job is not None and self.job.config == cfg.name and self.job.status == "running"
+        )
         if running:
             icon, style = SPINNER[self._spin % len(SPINNER)], "yellow"
         else:
@@ -889,8 +1021,11 @@ class BuildView(View):
             t.append(f"{rel(sel[1], top)}\n", style="bold")
             if cfg:
                 t.append("would import as: ", style="bright_black")
-                t.append(f"{cfg.app} on {cfg.target}"
-                         + (f" + {', '.join(cfg.shields)}" if cfg.shields else "") + "\n")
+                t.append(
+                    f"{cfg.app} on {cfg.target}"
+                    + (f" + {', '.join(cfg.shields)}" if cfg.shields else "")
+                    + "\n"
+                )
                 t.append(shown(build_cmd(self.ws, cfg)) + "\n", style="bright_black")
             else:
                 t.append("can't read its build_info.yml\n", style="red")
@@ -912,32 +1047,47 @@ class BuildView(View):
         if board:
             revs = meta.board_revisions(board)
             if revs.names:
-                row("revisions", ", ".join(revs.names) + (f" (default {revs.default})"
-                                                          if revs.default else ""))
+                row(
+                    "revisions",
+                    ", ".join(revs.names) + (f" (default {revs.default})" if revs.default else ""),
+                )
         if cfg.shields:
             row("shields", ", ".join(cfg.shields))
         if cfg.snippets:
             row("snippets", ", ".join(cfg.snippets))
         row("sysbuild", {None: "west default", True: "on", False: "off"}[cfg.sysbuild])
         built = (d / "build_info.yml").is_file() or (d / "CMakeCache.txt").is_file()
-        row("build dir", rel(d, top) + ("" if cfg.build_dir else "  (default)")
+        row(
+            "build dir",
+            rel(d, top)
+            + ("" if cfg.build_dir else "  (default)")
             + ("" if built else "  (not built yet)"),
-            "" if built else "bright_black")
+            "" if built else "bright_black",
+        )
         if board:
             runners = meta.board_runners(board, d if built else None)
             using = cfg.runner or runners.flash_default or "?"
             avail = ", ".join(runners.names) or "none found"
-            row("runner", f"{using}" + ("" if cfg.runner else " (board default)")
-                + f"   available: {avail}")
+            row(
+                "runner",
+                f"{using}" + ("" if cfg.runner else " (board default)") + f"   available: {avail}",
+            )
         if cfg.dev_id:
             row("probe", cfg.dev_id)
-        row("monitor", cfg.monitor or "not set (o asks for it)",
-            "" if cfg.monitor else "bright_black")
+        row(
+            "monitor",
+            cfg.monitor or "not set (o asks for it)",
+            "" if cfg.monitor else "bright_black",
+        )
         if cfg.last_status:
             when = time.strftime("%H:%M:%S", time.localtime(cfg.last_time or 0))
             icon, style = STATUS.get(cfg.last_status, STATUS[None])
-            row("last", f"{icon} {ACTION_LABEL.get(cfg.last_action or '', cfg.last_action)}"
-                f" {cfg.last_status} at {when}", style)
+            row(
+                "last",
+                f"{icon} {ACTION_LABEL.get(cfg.last_action or '', cfg.last_action)}"
+                f" {cfg.last_status} at {when}",
+                style,
+            )
         t.append("\n")
         t.append(shown(build_cmd(self.ws, cfg)) + "\n", style="bright_black")
         t.append(shown(runner_cmd(self.ws, cfg)) + "\n", style="bright_black")
@@ -951,8 +1101,10 @@ class BuildView(View):
             parts.append(f"running: {self.job.title} ({self.job.duration or 0:.0f}s) · x: stop")
         elif self.last_job:
             icon, _ = STATUS.get(self.last_job.status, STATUS[None])
-            parts.append(f"{icon} {self.last_job.title}: {self.last_job.status}"
-                         f" in {self.last_job.duration or 0:.0f}s")
+            parts.append(
+                f"{icon} {self.last_job.title}: {self.last_job.status}"
+                f" in {self.last_job.duration or 0:.0f}s"
+            )
         if self.monitor_config is not None:
             state = "running" if self.monitor.running else "ended"
             parts.append(f"monitor: {self.monitor_config} ({state})")
@@ -968,8 +1120,7 @@ class BuildView(View):
             if name in self._ids:
                 cfg = next((c for c in self.store.configs if c.name == self.job.config), None)
                 if cfg:
-                    lst.replace_option_prompt_at_index(self._ids.index(name),
-                                                       self._cfg_label(cfg))
+                    lst.replace_option_prompt_at_index(self._ids.index(name), self._cfg_label(cfg))
             self.update_status()
 
     # -- jobs --
@@ -985,16 +1136,22 @@ class BuildView(View):
         if job.status in ("passed", "failed", "cancelled", "error"):
             cfg = next((c for c in self.store.configs if c.name == job.config), None)
             if cfg:
-                cfg.last_action, cfg.last_status, cfg.last_time = \
-                    job.action, job.status, time.time()
+                cfg.last_action, cfg.last_status, cfg.last_time = (
+                    job.action,
+                    job.status,
+                    time.time(),
+                )
                 self.store.save()
             self.last_job = job
             if job.status == "passed":
                 self.notify(f"{job.title}: done", timeout=3)
             elif job.status != "cancelled":
                 self.notify(f"{job.title}: {job.status}", severity="error", timeout=6)
-            self.found = self._find_builds() if job.action in (
-                "build", "pristine", "build_flash") else self.found
+            self.found = (
+                self._find_builds()
+                if job.action in ("build", "pristine", "build_flash")
+                else self.found
+            )
             self.refresh_list()
         self.update_status()
 
@@ -1082,9 +1239,17 @@ class BuildView(View):
             self.show_details()
             if then_open:
                 self.open_monitor(cfg)
+
         field = next(f for f in FIELDS if f.key == "monitor")
-        self.push_screen(TextEditScreen(f"Monitor command for {cfg.name}", cfg.monitor,
-                                        placeholder="tio /dev/ttyACM0", hint=field.hint), done)
+        self.push_screen(
+            TextEditScreen(
+                f"Monitor command for {cfg.name}",
+                cfg.monitor,
+                placeholder="tio /dev/ttyACM0",
+                hint=field.hint,
+            ),
+            done,
+        )
 
     def open_monitor(self, cfg: BuildConfig) -> None:
         if not cfg.monitor:
@@ -1095,13 +1260,19 @@ class BuildView(View):
             mon.focus()
             return
         if mon.running:
+
             def answered(yes: bool) -> None:
                 if yes:
                     self._start_monitor(cfg)
-            self.push_screen(ConfirmScreen(
-                "Switch the monitor?",
-                f"The monitor is open for {self.monitor_config}. Close it and open "
-                f"one for {cfg.name}?"), answered)
+
+            self.push_screen(
+                ConfirmScreen(
+                    "Switch the monitor?",
+                    f"The monitor is open for {self.monitor_config}. Close it and open "
+                    f"one for {cfg.name}?",
+                ),
+                answered,
+            )
             return
         self._start_monitor(cfg)
 
@@ -1167,8 +1338,9 @@ class BuildView(View):
     def open_in_dts(self, cfg: BuildConfig) -> None:
         d = dts_build_dir(build_dir(self.ws, cfg))
         if not (d / "build_info.yml").is_file():
-            self.notify("build it first: the Devicetree tab reads build_info.yml",
-                        severity="warning")
+            self.notify(
+                "build it first: the Devicetree tab reads build_info.yml", severity="warning"
+            )
             return
         opener = getattr(self.app, "open_in_dts", None)
         if opener is None:
@@ -1179,8 +1351,9 @@ class BuildView(View):
     def open_in_kconfig(self, cfg: BuildConfig) -> None:
         d = dts_build_dir(build_dir(self.ws, cfg))
         if not (d / "build_info.yml").is_file():
-            self.notify("build it first: the Kconfig tab reads the build directory",
-                        severity="warning")
+            self.notify(
+                "build it first: the Kconfig tab reads the build directory", severity="warning"
+            )
             return
         opener = getattr(self.app, "open_in_kconfig", None)
         if opener is None:
@@ -1194,8 +1367,10 @@ class BuildView(View):
             self.notify(f"{rel(d, self.ws.topdir)} doesn't exist")
             return
         if not ((d / "CMakeCache.txt").is_file() or (d / "build_info.yml").is_file()):
-            self.notify(f"{rel(d, self.ws.topdir)} doesn't look like a build directory; "
-                        "not deleting it", severity="error")
+            self.notify(
+                f"{rel(d, self.ws.topdir)} doesn't look like a build directory; not deleting it",
+                severity="error",
+            )
             return
         if self.runner.busy:
             self.notify("stop the running command first", severity="warning")
@@ -1207,8 +1382,10 @@ class BuildView(View):
                 self.found = [f for f in self.found if f != d]
                 self.notify(f"deleted {rel(d, self.ws.topdir)}")
                 self.refresh_list()
-        self.push_screen(ConfirmScreen("Delete build directory?",
-                                       f"Delete {d} and everything in it?"), answered)
+
+        self.push_screen(
+            ConfirmScreen("Delete build directory?", f"Delete {d} and everything in it?"), answered
+        )
 
     # -- actions --
 
@@ -1232,8 +1409,9 @@ class BuildView(View):
             return
         cfg = sel[1]
         items = [(k, label, label) for k, label, _ in ACTIONS]
-        self.push_screen(PickerScreen(f"Run for {cfg.name}", items),
-                         lambda r: r and self.do(cfg, r[0]))
+        self.push_screen(
+            PickerScreen(f"Run for {cfg.name}", items), lambda r: r and self.do(cfg, r[0])
+        )
 
     def action_import(self) -> None:
         sel = self.selected()
@@ -1263,13 +1441,20 @@ class BuildView(View):
                 self.store.configs.append(new)
             self.store.save()
             self.refresh_list(select=f"cfg:{new.name}")
+
         self.push_screen(ConfigScreen(self, cfg, title), saved)
 
     def action_new_config(self) -> None:
         base = self.selected_config()
         if base:
-            cfg = replace(base, name=self.store.unique_name(base.name), last_action=None,
-                          last_status=None, last_time=None, build_dir=None)
+            cfg = replace(
+                base,
+                name=self.store.unique_name(base.name),
+                last_action=None,
+                last_status=None,
+                last_time=None,
+                build_dir=None,
+            )
         else:
             app = self.cwd if (self.cwd / "CMakeLists.txt").is_file() else None
             cfg = BuildConfig(name="", app=rel(app, self.ws.topdir) if app else "", board="")
@@ -1284,8 +1469,14 @@ class BuildView(View):
     def action_copy_config(self) -> None:
         cfg = self.selected_config()
         if cfg:
-            copy = replace(cfg, name=self.store.unique_name(cfg.name), build_dir=None,
-                           last_action=None, last_status=None, last_time=None)
+            copy = replace(
+                cfg,
+                name=self.store.unique_name(cfg.name),
+                build_dir=None,
+                last_action=None,
+                last_status=None,
+                last_time=None,
+            )
             self._edit(copy, f"Copy of {cfg.name}", None)
 
     def action_delete_config(self) -> None:
@@ -1298,9 +1489,15 @@ class BuildView(View):
                 self.store.configs.remove(cfg)
                 self.store.save()
                 self.refresh_list()
-        self.push_screen(ConfirmScreen(f"Delete {cfg.name}?",
-                                       "Removes the saved config. The build directory "
-                                       "stays (use the action menu to delete it)."), answered)
+
+        self.push_screen(
+            ConfirmScreen(
+                f"Delete {cfg.name}?",
+                "Removes the saved config. The build directory "
+                "stays (use the action menu to delete it).",
+            ),
+            answered,
+        )
 
     def action_cancel_job(self) -> None:
         if not self.runner.cancel():
@@ -1319,11 +1516,15 @@ class BuildView(View):
 class LazyBuildApp(SystemClipboard, App):
     """The build tab on its own (used by the tests)."""
 
-    CSS = COMMON_CSS + BUILD_CSS + """
+    CSS = (
+        COMMON_CSS
+        + BUILD_CSS
+        + """
     .dialog { width: 100; max-width: 95%; height: auto; max-height: 90%; padding: 1 2; }
     .hint { color: $text-muted; }
     .label { margin-top: 1; }
     """
+    )
     BINDINGS = [Binding("q", "quit", "Quit")]
 
     def __init__(self, view: BuildView):

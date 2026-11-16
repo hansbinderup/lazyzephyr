@@ -44,11 +44,23 @@ def preprocess(inputs: DtInputs, zephyr_base: Path, out_dir: Path) -> tuple[Path
         cmd += ["-isystem", str(d)]
     for f in inputs.files:
         cmd += ["-include", str(f)]
-    cmd += ["-undef", "-D__DTS__", "-E", "-MD", "-MF", str(deps), "-o", str(out),
-            str(zephyr_base / "misc" / "empty_file.c")]
-    proc = subprocess.run(cmd, capture_output=True, text=True,
-                          cwd=inputs.workdir if inputs.workdir and inputs.workdir.is_dir()
-                          else None)
+    cmd += [
+        "-undef",
+        "-D__DTS__",
+        "-E",
+        "-MD",
+        "-MF",
+        str(deps),
+        "-o",
+        str(out),
+        str(zephyr_base / "misc" / "empty_file.c"),
+    ]
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=inputs.workdir if inputs.workdir and inputs.workdir.is_dir() else None,
+    )
     if proc.returncode:
         raise DtError(proc.stderr.strip() or f"preprocessor failed ({proc.returncode})")
     return out, _read_deps(deps)
@@ -105,8 +117,7 @@ class Model:
         if name in node.children:
             return path
         base = name.split("@")[0]
-        matches = [c for c in node.children.values()
-                   if c.name.split("@")[0] == base]
+        matches = [c for c in node.children.values() if c.name.split("@")[0] == base]
         return matches[0].path if len(matches) == 1 else path
 
     @property
@@ -138,8 +149,7 @@ class Model:
             base = self.ws.zephyr_base / "dts" / "bindings" / "base"
             for name in ("base.yaml", "pm.yaml", "mutable.yaml"):
                 raw = load_yaml(base / name) or {}
-                self._generic |= set((raw.get("properties") or {}) if isinstance(raw, dict)
-                                     else ())
+                self._generic |= set((raw.get("properties") or {}) if isinstance(raw, dict) else ())
         return self._generic
 
     def dts_files(self) -> list[Path]:
@@ -211,8 +221,9 @@ def load(ws: Workspace, inputs: DtInputs, out_dir: Path) -> Model:
     edtlib = import_edtlib(ws.zephyr_base)
     pre, deps = preprocess(inputs, ws.zephyr_base, out_dir)
     try:
-        edt = edtlib.EDT(str(pre), [str(d) for d in inputs.bindings_dirs],
-                         warn_reg_unit_address_mismatch=False)
+        edt = edtlib.EDT(
+            str(pre), [str(d) for d in inputs.bindings_dirs], warn_reg_unit_address_mismatch=False
+        )
     except Exception as exc:  # EDTError, DTError, yaml errors
         raise DtError(str(exc)) from None
     return Model(ws, inputs, edt, deps)

@@ -36,8 +36,14 @@ def copy_to_system_clipboard(text: str) -> bool:
         return False
     try:
         # The tools fork to keep serving the clipboard; the call itself returns at once.
-        subprocess.run(command, input=text.encode(), stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=2, check=True)
+        subprocess.run(
+            command,
+            input=text.encode(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            check=True,
+        )
     except (OSError, subprocess.SubprocessError):
         return False
     return True

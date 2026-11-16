@@ -25,7 +25,14 @@ from . import boards, cache, folders, session
 from .discovery import Discovery, Scenario, Workspace, default_roots, discover
 from .hardware import HardwareScreen
 from .jobs import (
-    Hardware, Job, JobManager, NodeRef, RunOptions, RunTarget, hardware_problem, make_target,
+    Hardware,
+    Job,
+    JobManager,
+    NodeRef,
+    RunOptions,
+    RunTarget,
+    hardware_problem,
+    make_target,
     plan_runs,
 )
 from .results import ResultStore, worst
@@ -125,8 +132,6 @@ def count_text(statuses: list[str | None]) -> Text:
     text.append("/", style="bright_black")
     text.append(str(other), style="blue")
     return text
-
-
 
 
 @dataclass
@@ -284,10 +289,10 @@ class FolderScreen(ModalScreen[list[Path] | None]):
             dialog.border_subtitle = "space: select · enter: apply · esc: cancel"
             intro = (
                 "First time here: choose the folders to look for tests in. "
-                if self.first_run else ""
+                if self.first_run
+                else ""
             )
-            yield Static(intro + "The choice is remembered for this directory.",
-                         id="folder-intro")
+            yield Static(intro + "The choice is remembered for this directory.", id="folder-intro")
             tree = FolderTree(f"{self.base.name or self.base}/", data=self.base, id="folder-tree")
             tree.guide_depth = 3
             tree.auto_expand = False
@@ -326,8 +331,9 @@ class FolderScreen(ModalScreen[list[Path] | None]):
         self.loaded.add(path)
         for child in folders.list_dirs(path):
             has_children = bool(folders.list_dirs(child))
-            self.nodes[child] = node.add(self.label_for(child), data=child,
-                                         allow_expand=has_children)
+            self.nodes[child] = node.add(
+                self.label_for(child), data=child, allow_expand=has_children
+            )
             if child not in self.counts:
                 self._count(child)
 
@@ -514,8 +520,10 @@ class CacheScreen(ModalScreen[str | None]):
             text = Text()
             text.append(f"{self.state_dir}\n\n", style="bright_black")
             text.append("b", style="bold")
-            text.append(f"  delete twister build output ({cache.human(self.builds)}); "
-                        "test results are kept\n")
+            text.append(
+                f"  delete twister build output ({cache.human(self.builds)}); "
+                "test results are kept\n"
+            )
             text.append("a", style="bold")
             text.append(f"  also delete the results history ({cache.human(self.results)})")
             yield Static(text)
@@ -735,8 +743,11 @@ class TwisterView(View):
             self.notify(f"could not save folder selection: {exc}", severity="error")
         if self.config.roots_source in ("cli", "config"):
             where = "-T" if self.config.roots_source == "cli" else "roots in the config file"
-            self.notify(f"saved, but {where} take precedence on the next start",
-                        severity="warning", timeout=6)
+            self.notify(
+                f"saved, but {where} take precedence on the next start",
+                severity="warning",
+                timeout=6,
+            )
         self.config.roots_source = "saved"
 
     def action_choose_folders(self) -> None:
@@ -746,8 +757,11 @@ class TwisterView(View):
             self._set_roots(roots)
             await self.rediscover(loading=True)
             self.watch_files()  # exclusive worker: restarts on the new roots
-            self.notify(f"{len(self.discovery.scenarios)} scenarios in "
-                        f"{len(roots)} folder{'s' if len(roots) != 1 else ''}", timeout=3)
+            self.notify(
+                f"{len(self.discovery.scenarios)} scenarios in "
+                f"{len(roots)} folder{'s' if len(roots) != 1 else ''}",
+                timeout=3,
+            )
 
         self.push_screen(FolderScreen(self.config.cwd, self.config.roots), chosen)
 
@@ -793,8 +807,10 @@ class TwisterView(View):
         modes = ["auto", "landscape", "portrait"]
         self.layout_mode = modes[(modes.index(self.layout_mode) + 1) % len(modes)]
         self.apply_layout()
-        self.notify(f"layout: {self.layout_mode} ({self.orientation}"
-                    f"{', compact' if self.compact else ''})", timeout=2)
+        self.notify(
+            f"layout: {self.layout_mode} ({self.orientation}{', compact' if self.compact else ''})",
+            timeout=2,
+        )
 
     def action_toggle_maximize(self) -> None:
         self.toggle_maximize()
@@ -895,8 +911,9 @@ class TwisterView(View):
             self.expanded |= folder_keys - self.seen_folders
         self.seen_folders |= folder_keys
         self._open_now = set(self.expanded)
-        if (self.filter_text or self.failed_only or self.platform_only) \
-                and shown <= self.OPEN_ALL_MAX:
+        if (
+            self.filter_text or self.failed_only or self.platform_only
+        ) and shown <= self.OPEN_ALL_MAX:
             self._open_now |= {f"d:{p}" for p in known_folders}
 
         tree.clear()
@@ -953,8 +970,9 @@ class TwisterView(View):
         elif ref.kind == "scenario":
             scenario = self.discovery.by_name().get(ref.scenario or "")
             for case in scenario.cases if scenario else []:
-                self._add_node(node, NodeRef("case", ref.path, ref.scenario, case),
-                               expandable=False)
+                self._add_node(
+                    node, NodeRef("case", ref.path, ref.scenario, case), expandable=False
+                )
 
     @on(Tree.NodeExpanded, "#tests")
     def _test_node_expanded(self, event: Tree.NodeExpanded) -> None:
@@ -985,8 +1003,10 @@ class TwisterView(View):
             names = self.folder_scenarios.get(ref.key, [])
             statuses = [self.status_of(n) for n in names]
             status = (
-                "running" if "running" in statuses
-                else "queued" if "queued" in statuses
+                "running"
+                if "running" in statuses
+                else "queued"
+                if "queued" in statuses
                 else worst(statuses)
             )
             icon, style = self._icon(status)
@@ -1005,8 +1025,10 @@ class TwisterView(View):
         else:
             assert ref.case is not None and ref.scenario is not None
             live = self.live.get(ref.scenario)
-            status = live if live in ("running", "queued") else self.store.case_status(
-                ref.scenario, ref.case.id
+            status = (
+                live
+                if live in ("running", "queued")
+                else self.store.case_status(ref.scenario, ref.case.id)
             )
             icon, style = self._icon(status)
             text.append(f"{icon} ", style=style)
@@ -1087,8 +1109,11 @@ class TwisterView(View):
             left.append((7, Text(f"board: {' · '.join(board)}", style="cyan")))
         elif boards_on:
             left.append((7, Text(f"boards: {', '.join(boards_on)}", style="cyan")))
-        fixtures = [f for p in self.options.platforms
-                    for f in self.options.boards.get(p, Hardware()).fixtures]
+        fixtures = [
+            f
+            for p in self.options.platforms
+            for f in self.options.boards.get(p, Hardware()).fixtures
+        ]
         if fixtures:
             left.append((4, Text(f"-X {','.join(dict.fromkeys(fixtures))}")))
         if self.options.case_results:
@@ -1120,8 +1145,10 @@ class TwisterView(View):
             text.append("\n")
 
         row("workspace", cfg.workspace.topdir or "(not in a west workspace)")
-        row("roots", f"{', '.join(self._rel(r) for r in cfg.roots)}  "
-            f"({cfg.roots_source}; O to change)")
+        row(
+            "roots",
+            f"{', '.join(self._rel(r) for r in cfg.roots)}  ({cfg.roots_source}; O to change)",
+        )
         row("config", cfg.config_file or "none (.lazyzephyr.toml)")
         row("platforms", ", ".join(self.options.platforms) or "twister default")
         row("integration", on if self.options.integration else off)
@@ -1138,8 +1165,11 @@ class TwisterView(View):
         row("case results", on if self.options.case_results else off)
         row("auto-run", on if self.auto_run else off)
         current = self.jobs.current
-        row("queue", f"{'running #' + str(current.id) if current else 'idle'}"
-            f", {len(self.jobs.queued())} queued")
+        row(
+            "queue",
+            f"{'running #' + str(current.id) if current else 'idle'}"
+            f", {len(self.jobs.queued())} queued",
+        )
         cases = sum(len(s.cases) for s in self.discovery.scenarios)
         summary = Text(f"{len(names)} scenarios, {cases} cases  ")
         summary.append_text(count_text(statuses))
@@ -1302,8 +1332,10 @@ class TwisterView(View):
         for platform, result in results.items():
             icon, style = self._icon(result.status)
             line = Text(f"  {icon} {platform:<28} {result.status}", style=style)
-            line.append(f"  build {result.build_time:.1f}s  run {result.execution_time:.2f}s",
-                        style="bright_black")
+            line.append(
+                f"  build {result.build_time:.1f}s  run {result.execution_time:.2f}s",
+                style="bright_black",
+            )
             text.append(line)
             text.append("\n")
             if result.reason and result.status != "passed":
@@ -1317,13 +1349,16 @@ class TwisterView(View):
                 failure = result.failures.get(case_id) if failed else None
                 if failure is not None:
                     text.append("  ")
-                    text.append(self._failure_text(
-                        failure, self.resolve_source(failure["file"], scenario)))
+                    text.append(
+                        self._failure_text(failure, self.resolve_source(failure["file"], scenario))
+                    )
                 text.append("\n")
                 log = result.case_logs.get(case_id, "").splitlines()
                 if len(log) > CASE_LOG_PREVIEW:
-                    text.append(f"      … {len(log) - CASE_LOG_PREVIEW} earlier lines\n",
-                                style="bright_black")
+                    text.append(
+                        f"      … {len(log) - CASE_LOG_PREVIEW} earlier lines\n",
+                        style="bright_black",
+                    )
                 text.append_text(self._log_text(log[-CASE_LOG_PREVIEW:], indent="      │ "))
             if result.log and result.status in ("failed", "error"):
                 tail = result.log.strip().splitlines()[-40:]
@@ -1383,8 +1418,9 @@ class TwisterView(View):
             return
         self._submit_target(target, ask=ask)
 
-    def _submit_target(self, target: RunTarget, platforms: list[str] | None = None,
-                       ask: bool = True) -> None:
+    def _submit_target(
+        self, target: RunTarget, platforms: list[str] | None = None, ask: bool = True
+    ) -> None:
         """Queue `target` on `platforms` (default: the chosen ones).
 
         With several boards enabled this asks which one to run on; with `ask`
@@ -1394,15 +1430,28 @@ class TwisterView(View):
         platforms = list(self.options.platforms if platforms is None else platforms)
         boards_on = self.options.board_platforms(platforms)
         if len(boards_on) > 1 and (ask or self.board_choice not in boards_on):
+
             def picked(result: list[str] | None) -> None:
                 if result:
                     self.board_choice = result[0]
                     self._save_session()
                     self._queue_runs(target, plan_runs(self.options, platforms, result[0]))
 
-            items = [(p, Text.assemble(p, (f"  {short_port(self.options.boards[p].serial or '')}"
-                                           f" · {self.options.boards[p].runner or 'default runner'}",
-                                           "bright_black")), p) for p in boards_on]
+            items = [
+                (
+                    p,
+                    Text.assemble(
+                        p,
+                        (
+                            f"  {short_port(self.options.boards[p].serial or '')}"
+                            f" · {self.options.boards[p].runner or 'default runner'}",
+                            "bright_black",
+                        ),
+                    ),
+                    p,
+                )
+                for p in boards_on
+            ]
             others = [p for p in platforms if p not in boards_on]
             hint = f"the others run without a board: {', '.join(others)}" if others else ""
             self.push_screen(PickerScreen("Run on which board?", items, hint=hint), picked)
@@ -1551,11 +1600,11 @@ class TwisterView(View):
     def action_hardware(self) -> None:
         platforms = self.options.platforms
         if not platforms:
-            self.notify("pick a platform with p to set up its board", severity="warning",
-                        timeout=4)
+            self.notify("pick a platform with p to set up its board", severity="warning", timeout=4)
         elif len(platforms) == 1:
             self._edit_board(platforms[0])
         else:
+
             def picked(result: list[str] | None) -> None:
                 if result:
                     self._edit_board(result[0])
@@ -1579,8 +1628,10 @@ class TwisterView(View):
             self.update_status()
 
         current = self.options.boards.get(platform, Hardware())
-        self.push_screen(HardwareScreen(current, platform, self.config.cwd,
-                                        self.discovery.fixtures(), fixed), apply)
+        self.push_screen(
+            HardwareScreen(current, platform, self.config.cwd, self.discovery.fixtures(), fixed),
+            apply,
+        )
 
     def _save_board(self, platform: str, hardware: Hardware) -> None:
         state_dir = self.config.state_dir
@@ -1720,8 +1771,9 @@ class TwisterView(View):
 
     async def action_clear_cache(self) -> None:
         if self.jobs.current is not None or self.jobs.queued():
-            self.notify("stop or finish the queued jobs before clearing the cache",
-                        severity="warning")
+            self.notify(
+                "stop or finish the queued jobs before clearing the cache", severity="warning"
+            )
             return
         state_dir = self.config.state_dir
         builds, results = await asyncio.to_thread(cache.usage, state_dir)
@@ -1841,7 +1893,8 @@ class TwisterView(View):
 
     def _auto_run(self, changed: list[Path]) -> None:
         affected = [
-            s for s in self.discovery.scenarios
+            s
+            for s in self.discovery.scenarios
             if any(s.directory == p or s.directory in p.parents for p in changed)
         ]
         if affected:
@@ -1859,10 +1912,15 @@ class LazyTwisterApp(SystemClipboard, App):
     """The twister tab on its own (used by the tests)."""
 
     # BUILD_CSS: the hardware screen reuses the Build tab's pickers.
-    CSS = COMMON_CSS + TWISTER_CSS + BUILD_CSS + """
+    CSS = (
+        COMMON_CSS
+        + TWISTER_CSS
+        + BUILD_CSS
+        + """
     .dialog { width: 100; max-width: 95%; height: auto; max-height: 90%; padding: 1 2; }
     .hint { color: $text-muted; }
     """
+    )
     BINDINGS = [Binding("q", "request_quit", "Quit")]
 
     def __init__(self, config: AppConfig):

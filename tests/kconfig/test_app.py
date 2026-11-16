@@ -18,8 +18,9 @@ async def wait_for(predicate, timeout=10.0):
 
 def make_app(workspace, kbuild, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    return LazyKconfigApp(AppConfig(cwd=workspace / "app", workspace=find_workspace(workspace),
-                                    build_dir=kbuild))
+    return LazyKconfigApp(
+        AppConfig(cwd=workspace / "app", workspace=find_workspace(workspace), build_dir=kbuild)
+    )
 
 
 async def test_search_and_turn_on_with_dependencies(workspace, kbuild, tmp_path, monkeypatch):

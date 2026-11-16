@@ -41,8 +41,14 @@ def _child_main(request: dict) -> None:
     threading.Thread(target=lambda: (sys.stdin.read(), stop.set()), daemon=True).start()
     # yield_on_timeout: the first (empty) batch means the watches are in place.
     ready = False
-    for changes in watch(*request["paths"], watch_filter=keep, debounce=DEBOUNCE_MS,
-                         stop_event=stop, yield_on_timeout=True, rust_timeout=200):
+    for changes in watch(
+        *request["paths"],
+        watch_filter=keep,
+        debounce=DEBOUNCE_MS,
+        stop_event=stop,
+        yield_on_timeout=True,
+        rust_timeout=200,
+    ):
         if changes:
             print(json.dumps(sorted({p for _, p in changes})), flush=True)
         elif not ready:

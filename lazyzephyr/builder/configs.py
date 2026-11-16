@@ -17,20 +17,20 @@ from ..dts.workspace import Workspace, load_yaml
 @dataclass
 class BuildConfig:
     name: str
-    app: str                       # relative to the workspace top dir, or absolute
-    board: str                     # target, e.g. nrf5340dk/nrf5340/cpuapp
+    app: str  # relative to the workspace top dir, or absolute
+    board: str  # target, e.g. nrf5340dk/nrf5340/cpuapp
     revision: str | None = None
     shields: list[str] = field(default_factory=list)
     snippets: list[str] = field(default_factory=list)
-    sysbuild: bool | None = None   # None: west's default (build.sysbuild)
-    build_dir: str | None = None   # None: the default for this app + board
-    extra_conf: list[str] = field(default_factory=list)      # EXTRA_CONF_FILE
+    sysbuild: bool | None = None  # None: west's default (build.sysbuild)
+    build_dir: str | None = None  # None: the default for this app + board
+    extra_conf: list[str] = field(default_factory=list)  # EXTRA_CONF_FILE
     extra_overlays: list[str] = field(default_factory=list)  # EXTRA_DTC_OVERLAY_FILE
-    cmake_args: list[str] = field(default_factory=list)      # after `--`
-    runner: str | None = None      # None: the board's default
+    cmake_args: list[str] = field(default_factory=list)  # after `--`
+    runner: str | None = None  # None: the board's default
     dev_id: str | None = None
     flash_args: list[str] = field(default_factory=list)
-    monitor: str = ""              # shell command for the serial monitor
+    monitor: str = ""  # shell command for the serial monitor
     # Last action and how it went, shown in the list.
     last_action: str | None = None
     last_status: str | None = None
@@ -66,9 +66,11 @@ def _slug(s: str) -> str:
 
 def west_dir_fmt(ws: Workspace) -> str | None:
     """west's build.dir-fmt, from the workspace, user or system config."""
-    paths = [Path("/etc/westconfig"),
-             Path(os.environ.get("WEST_CONFIG_GLOBAL", Path.home() / ".westconfig")),
-             ws.topdir / ".west" / "config"]
+    paths = [
+        Path("/etc/westconfig"),
+        Path(os.environ.get("WEST_CONFIG_GLOBAL", Path.home() / ".westconfig")),
+        ws.topdir / ".west" / "config",
+    ]
     value = None
     for p in paths:
         cfg = configparser.ConfigParser()
@@ -87,8 +89,9 @@ def default_build_dir(ws: Workspace, cfg: BuildConfig) -> Path:
     if fmt:
         try:
             rel_src = os.path.relpath(app, ws.topdir)
-            path = fmt.format(board=cfg.board, app=app.name, source_dir=rel_src,
-                              west_topdir=str(ws.topdir))
+            path = fmt.format(
+                board=cfg.board, app=app.name, source_dir=rel_src, west_topdir=str(ws.topdir)
+            )
             return (ws.topdir / path).resolve()
         except (KeyError, IndexError, ValueError):
             pass
@@ -107,8 +110,9 @@ def build_dir(ws: Workspace, cfg: BuildConfig) -> Path:
 # --------------------------------------------------------------------------
 
 
-def build_cmd(ws: Workspace, cfg: BuildConfig, pristine: bool = False,
-              target: str | None = None) -> list[str]:
+def build_cmd(
+    ws: Workspace, cfg: BuildConfig, pristine: bool = False, target: str | None = None
+) -> list[str]:
     """`west build` arguments (without the west executable)."""
     args = ["build", "-d", str(build_dir(ws, cfg)), "-b", cfg.target]
     if pristine:
@@ -140,8 +144,9 @@ def target_cmd(ws: Workspace, cfg: BuildConfig, target: str) -> list[str]:
     return ["build", "-d", str(build_dir(ws, cfg)), "-t", target]
 
 
-def runner_cmd(ws: Workspace, cfg: BuildConfig, command: str = "flash",
-               extra: list[str] = ()) -> list[str]:
+def runner_cmd(
+    ws: Workspace, cfg: BuildConfig, command: str = "flash", extra: list[str] = ()
+) -> list[str]:
     """`west flash|debug|attach|debugserver|rtt` arguments."""
     args = [command, "-d", str(build_dir(ws, cfg))]
     if cfg.runner:
@@ -156,8 +161,9 @@ def runner_cmd(ws: Workspace, cfg: BuildConfig, command: str = "flash",
 
 def monitor_env(ws: Workspace, cfg: BuildConfig) -> dict[str, str]:
     """Environment for the monitor command: $BUILD_DIR and $BOARD point at this config."""
-    return dict(os.environ, BUILD_DIR=str(build_dir(ws, cfg)), BOARD=cfg.target,
-                TERM="xterm-256color")
+    return dict(
+        os.environ, BUILD_DIR=str(build_dir(ws, cfg)), BOARD=cfg.target, TERM="xterm-256color"
+    )
 
 
 def shown(args: list[str]) -> str:
@@ -193,16 +199,15 @@ def config_from_build(ws: Workspace, build: Path) -> BuildConfig | None:
     app = (cmake.get("application") or {}).get("source-dir")
     target = "/".join(x for x in (board.get("name"), board.get("qualifiers")) if x)
     command = (info.get("west") or {}).get("command") or ""
-    parsed = argparse.Namespace(shield=[], snippet=[], sysbuild=None, board=None,
-                                source_dir=None)
+    parsed = argparse.Namespace(shield=[], snippet=[], sysbuild=None, board=None, source_dir=None)
     cmake_args: list[str] = []
     try:
         words = shlex.split(command)
         if "build" in words:
-            words = words[words.index("build") + 1:]
+            words = words[words.index("build") + 1 :]
             if "--" in words:
-                cmake_args = words[words.index("--") + 1:]
-                words = words[:words.index("--")]
+                cmake_args = words[words.index("--") + 1 :]
+                words = words[: words.index("--")]
             parsed, _ = _west_build_parser().parse_known_args(words)
     except (ValueError, argparse.ArgumentError):
         pass
@@ -229,9 +234,14 @@ def config_from_build(ws: Workspace, build: Path) -> BuildConfig | None:
     name = _rel(build.resolve(), ws.topdir)
     cfg = BuildConfig(
         name=name,
-        app=app_rel, board=board_arg, revision=None,
-        shields=shields, snippets=list(parsed.snippet), sysbuild=parsed.sysbuild,
-        build_dir=_rel(build.resolve(), ws.topdir), cmake_args=cmake_args,
+        app=app_rel,
+        board=board_arg,
+        revision=None,
+        shields=shields,
+        snippets=list(parsed.snippet),
+        sysbuild=parsed.sysbuild,
+        build_dir=_rel(build.resolve(), ws.topdir),
+        cmake_args=cmake_args,
     )
     # Keep an explicit revision only if it was asked for (not the board default).
     if revision and "@" in (parsed.board or ""):

@@ -21,10 +21,14 @@ async def wait_for(predicate, timeout=10.0):
 async def test_browse_toggle_and_add(workspace, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     ws = find_workspace(workspace)
-    app = LazyDtsApp(AppConfig(cwd=workspace / "app", workspace=ws,
-                               choice=TargetChoice(board="native_sim/native",
-                                                   app=str(workspace / "app")),
-                               work_dir=tmp_path / "work"))
+    app = LazyDtsApp(
+        AppConfig(
+            cwd=workspace / "app",
+            workspace=ws,
+            choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
+            work_dir=tmp_path / "work",
+        )
+    )
     overlay = workspace / "app" / "boards" / "native_sim.overlay"
     async with app.run_test(size=(180, 50)) as pilot:
         await wait_for(lambda: "/leds/led_0" in app.node_index)
@@ -62,10 +66,14 @@ async def test_browse_toggle_and_add(workspace, tmp_path, monkeypatch):
 async def test_edit_property_dialog(workspace, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     ws = find_workspace(workspace)
-    app = LazyDtsApp(AppConfig(cwd=workspace / "app", workspace=ws,
-                               choice=TargetChoice(board="native_sim/native",
-                                                   app=str(workspace / "app")),
-                               work_dir=tmp_path / "work"))
+    app = LazyDtsApp(
+        AppConfig(
+            cwd=workspace / "app",
+            workspace=ws,
+            choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
+            work_dir=tmp_path / "work",
+        )
+    )
     overlay = workspace / "app" / "boards" / "native_sim.overlay"
     async with app.run_test(size=(180, 50)) as pilot:
         await wait_for(lambda: "/leds/led_0" in app.node_index)
@@ -111,17 +119,22 @@ async def test_edit_property_dialog(workspace, tmp_path, monkeypatch):
         await pilot.pause()
         editor = screen.query_one("#edit-value", SpecifierEditor)
         await pilot.press("ctrl+s")
-        await wait_for(lambda: "gpios = <&gpio0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;"
-                       in overlay.read_text())
+        await wait_for(
+            lambda: "gpios = <&gpio0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;" in overlay.read_text()
+        )
 
 
 def make_app(workspace, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     ws = find_workspace(workspace)
-    return LazyDtsApp(AppConfig(cwd=workspace / "app", workspace=ws,
-                                choice=TargetChoice(board="native_sim/native",
-                                                    app=str(workspace / "app")),
-                                work_dir=tmp_path / "work"))
+    return LazyDtsApp(
+        AppConfig(
+            cwd=workspace / "app",
+            workspace=ws,
+            choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
+            work_dir=tmp_path / "work",
+        )
+    )
 
 
 def setting_ids(app):
@@ -197,9 +210,16 @@ async def test_settings_list(workspace, tmp_path, monkeypatch):
         assert first.startswith("I2C_BITRATE_STANDARD") and "100 kHz" in first
         await pilot.press("down", "enter")
         await wait_for(lambda: "clock-frequency = <I2C_BITRATE_FAST>;" in overlay.read_text())
-        await wait_for(lambda: "400 kHz" in str(
-            app.query_one("#props").get_option_at_index(
-                setting_ids(app).index("clock-frequency")).prompt))
+        await wait_for(
+            lambda: (
+                "400 kHz"
+                in str(
+                    app.query_one("#props")
+                    .get_option_at_index(setting_ids(app).index("clock-frequency"))
+                    .prompt
+                )
+            )
+        )
         # Typing a number works too.
         await pilot.press("enter")
         await pilot.pause()
@@ -221,7 +241,9 @@ async def test_settings_list(workspace, tmp_path, monkeypatch):
 async def test_enum_and_children(workspace, tmp_path, monkeypatch):
     app = make_app(workspace, tmp_path, monkeypatch)
     overlay = workspace / "app" / "boards" / "native_sim.overlay"
-    overlay.write_text(overlay.read_text() + """
+    overlay.write_text(
+        overlay.read_text()
+        + """
 &i2c0 {
 	widget: widget@10 {
 		compatible = "vnd,widget";
@@ -229,7 +251,8 @@ async def test_enum_and_children(workspace, tmp_path, monkeypatch):
 		mode = "fast";
 	};
 };
-""")
+"""
+    )
     async with app.run_test(size=(180, 50)) as pilot:
         await wait_for(lambda: any(p.endswith("/widget@10") for p in app.node_index))
         i2c = next(p for p in app.node_index if p.startswith("/i2c@") and "/" not in p[1:])
@@ -275,7 +298,9 @@ async def test_add_node_with_odd_property_names(workspace, tmp_path, monkeypatch
 async def test_reference_card(workspace, tmp_path, monkeypatch):
     app = make_app(workspace, tmp_path, monkeypatch)
     overlay = workspace / "app" / "boards" / "native_sim.overlay"
-    overlay.write_text(overlay.read_text() + """
+    overlay.write_text(
+        overlay.read_text()
+        + """
 &i2c0 {
 	widget: widget@10 {
 		compatible = "vnd,widget";
@@ -283,7 +308,8 @@ async def test_reference_card(workspace, tmp_path, monkeypatch):
 		mode = "fast";
 	};
 };
-""")
+"""
+    )
     before = overlay.read_text()
     async with app.run_test(size=(180, 50)) as pilot:
         await wait_for(lambda: any(p.endswith("/widget@10") for p in app.node_index))

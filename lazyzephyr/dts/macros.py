@@ -10,8 +10,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z]\w*)(\([^)]*\))?[ \t]*(.*?)[ \t]*$",
-                     re.M)
+_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z]\w*)(\([^)]*\))?[ \t]*(.*?)[ \t]*$", re.M)
 _COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 _WORD = re.compile(r"[a-z0-9]+")
 # Words too common to say anything about which header fits.
@@ -76,8 +75,13 @@ def value_of(m: Macro) -> int | None:
         return None
 
 
-def rank(macros: list[Macro], token: str, context: set[str], limit: int = 50,
-         primary: set[str] | None = None) -> list[Macro]:
+def rank(
+    macros: list[Macro],
+    token: str,
+    context: set[str],
+    limit: int = 50,
+    primary: set[str] | None = None,
+) -> list[Macro]:
     """Macros matching `token` (prefix before substring), the ones that fit the
     context first (and those fitting `primary`, e.g. the bus, before those),
     keeping header order otherwise. With no token, only the ones that fit."""
