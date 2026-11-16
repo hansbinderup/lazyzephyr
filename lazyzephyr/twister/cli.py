@@ -30,56 +30,120 @@ def build_parser(prog: str = "lazyzephyr") -> argparse.ArgumentParser:
         prog=prog,
         description="lazygit-style TUI for running Zephyr twister tests in a west workspace.",
         epilog=f"Arguments after '--' are passed to every twister invocation. Defaults can be "
-               f"set in a {CONFIG_NAME} file in the current directory or any parent up to the "
-               "west workspace; command line options override it.",
+        f"set in a {CONFIG_NAME} file in the current directory or any parent up to the "
+        "west workspace; command line options override it.",
     )
     add_arguments(parser)
     return parser
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("-T", "--testsuite-root", action="append", type=Path, default=[],
-                        help="test root to discover/run (repeatable; default: the folders "
-                             "chosen in the folder browser, which opens the first time)")
-    parser.add_argument("--pick-folders", action="store_true",
-                        help="open the folder browser on start to choose the test roots")
-    parser.add_argument("-p", "--platform", action="append", default=[],
-                        help="twister platform (repeatable; default: twister's defaults)")
-    parser.add_argument("--no-integration", action="store_true", default=None,
-                        help="don't pass -G (integration mode) to twister")
-    parser.add_argument("-q", "--quiet", action="store_true", default=None,
-                        help="don't pass -v to twister (disables live per-scenario status)")
-    parser.add_argument("-j", "--jobs", type=int, default=None,
-                        help="twister -j (default: twister's own default)")
-    parser.add_argument("--device-serial", default=None, metavar="PORT",
-                        help="run on the -p platform's board: its console UART "
-                             "(twister --device-testing --device-serial)")
-    parser.add_argument("--west-runner", default=None, metavar="RUNNER",
-                        help="flash runner for the -p platform's board (default: the board's)")
-    parser.add_argument("-X", "--fixture", action="append", default=[],
-                        help="twister fixture the -p platform's board has (repeatable)")
-    parser.add_argument("--case-results", action="store_true", default=None,
-                        help="print every case's result in Output when a job ends")
-    parser.add_argument("-w", "--watch", action="append", type=Path, default=[],
-                        help="extra path to watch for changes (repeatable), e.g. lib/")
-    parser.add_argument("--auto-run", action="store_true", default=None,
-                        help="start with auto-run on file change enabled")
-    parser.add_argument("--twister", default=None,
-                        help="twister command (default: 'west twister')")
-    parser.add_argument("--state-dir", type=Path, default=None,
-                        help="where results and twister output go "
-                             "(default: ~/.cache/lazyzephyr/<workspace>)")
-    parser.add_argument("--cache-info", action="store_true",
-                        help="show how much disk space lazyzephyr's cache uses, then exit")
-    parser.add_argument("--clear-cache", nargs="?", const="build", choices=["build", "all"],
-                        help="delete twister build output for this workspace (keeps results), "
-                             "or with 'all' everything lazyzephyr stored for every "
-                             "workspace; then exit")
+    parser.add_argument(
+        "-T",
+        "--testsuite-root",
+        action="append",
+        type=Path,
+        default=[],
+        help="test root to discover/run (repeatable; default: the folders "
+        "chosen in the folder browser, which opens the first time)",
+    )
+    parser.add_argument(
+        "--pick-folders",
+        action="store_true",
+        help="open the folder browser on start to choose the test roots",
+    )
+    parser.add_argument(
+        "-p",
+        "--platform",
+        action="append",
+        default=[],
+        help="twister platform (repeatable; default: twister's defaults)",
+    )
+    parser.add_argument(
+        "--no-integration",
+        action="store_true",
+        default=None,
+        help="don't pass -G (integration mode) to twister",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=None,
+        help="don't pass -v to twister (disables live per-scenario status)",
+    )
+    parser.add_argument(
+        "-j", "--jobs", type=int, default=None, help="twister -j (default: twister's own default)"
+    )
+    parser.add_argument(
+        "--device-serial",
+        default=None,
+        metavar="PORT",
+        help="run on the -p platform's board: its console UART "
+        "(twister --device-testing --device-serial)",
+    )
+    parser.add_argument(
+        "--west-runner",
+        default=None,
+        metavar="RUNNER",
+        help="flash runner for the -p platform's board (default: the board's)",
+    )
+    parser.add_argument(
+        "-X",
+        "--fixture",
+        action="append",
+        default=[],
+        help="twister fixture the -p platform's board has (repeatable)",
+    )
+    parser.add_argument(
+        "--case-results",
+        action="store_true",
+        default=None,
+        help="print every case's result in Output when a job ends",
+    )
+    parser.add_argument(
+        "-w",
+        "--watch",
+        action="append",
+        type=Path,
+        default=[],
+        help="extra path to watch for changes (repeatable), e.g. lib/",
+    )
+    parser.add_argument(
+        "--auto-run",
+        action="store_true",
+        default=None,
+        help="start with auto-run on file change enabled",
+    )
+    parser.add_argument("--twister", default=None, help="twister command (default: 'west twister')")
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        default=None,
+        help="where results and twister output go (default: ~/.cache/lazyzephyr/<workspace>)",
+    )
+    parser.add_argument(
+        "--cache-info",
+        action="store_true",
+        help="show how much disk space lazyzephyr's cache uses, then exit",
+    )
+    parser.add_argument(
+        "--clear-cache",
+        nargs="?",
+        const="build",
+        choices=["build", "all"],
+        help="delete twister build output for this workspace (keeps results), "
+        "or with 'all' everything lazyzephyr stored for every "
+        "workspace; then exit",
+    )
     config = parser.add_mutually_exclusive_group()
-    config.add_argument("--config", type=Path, default=None,
-                        help=f"config file to use (default: nearest {CONFIG_NAME})")
-    config.add_argument("--no-config", action="store_true",
-                        help=f"ignore {CONFIG_NAME} files")
+    config.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=f"config file to use (default: nearest {CONFIG_NAME})",
+    )
+    config.add_argument("--no-config", action="store_true", help=f"ignore {CONFIG_NAME} files")
 
 
 def config_from_args(args: argparse.Namespace, extra: list[str]):
@@ -99,8 +163,10 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
                 raise SystemExit(f"lazyzephyr: {exc}") from None
 
     def pick(cli_value, file_value, default):
-        return cli_value if cli_value is not None else (
-            file_value if file_value is not None else default
+        return (
+            cli_value
+            if cli_value is not None
+            else (file_value if file_value is not None else default)
         )
 
     state_dir = (args.state_dir or default_state_dir(workspace.topdir or cwd)).resolve()
@@ -121,19 +187,22 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
     if args.jobs is not None and args.jobs < 1:
         raise SystemExit("lazyzephyr: --jobs must be >= 1")
     twister_str = args.twister or file_config.twister
-    twister = shlex.split(twister_str) if twister_str else default_twister_cmd(
-        workspace.zephyr_base
+    twister = (
+        shlex.split(twister_str) if twister_str else default_twister_cmd(workspace.zephyr_base)
     )
     saved_session = session.load(state_dir)
-    platforms = args.platform or (saved_session.platforms if saved_session.platforms is not None
-                                  else file_config.platforms)
+    platforms = args.platform or (
+        saved_session.platforms if saved_session.platforms is not None else file_config.platforms
+    )
     # Board setups: saved in the app, then the config file, then the flags.
     board_setups = {**boards.load_saved(state_dir), **file_config.boards}
     fixed_boards = set(file_config.boards)
     if args.device_serial or args.west_runner or args.fixture:
         if len(platforms) != 1:
-            raise SystemExit("lazyzephyr: --device-serial, --west-runner and -X need exactly "
-                             "one platform (-p) to set up the board for")
+            raise SystemExit(
+                "lazyzephyr: --device-serial, --west-runner and -X need exactly "
+                "one platform (-p) to set up the board for"
+            )
         hardware = board_setups.get(platforms[0], Hardware()).copy()
         if args.device_serial:
             hardware.enabled, hardware.serial = True, args.device_serial
@@ -150,20 +219,25 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
         state_dir=state_dir,
         options=RunOptions(
             platforms=platforms,
-            integration=pick(None if args.no_integration is None else False,
-                             pick(saved_session.integration, file_config.integration, None),
-                             True),
+            integration=pick(
+                None if args.no_integration is None else False,
+                pick(saved_session.integration, file_config.integration, None),
+                True,
+            ),
             verbose=pick(None if args.quiet is None else False, file_config.verbose, True),
             extra_args=[*file_config.extra_args, *extra],
             jobs=pick(args.jobs, file_config.jobs, None),
             boards=board_setups,
-            case_results=pick(args.case_results,
-                              pick(saved_session.case_results, file_config.case_results, None),
-                              False),
+            case_results=pick(
+                args.case_results,
+                pick(saved_session.case_results, file_config.case_results, None),
+                False,
+            ),
         ),
         watch_paths=[w.resolve() for w in args.watch] or file_config.watch,
-        auto_run=pick(args.auto_run, pick(saved_session.auto_run, file_config.auto_run, None),
-                      False),
+        auto_run=pick(
+            args.auto_run, pick(saved_session.auto_run, file_config.auto_run, None), False
+        ),
         platform_only=bool(saved_session.platform_only) and bool(platforms),
         board_choice=saved_session.board_choice,
         config_file=file_config.path,
@@ -176,7 +250,7 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
 def split_extra(argv: list[str]) -> tuple[list[str], list[str]]:
     if "--" in argv:
         index = argv.index("--")
-        return argv[:index], argv[index + 1:]
+        return argv[:index], argv[index + 1 :]
     return argv, []
 
 
@@ -194,8 +268,10 @@ def cache_command(args: argparse.Namespace) -> None:
         total = 0
         for path, builds, results in rows:
             marker = "*" if path == state_dir else " "
-            print(f"{marker} {cache.human(builds):>9} build output  "
-                  f"{cache.human(results):>9} results   {path}")
+            print(
+                f"{marker} {cache.human(builds):>9} build output  "
+                f"{cache.human(results):>9} results   {path}"
+            )
             total += builds + results
         print(f"  {cache.human(total):>9} total   (* = this workspace)")
         return
@@ -205,8 +281,7 @@ def cache_command(args: argparse.Namespace) -> None:
     else:
         dirs = {path for path, _, _ in cache.workspaces()} | {state_dir}
         freed = sum(cache.clear(path, include_results=True) for path in sorted(dirs))
-        print(f"freed {cache.human(freed)}: build output and results for "
-              f"{len(dirs)} workspace(s)")
+        print(f"freed {cache.human(freed)}: build output and results for {len(dirs)} workspace(s)")
 
 
 def run(args: argparse.Namespace, extra: list[str]) -> None:

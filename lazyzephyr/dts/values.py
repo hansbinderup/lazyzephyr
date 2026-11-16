@@ -15,8 +15,19 @@ _STRINGS = re.compile(rf"^{_STRING}(\s*,\s*{_STRING})*$")
 _HEX_BYTE = re.compile(r"^[0-9a-fA-F]{2}$")
 
 # Types the editor can write. "compound" is accepted as raw text.
-EDITABLE = {"boolean", "int", "array", "uint8-array", "string", "string-array", "phandle",
-            "phandles", "phandle-array", "path", "compound"}
+EDITABLE = {
+    "boolean",
+    "int",
+    "array",
+    "uint8-array",
+    "string",
+    "string-array",
+    "phandle",
+    "phandles",
+    "phandle-array",
+    "path",
+    "compound",
+}
 
 
 def _cells(text: str) -> list[str]:
@@ -69,8 +80,9 @@ def _quote(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def format_value(type_: str, text: str, enum: list | None = None,
-                 labels: set[str] | None = None) -> str:
+def format_value(
+    type_: str, text: str, enum: list | None = None, labels: set[str] | None = None
+) -> str:
     """DTS right-hand side for `text` of binding type `type_`. Raises ValueError."""
     text = text.strip()
     if type_ == "int":
@@ -121,8 +133,11 @@ def format_value(type_: str, text: str, enum: list | None = None,
         inner = _strip(text, "<", ">")
         refs = [r.lstrip("&") for r in (inner if inner is not None else text).split()]
         if not refs or (type_ == "phandle" and len(refs) != 1):
-            raise ValueError("expected a node label, e.g. &gpio0" if type_ == "phandle"
-                             else "expected node labels, e.g. &dma0 &dma1")
+            raise ValueError(
+                "expected a node label, e.g. &gpio0"
+                if type_ == "phandle"
+                else "expected node labels, e.g. &dma0 &dma1"
+            )
         _check_labels(refs, labels)
         return "<" + " ".join(f"&{r}" for r in refs) + ">"
     if type_ == "phandle-array":
@@ -197,8 +212,11 @@ def show(val) -> str:
     if isinstance(val, bytes):
         return "[" + " ".join(f"{b:02x}" for b in val) + "]"
     if isinstance(val, list):
-        return "<" + " ".join(show(v) for v in val) + ">" if val and isinstance(val[0], int) \
+        return (
+            "<" + " ".join(show(v) for v in val) + ">"
+            if val and isinstance(val[0], int)
             else ", ".join(show(v) for v in val)
+        )
     path = getattr(val, "path", None)  # edtlib Node
     if path:
         labels = getattr(val, "labels", None)

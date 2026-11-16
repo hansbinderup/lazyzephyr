@@ -69,8 +69,9 @@ def set_in_text(text: str, name: str, line: str | None) -> str:
     """`text` with CONFIG_name set by `line` (replacing an existing assignment),
     or with every assignment of it removed when `line` is None."""
     lines = text.splitlines()
-    hits = [i for i, t in enumerate(lines)
-            if (m := _LINE.match(t)) and name in (m.group(1), m.group(3))]
+    hits = [
+        i for i, t in enumerate(lines) if (m := _LINE.match(t)) and name in (m.group(1), m.group(3))
+    ]
     if line is None:
         for i in reversed(hits):
             del lines[i]
@@ -170,8 +171,9 @@ class Session:
                 return Result(False, f"CONFIG_{name} doesn't exist in this build")
             target = file or self.write_file(name)
             if target is None:
-                return Result(False, "this build has no conf file of the application's "
-                                     "to write to (prj.conf)")
+                return Result(
+                    False, "this build has no conf file of the application's to write to (prj.conf)"
+                )
             text = changes.get(target)
             if text is None:
                 text = target.read_text() if target.exists() else ""
@@ -193,8 +195,11 @@ class Session:
 
     def remove(self, name: str, file: Path | None = None) -> Result:
         """Remove the option's lines from the user conf files (or `file`)."""
-        files = [file] if file else [a.file for a in self.assigned(name)
-                                     if a.file in self.build.user_files]
+        files = (
+            [file]
+            if file
+            else [a.file for a in self.assigned(name) if a.file in self.build.user_files]
+        )
         files = list(dict.fromkeys(files))
         if not files:
             return Result(False, f"CONFIG_{name} isn't set in your conf files")
@@ -204,8 +209,11 @@ class Session:
         self.undo_stack.append(old)
         sym = self.symbol(name)
         now = sym.str_value if sym is not None else "?"
-        return Result(True, f"removed CONFIG_{name} from "
-                            f"{', '.join(f.name for f in files)}; it is now {now or '(empty)'}")
+        return Result(
+            True,
+            f"removed CONFIG_{name} from "
+            f"{', '.join(f.name for f in files)}; it is now {now or '(empty)'}",
+        )
 
     def undo(self) -> Result:
         if not self.undo_stack:
@@ -227,13 +235,18 @@ class Session:
                 return Result(False, f"CONFIG_{name} depends on {', '.join(blockers)}")
             return Result(False, f"CONFIG_{name} needs {', '.join(needs)}", needs)
         if value == "n" and sym.rev_dep is not None and lib.expr_value(sym.rev_dep):
-            return Result(False, f"CONFIG_{name} stays on: it is selected by "
-                                 f"{', '.join(selected_by(self, sym, active=True))}")
+            return Result(
+                False,
+                f"CONFIG_{name} stays on: it is selected by "
+                f"{', '.join(selected_by(self, sym, active=True))}",
+            )
         if sym.type in (lib.INT, lib.HEX) and sym.ranges:
-            return Result(False, f"{value} is out of range for CONFIG_{name}"
-                                 f"{range_text(self, sym)}")
-        return Result(False, f"CONFIG_{name} didn't become {value} (it is "
-                             f"{sym.str_value or 'empty'})")
+            return Result(
+                False, f"{value} is out of range for CONFIG_{name}{range_text(self, sym)}"
+            )
+        return Result(
+            False, f"CONFIG_{name} didn't become {value} (it is {sym.str_value or 'empty'})"
+        )
 
     # -- problems ----------------------------------------------------------
 
@@ -248,22 +261,43 @@ class Session:
             a = mine[-1]
             sym = self.symbol(name)
             if sym is None or not sym.nodes:
-                out.append(Problem("error", f"{a.file.name}:{a.line}: CONFIG_{name} doesn't "
-                                            "exist (misspelled, or its module isn't in this "
-                                            "build)", None, a.file, a.line))
+                out.append(
+                    Problem(
+                        "error",
+                        f"{a.file.name}:{a.line}: CONFIG_{name} doesn't "
+                        "exist (misspelled, or its module isn't in this "
+                        "build)",
+                        None,
+                        a.file,
+                        a.line,
+                    )
+                )
                 continue
             later = [b for b in lst if lst.index(b) > lst.index(a)]
             if later:
                 b = later[-1]
-                out.append(Problem("warning", f"{a.file.name}:{a.line}: CONFIG_{name} is set "
-                                              f"again in {b.file.name}:{b.line}", name,
-                                   a.file, a.line))
+                out.append(
+                    Problem(
+                        "warning",
+                        f"{a.file.name}:{a.line}: CONFIG_{name} is set "
+                        f"again in {b.file.name}:{b.line}",
+                        name,
+                        a.file,
+                        a.line,
+                    )
+                )
                 continue
             if not _same(sym, a.value):
                 why = self._why_not(sym, a.value).message
-                out.append(Problem("warning", f"{a.file.name}:{a.line}: CONFIG_{name}="
-                                              f"{a.value} has no effect: {why}",
-                                   name, a.file, a.line))
+                out.append(
+                    Problem(
+                        "warning",
+                        f"{a.file.name}:{a.line}: CONFIG_{name}={a.value} has no effect: {why}",
+                        name,
+                        a.file,
+                        a.line,
+                    )
+                )
         out.sort(key=lambda p: p.severity != "error")
         return out
 
@@ -291,8 +325,12 @@ def missing_deps(session: Session, sym, seen=None) -> tuple[list[str], list[str]
     for term in lib.split_expr(sym.direct_dep, lib.AND):
         if lib.expr_value(term):
             continue
-        if isinstance(term, lib.Symbol) and term.type in (lib.BOOL, lib.TRISTATE) \
-                and term.name not in seen and any(n.prompt for n in term.nodes):
+        if (
+            isinstance(term, lib.Symbol)
+            and term.type in (lib.BOOL, lib.TRISTATE)
+            and term.name not in seen
+            and any(n.prompt for n in term.nodes)
+        ):
             seen.add(term.name)
             more, stuck = missing_deps(session, term, seen)
             needs += [n for n in more if n not in needs]

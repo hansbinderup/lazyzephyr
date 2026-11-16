@@ -28,10 +28,10 @@ def west_command() -> list[str] | None:
 @dataclass
 class Job:
     title: str
-    config: str                    # config name
-    action: str                    # build, pristine, flash, ...
-    steps: list[list[str]]         # west arguments per step
-    status: str = "queued"         # queued, running, passed, failed, cancelled, error
+    config: str  # config name
+    action: str  # build, pristine, flash, ...
+    steps: list[list[str]]  # west arguments per step
+    status: str = "queued"  # queued, running, passed, failed, cancelled, error
     returncode: int | None = None
     started: float | None = None
     finished: float | None = None
@@ -48,8 +48,13 @@ class Job:
 class Runner:
     """Runs one Job at a time; each step must succeed before the next starts."""
 
-    def __init__(self, cwd: Path, on_line: Callable[[Job, str], None],
-                 on_change: Callable[[Job], None], west: list[str] | None = None):
+    def __init__(
+        self,
+        cwd: Path,
+        on_line: Callable[[Job, str], None],
+        on_change: Callable[[Job], None],
+        west: list[str] | None = None,
+    ):
         self.cwd = cwd
         self.on_line = on_line
         self.on_change = on_change
@@ -79,9 +84,15 @@ class Runner:
                 self.on_line(job, "$ west " + " ".join(args))
                 try:
                     self._proc = await asyncio.create_subprocess_exec(
-                        *west, *args, cwd=self.cwd, env=env, stdin=asyncio.subprocess.DEVNULL,
-                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-                        start_new_session=True)
+                        *west,
+                        *args,
+                        cwd=self.cwd,
+                        env=env,
+                        stdin=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        start_new_session=True,
+                    )
                 except OSError as exc:
                     job.status = "error"
                     self.on_line(job, f"could not start west: {exc}")

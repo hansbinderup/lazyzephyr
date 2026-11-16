@@ -18,8 +18,9 @@ import yaml
 _Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 # Directories never descended into while scanning.
-SKIP_DIRS = frozenset({".git", ".west", ".venv", "venv", "__pycache__", "node_modules", "build",
-                       "twister-out"})
+SKIP_DIRS = frozenset(
+    {".git", ".west", ".venv", "venv", "__pycache__", "node_modules", "build", "twister-out"}
+)
 SKIP_PREFIXES = ("build-", "build_", "twister-out", ".")
 
 
@@ -67,8 +68,11 @@ class Workspace:
         path = Path(path).resolve()
         if path.is_relative_to(self.zephyr_base):
             return True
-        return "modules" in path.relative_to(self.topdir).parts[:-1] \
-            if path.is_relative_to(self.topdir) else True
+        return (
+            "modules" in path.relative_to(self.topdir).parts[:-1]
+            if path.is_relative_to(self.topdir)
+            else True
+        )
 
 
 def find_topdir(start: Path) -> Path | None:
@@ -226,8 +230,16 @@ def _boards_from_yml(board_yml: Path, clusters: dict[str, list[str]]) -> list[Bo
             for cluster in clusters.get(soc["name"]) or [None]:
                 base = (soc["name"], cluster) if cluster else (soc["name"],)
                 for quals in [base, *_variants(soc.get("variants"), cluster, base)]:
-                    boards.append(Board(entry["name"], quals, board_yml.parent, len(socs) == 1,
-                                        entry.get("vendor"), entry.get("full_name")))
+                    boards.append(
+                        Board(
+                            entry["name"],
+                            quals,
+                            board_yml.parent,
+                            len(socs) == 1,
+                            entry.get("vendor"),
+                            entry.get("full_name"),
+                        )
+                    )
     return boards
 
 
@@ -249,13 +261,13 @@ def find_board(ws: Workspace, target: str) -> Board:
         plain = [b for b in candidates if len(b.quals) == 1]
         if len(plain) == 1:
             return plain[0]
-        raise LookupError(f"board {name} has several SoCs; use one of: "
-                          + ", ".join(b.target for b in plain))
+        raise LookupError(
+            f"board {name} has several SoCs; use one of: " + ", ".join(b.target for b in plain)
+        )
     for board in candidates:
         if board.qualifiers == rest:
             return board
-    raise LookupError(f"unknown target {target}; known: "
-                      + ", ".join(b.target for b in candidates))
+    raise LookupError(f"unknown target {target}; known: " + ", ".join(b.target for b in candidates))
 
 
 def find_shield(ws: Workspace, name: str) -> Path:
@@ -293,15 +305,22 @@ def _arch_dirs(root: Path) -> list[str]:
     if not dts.is_dir():
         return []
     skip = {"common", "vendor", "bindings"}
-    return sorted((p.name for p in dts.iterdir() if p.is_dir() and p.name not in skip),
-                  reverse=True)
+    return sorted(
+        (p.name for p in dts.iterdir() if p.is_dir() and p.name not in skip), reverse=True
+    )
 
 
 def _include_dirs(roots: list[Path]) -> list[Path]:
     dirs: list[Path] = []
     for root in roots:
-        for rel in ("include", "include/zephyr", "dts/common", "dts/vendor",
-                    *(f"dts/{a}" for a in _arch_dirs(root)), "dts"):
+        for rel in (
+            "include",
+            "include/zephyr",
+            "dts/common",
+            "dts/vendor",
+            *(f"dts/{a}" for a in _arch_dirs(root)),
+            "dts",
+        ):
             path = (root / rel).resolve()
             if path.is_dir() and path not in dirs:
                 dirs.append(path)
@@ -332,18 +351,23 @@ def app_overlays(app: Path, board: Board) -> list[Path]:
     names = [board.short_build_string, board.build_string, board.name]
     found = []
     for directory in (app / "boards", app):
-        found = [directory / f"{n}.overlay" for n in dict.fromkeys(names)
-                 if (directory / f"{n}.overlay").is_file()]
+        found = [
+            directory / f"{n}.overlay"
+            for n in dict.fromkeys(names)
+            if (directory / f"{n}.overlay").is_file()
+        ]
         if found:
             return found
     return [app / "app.overlay"] if (app / "app.overlay").is_file() else []
 
 
-def inputs_for_board(ws: Workspace, board: Board, app: Path | None = None,
-                     shields: list[str] = ()) -> DtInputs:
+def inputs_for_board(
+    ws: Workspace, board: Board, app: Path | None = None, shields: list[str] = ()
+) -> DtInputs:
     shield_dirs = [find_shield(ws, s) for s in shields]
-    roots = _dedup([*ws.dts_roots, *([app] if app else []), board.directory, *shield_dirs,
-                    ws.zephyr_base])
+    roots = _dedup(
+        [*ws.dts_roots, *([app] if app else []), board.directory, *shield_dirs, ws.zephyr_base]
+    )
     files = [board_dts(board)]
     for name, directory in zip(shields, shield_dirs):
         files.append(directory / f"{name}.overlay")
@@ -356,8 +380,7 @@ def inputs_for_board(ws: Workspace, board: Board, app: Path | None = None,
     desc = board.target + (f" + {', '.join(shields)}" if shields else "")
     if app:
         desc += f"  ({_rel(app, ws.topdir)})"
-    return DtInputs(desc, files, _include_dirs(roots), _bindings_dirs(roots), user,
-                    workdir=app)
+    return DtInputs(desc, files, _include_dirs(roots), _bindings_dirs(roots), user, workdir=app)
 
 
 def inputs_from_build(build_dir: Path) -> DtInputs:
@@ -383,8 +406,10 @@ def inputs_from_build(build_dir: Path) -> DtInputs:
         [Path(f).resolve() for f in dt.get("files", [])],
         [Path(d) for d in dt.get("include-dirs", [])],
         [Path(d) for d in dt.get("bindings-dirs", [])],
-        [Path(f).resolve() for f in (dt.get("user-files") or []) + (dt.get("extra-user-files")
-                                                                    or [])],
+        [
+            Path(f).resolve()
+            for f in (dt.get("user-files") or []) + (dt.get("extra-user-files") or [])
+        ],
         compiler=compiler,
         workdir=Path(app) if app else None,
         build_dir=build_dir,
@@ -401,9 +426,12 @@ def find_build_dirs(ws: Workspace, start: Path, max_depth: int = 3) -> list[Path
             if "build_info.yml" in filenames and (here / "zephyr").is_dir():
                 if here not in found:
                     found.append(here)
-            dirnames[:] = [d for d in dirnames
-                           if depth < max_depth and d not in {".git", ".west", "zephyr",
-                                                              "modules", "__pycache__", ".venv"}]
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if depth < max_depth
+                and d not in {".git", ".west", "zephyr", "modules", "__pycache__", ".venv"}
+            ]
     return found
 
 

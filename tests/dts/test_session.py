@@ -71,10 +71,15 @@ def test_chosen_names():
     from pathlib import Path
     import tempfile
     from lazyzephyr.dts import catalog
+
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / "drv.c").write_text("#if DT_HAS_CHOSEN(zephyr_shell_uart)\n"
-                                    "DEVICE_DT_GET(DT_CHOSEN(nordic_pm_ext_flash))\n")
+        (root / "drv.c").write_text(
+            "#if DT_HAS_CHOSEN(zephyr_shell_uart)\nDEVICE_DT_GET(DT_CHOSEN(nordic_pm_ext_flash))\n"
+        )
         (root / "Kconfig").write_text("DT_CHOSEN_Z_RAM_CONSOLE := zephyr,ram-console\n")
-        assert catalog.chosen_names([root]) == {"zephyr,shell-uart", "nordic,pm-ext-flash",
-                                                "zephyr,ram-console"}
+        assert catalog.chosen_names([root]) == {
+            "zephyr,shell-uart",
+            "nordic,pm-ext-flash",
+            "zephyr,ram-console",
+        }

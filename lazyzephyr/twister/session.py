@@ -48,8 +48,11 @@ def load(state_dir: Path) -> Session:
 
 
 def save(state_dir: Path, session: Session) -> None:
-    data = {f.name: getattr(session, f.name) for f in fields(session)
-            if getattr(session, f.name) is not None}
+    data = {
+        f.name: getattr(session, f.name)
+        for f in fields(session)
+        if getattr(session, f.name) is not None
+    }
     state_dir.mkdir(parents=True, exist_ok=True)
     tmp = (state_dir / SAVED_NAME).with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2) + "\n")

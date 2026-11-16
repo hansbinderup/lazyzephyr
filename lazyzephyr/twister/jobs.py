@@ -113,8 +113,9 @@ class RunOptions:
         return [p for p in chosen if self.boards.get(p, Hardware()).enabled]
 
 
-def plan_runs(options: RunOptions, platforms: list[str],
-              board: str | None = None) -> list[list[str]] | None:
+def plan_runs(
+    options: RunOptions, platforms: list[str], board: str | None = None
+) -> list[list[str]] | None:
     """Split `platforms` into the twister runs to queue, one platform list each.
 
     Twister runs on one board at a time, so a board platform runs alone, and the
@@ -231,9 +232,7 @@ def make_target(refs: list[NodeRef], discovery: Discovery) -> RunTarget:
         only = case_ids if all(r.kind == "case" for r in refs) else None
         filters = list(dict.fromkeys(filters))
 
-    roots = list(
-        dict.fromkeys(by_name[n].directory for n in scenario_names if n in by_name)
-    )
+    roots = list(dict.fromkeys(by_name[n].directory for n in scenario_names if n in by_name))
     return RunTarget(title, roots, scenario_names, filters, set(scenario_names), only)
 
 
@@ -344,8 +343,10 @@ class JobManager:
     def submit(self, target: RunTarget, options: RunOptions) -> Job | None:
         """Append a run to the queue. Returns None if an identical run is already queued."""
         signature = (target.signature(), tuple(options.platforms))
-        if any((job.target.signature(), tuple(job.options.platforms)) == signature
-               for job in self.queue):
+        if any(
+            (job.target.signature(), tuple(job.options.platforms)) == signature
+            for job in self.queue
+        ):
             return None
         job = Job(self._next_id, target, options)
         self._next_id += 1

@@ -76,7 +76,8 @@ def _read_all(state_dir: Path) -> dict[str, list[str]]:
     if not isinstance(data, dict):
         return {}
     return {
-        k: v for k, v in data.items()
+        k: v
+        for k, v in data.items()
         if isinstance(k, str) and isinstance(v, list) and all(isinstance(i, str) for i in v)
     }
 

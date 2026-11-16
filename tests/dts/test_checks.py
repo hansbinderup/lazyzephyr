@@ -74,8 +74,11 @@ def test_problems(workspace, tmp_path):
     i2c = s.model.label_path("i2c0")
 
     [pin] = by_kind["pin"]
-    assert pin.severity == "warning" and "&led0 (gpios)" in pin.message \
+    assert (
+        pin.severity == "warning"
+        and "&led0 (gpios)" in pin.message
         and "&led1 (gpios)" in pin.message
+    )
 
     [address] = by_kind["address"]
     assert address.severity == "error"
@@ -89,23 +92,27 @@ def test_problems(workspace, tmp_path):
     assert "chosen zephyr,test-uart is &uart1, which is disabled" in disabled
     assert "&input_sdl_touch display needs &sdl_dc, which is disabled" in disabled
     # Errors come first.
-    assert [p.severity for p in s.model.problems] == \
-        sorted((p.severity for p in s.model.problems), key=lambda x: x != "error")
+    assert [p.severity for p in s.model.problems] == sorted(
+        (p.severity for p in s.model.problems), key=lambda x: x != "error"
+    )
 
 
 def test_pin_decoders():
     from pathlib import Path
     from lazyzephyr.dts.macros import Macro
+
     h = Path("x.h")
-    nrf, = checks.pin_decoders([Macro("NRF_PIN_MSK", "0x1FFU", h)])
+    (nrf,) = checks.pin_decoders([Macro("NRF_PIN_MSK", "0x1FFU", h)])
     assert nrf.prop == "psels"
     assert nrf.decode((2 << 24) | (1 * 32 + 3)) == "P1.03"
     assert nrf.decode(0x1FF) is None  # disconnected
-    stm, = checks.pin_decoders([Macro("STM32_PORT_SHIFT", "9U", h),
-                                Macro("STM32_LINE_SHIFT", "5U", h)])
+    (stm,) = checks.pin_decoders(
+        [Macro("STM32_PORT_SHIFT", "9U", h), Macro("STM32_LINE_SHIFT", "5U", h)]
+    )
     assert stm.decode((0 << 9) | (9 << 5) | 7) == "PA9"
-    amb, = checks.pin_decoders([Macro("APOLLO4_PIN_NUM_POS", "4", h),
-                                Macro("APOLLO4_PIN_NUM_MASK", "0x7f", h)])
+    (amb,) = checks.pin_decoders(
+        [Macro("APOLLO4_PIN_NUM_POS", "4", h), Macro("APOLLO4_PIN_NUM_MASK", "0x7f", h)]
+    )
     assert amb.decode((30 << 4) | 4) == "P30"
 
 
@@ -121,10 +128,14 @@ async def test_problems_screen(workspace, tmp_path, monkeypatch):
     broken(workspace)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     ws = find_workspace(workspace)
-    app = LazyDtsApp(AppConfig(cwd=workspace / "app", workspace=ws,
-                               choice=TargetChoice(board="native_sim/native",
-                                                   app=str(workspace / "app")),
-                               work_dir=tmp_path / "work"))
+    app = LazyDtsApp(
+        AppConfig(
+            cwd=workspace / "app",
+            workspace=ws,
+            choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
+            work_dir=tmp_path / "work",
+        )
+    )
     async with app.run_test(size=(180, 50)) as pilot:
         await wait_for(lambda: "/leds/led_1" in app.node_index)
         assert "problems, p: list" in str(app.query_one("#statusbar").render())
@@ -134,8 +145,9 @@ async def test_problems_screen(workspace, tmp_path, monkeypatch):
         screen = app.screen
         assert isinstance(screen, ProblemsScreen)
         lst = screen.query_one("#problems-list")
-        target = next(i for i, p in enumerate(screen.problems) if p.kind == "disabled"
-                      and p.prop == "display")
+        target = next(
+            i for i, p in enumerate(screen.problems) if p.kind == "disabled" and p.prop == "display"
+        )
         lst.focus()
         lst.highlighted = target
         await pilot.press("enter")

@@ -13,8 +13,10 @@ from .session import READ_ONLY, REF_NODES
 
 # Set by the SoC, or only there to describe other properties: under "more"
 # even when set.
-_ADVANCED = re.compile(r"^#|^interrupts?(-extended)?$|^interrupt-(parent|names)$|^reg$|"
-                       r"-names$|^pinctrl-[2-9]$")
+_ADVANCED = re.compile(
+    r"^#|^interrupts?(-extended)?$|^interrupt-(parent|names)$|^reg$|"
+    r"-names$|^pinctrl-[2-9]$"
+)
 
 _NAMES = {
     "pinctrl-0": "Pins",
@@ -82,8 +84,13 @@ def show_value(session, node, name: str, spec) -> Text:
     raw = source_text(session, node.path, name)
     prop = node.props.get(name)
     shown = values.to_input(type_, raw) if raw is not None and type_ else raw
-    if shown is not None and type_ == "phandle-array" and shown.count("<") == 1 and \
-            shown.startswith("<") and shown.endswith(">"):
+    if (
+        shown is not None
+        and type_ == "phandle-array"
+        and shown.count("<") == 1
+        and shown.startswith("<")
+        and shown.endswith(">")
+    ):
         shown = shown[1:-1].strip()  # one entry: no need for the brackets
     val = prop.val if prop is not None else None
     if isinstance(val, int) and not isinstance(val, bool) and _is_hz(name):
@@ -145,15 +152,25 @@ def rows(session, node, show_more: bool, base_name=lambda p: p.name) -> list[Row
     if "status" in editable:
         on = node.status == "okay"
         v = Text("● yes" if on else "○ no", style="green" if on else "bright_black")
-        out.append(Row("status", "status", line("Enabled", v),
-                       "Whether Zephyr uses this node (status = \"okay\")  ·  status"))
+        out.append(
+            Row(
+                "status",
+                "status",
+                line("Enabled", v),
+                'Whether Zephyr uses this node (status = "okay")  ·  status',
+            )
+        )
     for name in editable:
         if name == "status":
             continue
         spec = session.spec(node, name)
         is_set = name in node._node.props
-        row = Row(name, "prop", line(friendly(name), show_value(session, node, name, spec)),
-                  _help(spec, name, where(name)))
+        row = Row(
+            name,
+            "prop",
+            line(friendly(name), show_value(session, node, name, spec)),
+            _help(spec, name, where(name)),
+        )
         eff = session.effective(node.path, name)
         own = name not in generic and not _ADVANCED.search(name) and spec.const is None
         if own or (spec.required and not is_set) or (eff and eff[0] in mine):
@@ -165,15 +182,27 @@ def rows(session, node, show_more: bool, base_name=lambda p: p.name) -> list[Row
             continue
         edt_prop = node.props.get(name)
         v = Text(values.show(edt_prop.val) if edt_prop else _raw(prop), style="bright_black")
-        more.append((False, name, Row(f"ro:{name}", "readonly",
-                                      line(friendly(name), v, "read-only", "bright_black"),
-                                      f"Not in the binding; press o to edit the source  ·  "
-                                      f"{name}  ·  {where(name)}")))
+        more.append(
+            (
+                False,
+                name,
+                Row(
+                    f"ro:{name}",
+                    "readonly",
+                    line(friendly(name), v, "read-only", "bright_black"),
+                    f"Not in the binding; press o to edit the source  ·  {name}  ·  {where(name)}",
+                ),
+            )
+        )
     out += [m[2] for m in sorted(main, key=lambda m: m[:2])]
     if not binding and node.compats:
-        out.append(Row("head:nobinding", "head",
-                       Text("No binding for this compatible: settings are read-only.",
-                            style="red")))
+        out.append(
+            Row(
+                "head:nobinding",
+                "head",
+                Text("No binding for this compatible: settings are read-only.", style="red"),
+            )
+        )
 
     kids = list(node.children.values())
     if kids or node.buses or binding:
@@ -190,15 +219,26 @@ def rows(session, node, show_more: bool, base_name=lambda p: p.name) -> list[Row
                 t.append(f"  {child.compats[0]}", style="cyan")
             out.append(Row(f"node:{child.path}", "child", t, "enter: go to this node"))
         what = "device" if node.buses else "node"
-        out.append(Row("add:", "add", Text(f"  + add {what}…", style="green"),
-                       f"Add a {what} under {node.name}"))
+        out.append(
+            Row(
+                "add:",
+                "add",
+                Text(f"  + add {what}…", style="green"),
+                f"Add a {what} under {node.name}",
+            )
+        )
 
     if more:
         more.sort(key=lambda m: (m[0], m[1]))
         arrow = "▾" if show_more else "▸"
-        out.append(Row("more:", "more",
-                       Text(f"\n{arrow} {len(more)} more settings", style="bright_black"),
-                       "enter: show or hide the optional and advanced settings"))
+        out.append(
+            Row(
+                "more:",
+                "more",
+                Text(f"\n{arrow} {len(more)} more settings", style="bright_black"),
+                "enter: show or hide the optional and advanced settings",
+            )
+        )
         if show_more:
             out += [m[2] for m in more]
     return out
@@ -223,14 +263,29 @@ def _ref_rows(session, node) -> list[Row]:
             t.append(f"&{target.labels[0]}" if target.labels else target.path, style="yellow")
         except Exception:  # DTError: not a reference
             t.append(_raw(prop))
-        macro = (f"DT_CHOSEN({re.sub(r'[^a-z0-9]', '_', name)})" if chosen
-                 else f"DT_ALIAS({re.sub(r'[^a-z0-9]', '_', name)})")
-        out.append(Row(name, "entry", t, f"enter: point it at another node  ·  d: remove  ·  "
-                                         f"code reads it with {macro}"))
+        macro = (
+            f"DT_CHOSEN({re.sub(r'[^a-z0-9]', '_', name)})"
+            if chosen
+            else f"DT_ALIAS({re.sub(r'[^a-z0-9]', '_', name)})"
+        )
+        out.append(
+            Row(
+                name,
+                "entry",
+                t,
+                f"enter: point it at another node  ·  d: remove  ·  code reads it with {macro}",
+            )
+        )
     what = "chosen entry" if chosen else "alias"
-    out.append(Row("new:", "new", Text(f"+ add {what}…", style="green"),
-                   "Point a name at a node" + (": Zephyr reads entries such as "
-                                               "zephyr,console" if chosen else "")))
+    out.append(
+        Row(
+            "new:",
+            "new",
+            Text(f"+ add {what}…", style="green"),
+            "Point a name at a node"
+            + (": Zephyr reads entries such as zephyr,console" if chosen else ""),
+        )
+    )
     return out
 
 
@@ -287,6 +342,7 @@ def example_value(session, node, name: str, spec) -> str | None:
     """A DTS right-hand side to start from: the current value, else something
     the binding allows. None for booleans (`name;`)."""
     from . import specifiers
+
     raw = source_text(session, node.path, name)
     if raw is not None:
         return raw
@@ -310,8 +366,9 @@ def example_value(session, node, name: str, spec) -> str | None:
         ctrls = specifiers.controllers(session.model.edt, specifiers.space(name, spec))
         if ctrls:
             c = ctrls[0]
-            return "<" + " ".join([c.ref, *(cell.upper().replace(" ", "_")
-                                             for cell in c.cells)]) + ">"
+            return (
+                "<" + " ".join([c.ref, *(cell.upper().replace(" ", "_") for cell in c.cells)]) + ">"
+            )
         return "<&controller ...>"
     if type_ == "uint8-array":
         return "[00]"
@@ -321,6 +378,7 @@ def example_value(session, node, name: str, spec) -> str | None:
 def example(session, node, name: str, spec) -> str:
     """An overlay snippet that sets the property on this node."""
     from .dtsedit import node_ref
+
     value = example_value(session, node, name, spec)
     line = f"{name};" if value is None else f"{name} = {value};"
     return f"{node_ref(node.path, list(node.labels))} {{\n\t{line}\n}};"
@@ -329,12 +387,14 @@ def example(session, node, name: str, spec) -> str:
 def prop_info(session, node, name: str, base_name=lambda p: p.name) -> Text:
     """Everything worth knowing about one property, for writing it by hand."""
     from . import macros, specifiers
+
     spec = session.spec(node, name)
     t = Text()
     t.append(name, style="bold")
     if spec is None:
-        t.append("\n\nNot in the node's binding: Zephyr won't check or use it.\n",
-                 style="bright_black")
+        t.append(
+            "\n\nNot in the node's binding: Zephyr won't check or use it.\n", style="bright_black"
+        )
         prop = node._node.props.get(name)
         if prop is not None:
             t.append(f"\nValue: {_raw(prop)}\n")
@@ -357,8 +417,13 @@ def prop_info(session, node, name: str, base_name=lambda p: p.name) -> Text:
         t.append("Set in\n", style="bold")
         for f, stmt in sources:
             mark = "→ " if eff == (f, stmt.line) else "  "
-            what = "/delete-property/" if stmt.kind == "delete-property" else \
-                f"= {stmt.value}" if stmt.value is not None else "(set)"
+            what = (
+                "/delete-property/"
+                if stmt.kind == "delete-property"
+                else f"= {stmt.value}"
+                if stmt.value is not None
+                else "(set)"
+            )
             t.append(f"  {mark}{base_name(f)}:{stmt.line}  ", style="bright_black")
             t.append(what + "\n")
     if spec.enum:
@@ -389,8 +454,7 @@ def prop_info(session, node, name: str, base_name=lambda p: p.name) -> Text:
                 t.append(f"  for {shown}\n", style="bright_black")
             pins = [c for c in ctrls if c.limit]
             if pins:
-                t.append(f"  pins: 0–{pins[0].limit - 1} on {pins[0].ref}\n",
-                         style="bright_black")
+                t.append(f"  pins: 0–{pins[0].limit - 1} on {pins[0].ref}\n", style="bright_black")
         else:
             t.append(f"  no node in this tree has #{space}-cells\n", style="bright_black")
     elif spec.type in ("phandle", "phandles", "path"):
@@ -400,11 +464,13 @@ def prop_info(session, node, name: str, base_name=lambda p: p.name) -> Text:
 
     if spec.type in ("int", "array", "phandle-array"):
         context = macros.context_words(*node.compats[:1])
-        primary = macros.context_words(name, *node.buses, *node.on_buses,
-                                       specifiers.space(name, spec)
-                                       if spec.type == "phandle-array" else None)
-        found = macros.rank(session.model.macros, "", context | primary, limit=16,
-                            primary=primary)
+        primary = macros.context_words(
+            name,
+            *node.buses,
+            *node.on_buses,
+            specifiers.space(name, spec) if spec.type == "phandle-array" else None,
+        )
+        found = macros.rank(session.model.macros, "", context | primary, limit=16, primary=primary)
         if _is_hz(name):
             found = [m for m in found if (macros.value_of(m) or 0) >= 1000]
         if found:
@@ -414,8 +480,7 @@ def prop_info(session, node, name: str, base_name=lambda p: p.name) -> Text:
                 v = macros.value_of(m)
                 shown = hz(v) if v is not None and _is_hz(name) else m.value[:40]
                 t.append(f"  {shown}", style="bright_black")
-                t.append(f"  {m.header.parent.name}/{m.header.name}\n",
-                         style="bright_black italic")
+                t.append(f"  {m.header.parent.name}/{m.header.name}\n", style="bright_black italic")
 
     t.append("\nIn an overlay\n", style="bold")
     for line in example(session, node, name, spec).splitlines():

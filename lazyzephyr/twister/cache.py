@@ -48,7 +48,8 @@ def build_dirs(state_dir: Path) -> list[Path]:
     if not state_dir.is_dir():
         return []
     return sorted(
-        p for p in state_dir.iterdir()
+        p
+        for p in state_dir.iterdir()
         if p.is_dir() and not p.is_symlink() and _BUILD_DIR_RE.match(p.name)
     )
 

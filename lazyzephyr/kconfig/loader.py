@@ -51,9 +51,11 @@ class BuildKconfig:
 
 def _menuconfig_command(build_dir: Path) -> list[str]:
     """The command line of the build's menuconfig target (Ninja or Makefiles)."""
-    candidates = [build_dir / "build.ninja",
-                  build_dir / "zephyr" / "CMakeFiles" / "menuconfig.dir" / "build.make",
-                  build_dir / "CMakeFiles" / "menuconfig.dir" / "build.make"]
+    candidates = [
+        build_dir / "build.ninja",
+        build_dir / "zephyr" / "CMakeFiles" / "menuconfig.dir" / "build.make",
+        build_dir / "CMakeFiles" / "menuconfig.dir" / "build.make",
+    ]
     for path in candidates:
         try:
             text = path.read_text(errors="replace")
@@ -63,8 +65,7 @@ def _menuconfig_command(build_dir: Path) -> list[str]:
             if "menuconfig.py" in line and "-E env" in line:
                 cmd = line.strip()
                 cmd = re.sub(r"^\s*COMMAND\s*=\s*", "", cmd)
-                cmd = cmd.split(" && ", 1)[1] if cmd.startswith("cd ") and " && " in cmd \
-                    else cmd
+                cmd = cmd.split(" && ", 1)[1] if cmd.startswith("cd ") and " && " in cmd else cmd
                 try:
                     return shlex.split(cmd)
                 except ValueError:
@@ -84,7 +85,7 @@ def find(build_dir: Path) -> BuildKconfig:
             key, _, value = tok.partition("=")
             env[key] = value
         elif tok.endswith("menuconfig.py"):
-            rest = tokens[i + 1:]
+            rest = tokens[i + 1 :]
             kconfig_file = Path(rest[0]) if rest else None
             break
     if not env.get("srctree") or kconfig_file is None:
@@ -113,6 +114,7 @@ def import_kconfiglib(zephyr_base: Path):
 @dataclass
 class Trace:
     """Why a symbol got its value in the last build (.config-trace.json)."""
+
     kind: str  # assign, default, select, imply, unset
     where: str = ""  # "file:line" or the select/imply condition
 

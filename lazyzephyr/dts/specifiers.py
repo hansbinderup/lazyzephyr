@@ -61,12 +61,23 @@ def controllers(edt, space_: str) -> list[Controller]:
         if space_ == "gpio" and "ngpios" in n.props:
             limit = n.props["ngpios"].val
         refs = {f"&{label}" for label in n.labels} | {f"&{{{n.path}}}"}
-        out.append(Controller(ref, n.path, names, n.compats[0] if n.compats else "",
-                              n.status == "okay", limit, refs))
+        out.append(
+            Controller(
+                ref,
+                n.path,
+                names,
+                n.compats[0] if n.compats else "",
+                n.status == "okay",
+                limit,
+                refs,
+            )
+        )
+
     # Nexus nodes (e.g. an Arduino header's gpio-map) rarely name their cells:
     # borrow the names from a controller with as many cells.
     def unnamed(c: Controller) -> bool:
         return bool(c.cells) and c.cells[0].startswith("cell ")
+
     named = {len(c.cells): c.cells for c in out if c.cells and not unnamed(c)}
     for c in out:
         if unnamed(c) and len(c.cells) in named:
@@ -93,8 +104,8 @@ def parse(text: str | None, ctrls: list[Controller]) -> list[Entry] | None:
             n = len(ctrl.cells) if ctrl else 0
             if ctrl is None or len(cells) < n + 1:
                 return None
-            out.append((ctrl.ref, cells[1:n + 1]))
-            cells = cells[n + 1:]
+            out.append((ctrl.ref, cells[1 : n + 1]))
+            cells = cells[n + 1 :]
     return out
 
 
@@ -113,8 +124,7 @@ def cell_text(cell: str) -> str:
 
 
 def compose(entries: list[Entry]) -> str:
-    return ", ".join("<" + " ".join([ref, *map(cell_text, cells)]) + ">"
-                     for ref, cells in entries)
+    return ", ".join("<" + " ".join([ref, *map(cell_text, cells)]) + ">" for ref, cells in entries)
 
 
 def check(entries: list[Entry], ctrls: list[Controller]) -> str | None:

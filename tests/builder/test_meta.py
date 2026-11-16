@@ -7,7 +7,8 @@ from lazyzephyr.dts.workspace import Board
 def test_revisions_and_runners(tmp_path):
     d = tmp_path / "myboard"
     d.mkdir()
-    (d / "board.yml").write_text(textwrap.dedent("""\
+    (d / "board.yml").write_text(
+        textwrap.dedent("""\
         board:
           name: myboard
           socs:
@@ -18,13 +19,16 @@ def test_revisions_and_runners(tmp_path):
             revisions:
               - name: "A"
               - name: "B"
-        """))
-    (d / "board.cmake").write_text(textwrap.dedent("""\
+        """)
+    )
+    (d / "board.cmake").write_text(
+        textwrap.dedent("""\
         board_runner_args(jlink "--device=X")
         include(${ZEPHYR_BASE}/boards/common/openocd-stm32.board.cmake)
         include(${ZEPHYR_BASE}/boards/common/jlink.board.cmake)
         board_set_flasher_ifnset(jlink)
-        """))
+        """)
+    )
     board = Board("myboard", ("mysoc",), d, True)
     revs = meta.board_revisions(board)
     assert revs.default == "B" and revs.names == ("A", "B")
@@ -44,9 +48,10 @@ def test_probes_from_sysfs(tmp_path):
         (p / "idVendor").write_text(vendor + "\n")
         (p / "serial").write_text(serial + "\n")
         (p / "product").write_text(product + "\n")
+
     dev("1-1", "1366", "000123456789", "J-Link")
     dev("1-2", "0483", "ABC", "STM32 STLink")
-    dev("1-3", "0403", "FT1", "FT232R USB UART")   # plain serial cable: skipped
+    dev("1-3", "0403", "FT1", "FT232R USB UART")  # plain serial cable: skipped
     dev("1-4", "046d", "X", "Mouse")
     probes = meta.find_probes(tmp_path)
     assert [(p.kind, p.dev_id) for p in probes] == [("J-Link", "123456789"), ("ST-Link", "ABC")]
@@ -54,11 +59,13 @@ def test_probes_from_sysfs(tmp_path):
 
 def test_shields(tmp_path, monkeypatch):
     from lazyzephyr.dts.workspace import Workspace
+
     zb = tmp_path / "zephyr"
     s1 = zb / "boards" / "shields" / "one"
     s1.mkdir(parents=True)
-    (s1 / "shield.yml").write_text("shields:\n  - name: one_a\n    full_name: One A\n"
-                                   "  - name: one_b\n")
+    (s1 / "shield.yml").write_text(
+        "shields:\n  - name: one_a\n    full_name: One A\n  - name: one_b\n"
+    )
     s2 = zb / "boards" / "shields" / "two"
     s2.mkdir(parents=True)
     (s2 / "two.overlay").write_text("")

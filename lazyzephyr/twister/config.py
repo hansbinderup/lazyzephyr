@@ -80,8 +80,10 @@ def load_boards(path: Path, data) -> dict[str, Hardware]:
         raise ConfigError(f"{path}: 'hardware' must be a table ([hardware.<platform>])")
     flat = sorted(k for k, v in data.items() if not isinstance(v, dict))
     if flat:
-        raise ConfigError(f"{path}: put board settings under [hardware.<platform>], "
-                          f"e.g. [hardware.frdm_k64f] (found: {', '.join(flat)})")
+        raise ConfigError(
+            f"{path}: put board settings under [hardware.<platform>], "
+            f"e.g. [hardware.frdm_k64f] (found: {', '.join(flat)})"
+        )
     return {platform: load_hardware(path, platform, table) for platform, table in data.items()}
 
 
@@ -89,8 +91,10 @@ def load_hardware(path: Path, platform: str, data: dict) -> Hardware:
     where = f"hardware.{platform}" if "/" not in platform else f'hardware."{platform}"'
     unknown = sorted(set(data) - _HARDWARE_KNOWN)
     if unknown:
-        raise ConfigError(f"{path}: unknown key(s) in [{where}]: {', '.join(unknown)} "
-                          f"(known: {', '.join(sorted(_HARDWARE_KNOWN))})")
+        raise ConfigError(
+            f"{path}: unknown key(s) in [{where}]: {', '.join(unknown)} "
+            f"(known: {', '.join(sorted(_HARDWARE_KNOWN))})"
+        )
     if "enabled" in data and not isinstance(data["enabled"], bool):
         raise ConfigError(f"{path}: '{where}.enabled' must be true or false")
     for key in _HARDWARE_STRS:
@@ -135,8 +139,9 @@ def load_config(path: Path) -> FileConfig:
 
     unknown = sorted(set(data) - _KNOWN)
     if unknown:
-        raise ConfigError(f"{path}: unknown key(s): {', '.join(unknown)} "
-                          f"(known: {', '.join(sorted(_KNOWN))})")
+        raise ConfigError(
+            f"{path}: unknown key(s): {', '.join(unknown)} (known: {', '.join(sorted(_KNOWN))})"
+        )
 
     def str_list(key: str) -> list[str]:
         value = data.get(key, [])

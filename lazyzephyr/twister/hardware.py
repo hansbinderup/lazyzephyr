@@ -66,18 +66,23 @@ class FixtureScreen(ModalScreen[list[str] | None]):
             items.append((label, name, name in self.selected))
         for name in self.selected:
             if name not in self.known:
-                items.append((Text.assemble(f"{name:<24}", ("no test needs it", muted)),
-                              name, True))
+                items.append(
+                    (Text.assemble(f"{name:<24}", ("no test needs it", muted)), name, True)
+                )
         with Vertical(id="fixture-dialog", classes="panel dialog") as dialog:
             dialog.border_title = "Fixtures"
             dialog.border_subtitle = "space: toggle · enter: apply · esc: cancel"
-            yield Static("twister -X: what the board has attached. Tests that need a "
-                         "fixture you don't tick are skipped.", classes="hint")
+            yield Static(
+                "twister -X: what the board has attached. Tests that need a "
+                "fixture you don't tick are skipped.",
+                classes="hint",
+            )
             if items:
                 yield SelectionList[str](*items, id="fixture-list")
             else:
-                yield Static("No test asks for a fixture (harness_config: fixture).",
-                             classes="hint")
+                yield Static(
+                    "No test asks for a fixture (harness_config: fixture).", classes="hint"
+                )
             yield Input(placeholder="other fixtures, comma separated", id="fixture-extra")
 
     def on_mount(self) -> None:
@@ -103,8 +108,14 @@ class HardwareScreen(ModalScreen[Hardware | None]):
         Binding("ctrl+s", "apply", "Apply", priority=True),
     ]
 
-    def __init__(self, hardware: Hardware, platform: str, cwd: Path,
-                 fixtures: dict[str, int] | None = None, fixed: bool = False):
+    def __init__(
+        self,
+        hardware: Hardware,
+        platform: str,
+        cwd: Path,
+        fixtures: dict[str, int] | None = None,
+        fixed: bool = False,
+    ):
         super().__init__()
         self.draft = hardware.copy()
         self.platform, self.cwd = platform, cwd
@@ -140,16 +151,21 @@ class HardwareScreen(ModalScreen[Hardware | None]):
 
     def _hint(self) -> Text:
         if self.simulated:
-            return Text(f"{self.platform} runs without a board (simulated): "
-                        "only its fixtures can be set.")
+            return Text(
+                f"{self.platform} runs without a board (simulated): only its fixtures can be set."
+            )
         return Text(f"The board setup for {self.platform}; other platforms have their own.")
 
     def _footer_hint(self) -> Text:
         if self.fixed:
-            return Text("Set in .lazyzephyr.toml or on the command line: changes here last "
-                        "until you quit.", style="yellow")
-        return Text("Twister flashes with west flash and reads the console from the serial "
-                    "port. Saved for this workspace.")
+            return Text(
+                "Set in .lazyzephyr.toml or on the command line: changes here last until you quit.",
+                style="yellow",
+            )
+        return Text(
+            "Twister flashes with west flash and reads the console from the serial "
+            "port. Saved for this workspace."
+        )
 
     @property
     def rows(self) -> tuple[tuple[str, str], ...]:
@@ -192,8 +208,9 @@ class HardwareScreen(ModalScreen[Hardware | None]):
         self.draft = replace(self.draft, **changes)
         self.refill()
 
-    def _pick(self, title: str, items: list, key: str, hint: str = "",
-              placeholder: str = "") -> None:
+    def _pick(
+        self, title: str, items: list, key: str, hint: str = "", placeholder: str = ""
+    ) -> None:
         """One pick from `items` (id, label, search); "other…" types a value."""
         items = [*items, (OTHER, Text("other… (type it)", style="bright_black"), "other")]
 
@@ -201,13 +218,13 @@ class HardwareScreen(ModalScreen[Hardware | None]):
             if not result:
                 return
             if result[0] == OTHER:
+
                 def typed(value: str | None) -> None:
                     if value is not None:
                         self._set(**{key: value or None})
 
                 current = getattr(self.draft, key) or ""
-                self.app.push_screen(TextEditScreen(title, current, placeholder=placeholder),
-                                     typed)
+                self.app.push_screen(TextEditScreen(title, current, placeholder=placeholder), typed)
             else:
                 self._set(**{key: result[0] or None})
 
@@ -219,9 +236,16 @@ class HardwareScreen(ModalScreen[Hardware | None]):
     def _edit_serial(self) -> None:
         ports = meta.find_serial_ports()
         items = [("", Text("none", style="bright_black"), "none")]
-        items += [(p.path, Text.assemble(p.path, (f"  → {p.device}", "bright_black")
-                                         if p.device != p.path else ""),
-                   f"{p.path} {p.device}") for p in ports]
+        items += [
+            (
+                p.path,
+                Text.assemble(
+                    p.path, (f"  → {p.device}", "bright_black") if p.device != p.path else ""
+                ),
+                f"{p.path} {p.device}",
+            )
+            for p in ports
+        ]
         hint = "" if ports else "no USB serial ports found"
         self._pick("Serial port (console UART)", items, "serial", hint, "/dev/ttyACM0")
 
@@ -234,15 +258,26 @@ class HardwareScreen(ModalScreen[Hardware | None]):
                 return
             self._set(baud=int(value) if value else None)
 
-        self.app.push_screen(TextEditScreen("Baud rate", str(self.draft.baud or ""),
-                                            placeholder="115200",
-                                            hint="empty = twister's default (115200)"), done)
+        self.app.push_screen(
+            TextEditScreen(
+                "Baud rate",
+                str(self.draft.baud or ""),
+                placeholder="115200",
+                hint="empty = twister's default (115200)",
+            ),
+            done,
+        )
 
     def _edit_runner(self) -> None:
         runners = self.runners
         default = runners.flash_default if runners else None
-        items = [("", Text("board default" + (f" ({default})" if default else ""),
-                           style="bright_black"), "default")]
+        items = [
+            (
+                "",
+                Text("board default" + (f" ({default})" if default else ""), style="bright_black"),
+                "default",
+            )
+        ]
         if runners:
             items += [(n, n + ("  (default)" if n == default else ""), n) for n in runners.names]
         if self.runners_loading:
@@ -256,9 +291,14 @@ class HardwareScreen(ModalScreen[Hardware | None]):
     def _edit_dev_id(self) -> None:
         probes = meta.find_probes()
         items = [("", Text("none (runner picks)", style="bright_black"), "none")]
-        items += [(p.dev_id, Text.assemble(p.dev_id, (f"  {p.kind} · {p.product}",
-                                                      "bright_black")),
-                   f"{p.dev_id} {p.kind} {p.product}") for p in probes]
+        items += [
+            (
+                p.dev_id,
+                Text.assemble(p.dev_id, (f"  {p.kind} · {p.product}", "bright_black")),
+                f"{p.dev_id} {p.kind} {p.product}",
+            )
+            for p in probes
+        ]
         hint = "" if probes else "no debug probes found on USB"
         self._pick("Debug probe", items, "dev_id", hint, "serial number")
 

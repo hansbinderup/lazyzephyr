@@ -69,12 +69,17 @@ def kbuild(workspace: Path, zephyr_base: Path) -> Path:
     defconfig = write(top / "boards" / "test_defconfig", 'CONFIG_NAME="board"\n')
     prj = write(top / "app" / "prj.conf", "CONFIG_I2C_SHELL=y\n")
     dot = build / "zephyr" / ".config"
-    write(build / "build.ninja", f"""
+    write(
+        build / "build.ninja",
+        f"""
         build menuconfig: phony CMakeFiles/menuconfig
         build CMakeFiles/menuconfig | ${{cmake_ninja_workdir}}CMakeFiles/menuconfig: CUSTOM_COMMAND
-          COMMAND = cd {build}/zephyr/kconfig && /usr/bin/cmake -E env ZEPHYR_BASE={zephyr_base} srctree={top / 'kconf'} KCONFIG_CONFIG={dot} BOARD=test {sys.executable} {zephyr_base}/scripts/kconfig/menuconfig.py {kroot}
-        """)
-    write(build / "build_info.yml", f"""
+          COMMAND = cd {build}/zephyr/kconfig && /usr/bin/cmake -E env ZEPHYR_BASE={zephyr_base} srctree={top / "kconf"} KCONFIG_CONFIG={dot} BOARD=test {sys.executable} {zephyr_base}/scripts/kconfig/menuconfig.py {kroot}
+        """,
+    )
+    write(
+        build / "build_info.yml",
+        f"""
         cmake:
           board:
             name: test_board
@@ -84,9 +89,11 @@ def kbuild(workspace: Path, zephyr_base: Path) -> Path:
              - '{prj}'
             user-files:
              - '{prj}'
-        """)
+        """,
+    )
     # The last build's .config: what the conf files give.
     from lazyzephyr.kconfig import loader
+
     model = loader.load(loader.find(build))
     model.kconf.write_config(str(dot))
     return build

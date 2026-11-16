@@ -7,8 +7,14 @@ from lazyzephyr.twister.jobs import Hardware
 
 def test_save_and_load_round_trip(tmp_path: Path):
     setups = {
-        "frdm_k64f": Hardware(enabled=True, serial="/dev/ttyACM0", baud=921600, runner="jlink",
-                              dev_id="683", fixtures=["gpio_loopback"]),
+        "frdm_k64f": Hardware(
+            enabled=True,
+            serial="/dev/ttyACM0",
+            baud=921600,
+            runner="jlink",
+            dev_id="683",
+            fixtures=["gpio_loopback"],
+        ),
         "native_sim": Hardware(fixtures=["f"]),
         "empty": Hardware(),
     }
@@ -22,20 +28,23 @@ def test_save_and_load_round_trip(tmp_path: Path):
 
 def test_load_skips_malformed_entries(tmp_path: Path):
     assert boards.load_saved(tmp_path) == {}  # no file yet
-    (tmp_path / "hardware.json").write_text(json.dumps({
-        "good": {"enabled": True, "serial": "/dev/x"},
-        "bad_baud": {"baud": 0},
-        "bad_key": {"port": "/dev/x"},
-        "not_a_table": 3,
-    }))
+    (tmp_path / "hardware.json").write_text(
+        json.dumps(
+            {
+                "good": {"enabled": True, "serial": "/dev/x"},
+                "bad_baud": {"baud": 0},
+                "bad_key": {"port": "/dev/x"},
+                "not_a_table": 3,
+            }
+        )
+    )
     assert boards.load_saved(tmp_path) == {"good": Hardware(enabled=True, serial="/dev/x")}
     (tmp_path / "hardware.json").write_text("{broken")
     assert boards.load_saved(tmp_path) == {}
 
 
 def test_simulated_by_name():
-    for name in ("native_sim", "native_sim/native/64", "qemu_x86", "nrf52_bsim",
-                 "unit_testing"):
+    for name in ("native_sim", "native_sim/native/64", "qemu_x86", "nrf52_bsim", "unit_testing"):
         assert boards.simulated_by_name(name), name
     for name in ("frdm_k64f", "nrf52840dk/nrf52840", "qemu"):
         assert not boards.simulated_by_name(name), name

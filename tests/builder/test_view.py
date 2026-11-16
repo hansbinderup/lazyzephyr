@@ -99,8 +99,10 @@ async def test_build_tab(workspace, tmp_path, monkeypatch):
         await type_value("shields", "")
         await pilot.press("ctrl+s")
         await wait_for(lambda: [c.name for c in store.configs] == ["sim"])
-        assert ConfigStore(ws.topdir, tmp_path / "builds.json").configs[0].board == \
-            "native_sim/native/64"
+        assert (
+            ConfigStore(ws.topdir, tmp_path / "builds.json").configs[0].board
+            == "native_sim/native/64"
+        )
         # Build: the fake west gets the right arguments.
         view.configs_list.focus()
         await pilot.press("b")
@@ -120,13 +122,16 @@ async def test_build_tab(workspace, tmp_path, monkeypatch):
         for ch in "then flash":
             await pilot.press(ch if ch != " " else "space")
         await pilot.press("enter")
-        await wait_for(lambda: store.configs[0].last_action == "build_flash"
-                       and store.configs[0].last_status == "passed")
+        await wait_for(
+            lambda: (
+                store.configs[0].last_action == "build_flash"
+                and store.configs[0].last_status == "passed"
+            )
+        )
         assert "fake west flash -d" in "\n".join(view.last_job.lines)
 
 
-FAKE_DEVICE = ("echo \"hello from $BOARD\"; "
-               "while read -r line; do echo \"got:$line\"; done")
+FAKE_DEVICE = 'echo "hello from $BOARD"; while read -r line; do echo "got:$line"; done'
 
 
 def screen_text(view) -> str:
@@ -137,8 +142,9 @@ async def test_monitor(workspace, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     ws = find_workspace(workspace)
     store = ConfigStore(ws.topdir, tmp_path / "builds.json")
-    store.configs.append(BuildConfig(name="sim", app="app", board="native_sim",
-                                     monitor=FAKE_DEVICE))
+    store.configs.append(
+        BuildConfig(name="sim", app="app", board="native_sim", monitor=FAKE_DEVICE)
+    )
     store.configs.append(BuildConfig(name="bare", app="app", board="native_sim"))
     store.save()
     view = BuildView(ws, workspace / "app", store=store, west=FAKE_WEST, id="builder")
@@ -193,8 +199,10 @@ async def test_monitor(workspace, tmp_path, monkeypatch):
         app.screen.query_one("#text-value").value = "echo bare monitor; sleep 30"
         await pilot.press("enter")
         await wait_for(lambda: "bare monitor" in screen_text(view))
-        assert ConfigStore(ws.topdir, tmp_path / "builds.json").configs[1].monitor \
+        assert (
+            ConfigStore(ws.topdir, tmp_path / "builds.json").configs[1].monitor
             == "echo bare monitor; sleep 30"
+        )
         proc = view.monitor.process.proc
     await asyncio.sleep(0.2)
     assert proc.poll() is not None  # quitting the app closes the monitor
@@ -204,6 +212,7 @@ def test_key_bytes():
     from textual import events
 
     from lazyzephyr.builder.monitor import _color, key_bytes
+
     assert key_bytes(events.Key("ctrl+c", None)) == b"\x03"
     assert key_bytes(events.Key("up", None)) == b"\x1b[A"
     assert key_bytes(events.Key("up", None), app_cursor=True) == b"\x1bOA"
@@ -214,8 +223,7 @@ def test_key_bytes():
 
 
 def footer_keys(app):
-    return {key for key, b in app.screen.active_bindings.items()
-            if b.binding.show and b.enabled}
+    return {key for key, b in app.screen.active_bindings.items() if b.binding.show and b.enabled}
 
 
 async def test_monitor_select_and_copy():
@@ -244,6 +252,7 @@ async def test_monitor_select_and_copy():
 
             def close(self):
                 pass
+
         term.process = FakeProcess()
         assert "ctrl+c" not in footer_keys(app)
         term._output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive")
@@ -264,8 +273,9 @@ async def test_monitor_select_and_copy():
         await pilot.pause()
         assert app.screen.get_selected_text() == "wo\nthree\nfou"
         # A selection reaching back into history.
-        app.screen.selections = {term: Selection.from_offsets(
-            Offset(0, scrolled - 1), Offset(3, scrolled))}
+        app.screen.selections = {
+            term: Selection.from_offsets(Offset(0, scrolled - 1), Offset(3, scrolled))
+        }
         assert app.screen.get_selected_text() == "one\ntwo"
         copied = []
         app.copy_to_clipboard = copied.append

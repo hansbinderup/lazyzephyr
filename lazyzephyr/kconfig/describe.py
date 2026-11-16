@@ -52,8 +52,11 @@ def value_text(session: Session, sym) -> Text:
     lib = lib_of(session)
     if isinstance(sym, lib.Choice):
         sel = sym.selection
-        return Text(prompt_of(sel) or sel.name, style="yellow") if sel else \
-            Text("nothing chosen", style="bright_black")
+        return (
+            Text(prompt_of(sel) or sel.name, style="yellow")
+            if sel
+            else Text("nothing chosen", style="bright_black")
+        )
     if is_bool(session, sym):
         v = sym.str_value
         if v == "y":
@@ -62,8 +65,10 @@ def value_text(session: Session, sym) -> Text:
             return Text("◐ module", style="yellow")
         return Text("○ off", style="bright_black")
     if sym.type == lib.STRING:
-        return Text(f'"{sym.str_value}"' if sym.str_value else "(empty)",
-                    style="" if sym.str_value else "bright_black")
+        return Text(
+            f'"{sym.str_value}"' if sym.str_value else "(empty)",
+            style="" if sym.str_value else "bright_black",
+        )
     if sym.str_value == "":
         return Text("(not set)", style="bright_black")
     return Text(sym.str_value)
@@ -101,8 +106,14 @@ def expr_text(session: Session, expr) -> Text:
             return
         t.append(name, style="green" if on else "red")
 
-    ops = {lib.EQUAL: "=", lib.UNEQUAL: "!=", lib.LESS: "<", lib.LESS_EQUAL: "<=",
-           lib.GREATER: ">", lib.GREATER_EQUAL: ">="}
+    ops = {
+        lib.EQUAL: "=",
+        lib.UNEQUAL: "!=",
+        lib.LESS: "<",
+        lib.LESS_EQUAL: "<=",
+        lib.GREATER: ">",
+        lib.GREATER_EQUAL: ">=",
+    }
 
     def walk(e, parent_op=None) -> None:
         if not isinstance(e, tuple):
@@ -175,29 +186,53 @@ def why(session: Session, sym, base: Path | None) -> list[Text]:
     if sym.rev_dep is not None and lib.expr_value(sym.rev_dep):
         by = selected_by(session, sym, active=True)
         out.append(Text(f"Turned on by {', '.join(by)} (select)", style="yellow"))
-    elif getattr(sym, "weak_rev_dep", None) is not None and lib.expr_value(sym.weak_rev_dep) \
-            and is_bool(session, sym) and sym.str_value != "n" and not lst:
+    elif (
+        getattr(sym, "weak_rev_dep", None) is not None
+        and lib.expr_value(sym.weak_rev_dep)
+        and is_bool(session, sym)
+        and sym.str_value != "n"
+        and not lst
+    ):
         by = implied_by(session, sym, active=True)
         out.append(Text(f"Turned on by {', '.join(by)} (imply)", style="yellow"))
     if not out or (lst and not _same(sym, lst[-1].value)):
         d = _default_here(session, sym)
         if sym.choice is not None:
             sel = sym.choice.selection
-            out.append(Text(f"Part of the choice \"{prompt_of(sym.choice)}\"; "
-                            f"{'this one is chosen' if sel is sym else 'not chosen'}"))
+            out.append(
+                Text(
+                    f'Part of the choice "{prompt_of(sym.choice)}"; '
+                    f"{'this one is chosen' if sel is sym else 'not chosen'}"
+                )
+            )
         elif d is not None:
             v, (file, line) = d
-            out.append(Text(f"Default {v}  ({loc(session, file, base)}:{line})", style="bright_black"))
+            out.append(
+                Text(f"Default {v}  ({loc(session, file, base)}:{line})", style="bright_black")
+            )
         elif not out:
             out.append(Text("Not set, and no default applies", style="bright_black"))
     if not can_set(sym):
-        out.append(Text("Can't be set in a conf file (no prompt): only select or a default "
-                        "change it", style="bright_black"))
+        out.append(
+            Text(
+                "Can't be set in a conf file (no prompt): only select or a default change it",
+                style="bright_black",
+            )
+        )
     built = session.model.built.get(sym.name)
-    if built is not None and not _same(sym, built) or \
-            built is None and sym.str_value not in ("", "n") and sym.config_string:
-        out.append(Text(f"Not built yet: the last build had {built or '(not set)'}; "
-                        "rebuild to apply", style="magenta"))
+    if (
+        built is not None
+        and not _same(sym, built)
+        or built is None
+        and sym.str_value not in ("", "n")
+        and sym.config_string
+    ):
+        out.append(
+            Text(
+                f"Not built yet: the last build had {built or '(not set)'}; rebuild to apply",
+                style="magenta",
+            )
+        )
     return out
 
 
@@ -254,8 +289,10 @@ def details(session: Session, item, base: Path | None) -> Text:
         t.append("\n\nOptions\n", style="bold")
         for sym in item.syms:
             mark = "● " if item.selection is sym else "○ "
-            t.append(f"  {mark}{prompt_of(sym) or sym.name}",
-                     style="green" if item.selection is sym else "")
+            t.append(
+                f"  {mark}{prompt_of(sym) or sym.name}",
+                style="green" if item.selection is sym else "",
+            )
             t.append(f"  {sym.name}\n", style="bright_black")
         _help(t, item)
         _defined(t, item, base, session)
@@ -289,8 +326,10 @@ def details(session: Session, item, base: Path | None) -> Text:
         else:
             terms.sort(key=lambda e: lib.expr_value(e) == 0)
             for term in terms[:6]:
-                t.append("  ✓ " if lib.expr_value(term) else "  ✗ ",
-                         style="green" if lib.expr_value(term) else "red")
+                t.append(
+                    "  ✓ " if lib.expr_value(term) else "  ✗ ",
+                    style="green" if lib.expr_value(term) else "red",
+                )
                 t.append_text(expr_text(session, term))
                 t.append("\n")
             if len(terms) > 6:
@@ -320,8 +359,9 @@ def details(session: Session, item, base: Path | None) -> Text:
     imp = implied_by(session, sym) if getattr(sym, "weak_rev_dep", None) is not None else []
     if imp:
         t.append("\nImplied by\n", style="bold")
-        t.append("  " + ", ".join(imp[:12]) + ("…" if len(imp) > 12 else "") + "\n",
-                 style="bright_black")
+        t.append(
+            "  " + ", ".join(imp[:12]) + ("…" if len(imp) > 12 else "") + "\n", style="bright_black"
+        )
     _help(t, sym)
     _defined(t, sym, base, session)
     return t
@@ -332,8 +372,9 @@ def _node_details(session: Session, node, base: Path | None) -> Text:
     title = node.prompt[0] if node.prompt else "(menu)"
     t.append(title + "\n", style="bold")
     lib = lib_of(session)
-    if node.dep is not None and not (isinstance(node.dep, lib.Symbol) and
-                                     node.dep is session.kconf.y):
+    if node.dep is not None and not (
+        isinstance(node.dep, lib.Symbol) and node.dep is session.kconf.y
+    ):
         t.append("\nShown when ", style="bright_black")
         t.append_text(expr_text(session, node.dep))
         t.append("\n")
@@ -402,8 +443,7 @@ def _row(kind: str, sym, session: Session) -> Text:
     t.append_text(value_text(session, sym))
     prompt = prompt_of(sym)
     if prompt:
-        t.append(f"  {prompt[:24] + '…' if len(prompt) > 24 else prompt}",
-                 style="bright_black")
+        t.append(f"  {prompt[:24] + '…' if len(prompt) > 24 else prompt}", style="bright_black")
     t.no_wrap = True
     t.overflow = "ellipsis"
     return t

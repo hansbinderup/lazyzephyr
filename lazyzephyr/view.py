@@ -20,7 +20,7 @@ from textual.widget import Widget
 # Width below which "auto" stacks the columns (see View.portrait_for).
 PORTRAIT_MAX_WIDTH = 110
 LAYOUT_MODES = ("auto", "landscape", "portrait")
-MIN_PANEL = {"horizontal": 12, "vertical": 3}   # cells a drag or key leaves a panel
+MIN_PANEL = {"horizontal": 12, "vertical": 3}  # cells a drag or key leaves a panel
 KEY_STEP = {"horizontal": 4, "vertical": 2}
 
 
@@ -58,6 +58,7 @@ class LayoutStore:
         except OSError:
             pass
 
+
 # Styles every tab shares.
 COMMON_CSS = """
     Screen { layout: vertical; }
@@ -84,7 +85,7 @@ class View(Vertical):
     """
 
     SPLITS: ClassVar[tuple[str, ...]] = ()
-    AUTO_PORTRAIT: ClassVar[bool] = True   # toggle -portrait on resize (else the tab does)
+    AUTO_PORTRAIT: ClassVar[bool] = True  # toggle -portrait on resize (else the tab does)
 
     BINDINGS = [
         Binding("plus", "panel_grow(1)", "Grow panel", show=False),
@@ -144,8 +145,7 @@ class View(Vertical):
     @staticmethod
     def _axis(container: Widget) -> str:
         layout = container.styles.layout
-        return "horizontal" if layout is not None and layout.name == "horizontal" \
-            else "vertical"
+        return "horizontal" if layout is not None and layout.name == "horizontal" else "vertical"
 
     def _size_key(self, container: Widget) -> str:
         ids = ",".join(sorted(w.id for w in self._panels_shown(container)))
@@ -156,8 +156,7 @@ class View(Vertical):
     def _layout_mount(self) -> None:
         self._sized: set[tuple[Widget, str]] = set()
         self._drag: dict | None = None
-        self._default_order = {c.id: [w.id for w in c.children]
-                               for c in self._split_containers()}
+        self._default_order = {c.id: [w.id for w in c.children] for c in self._split_containers()}
         self._apply_order()
         if self.AUTO_PORTRAIT:
             self.set_class(self.portrait_for(self.app.size.width), "-portrait")
@@ -174,7 +173,7 @@ class View(Vertical):
                 continue
             kids = {w.id: w for w in c.children}
             if set(want) != set(kids):
-                continue          # the panels changed since: keep the default
+                continue  # the panels changed since: keep the default
             for i, wid in enumerate(want):
                 if c.children[i] is not kids[wid]:
                     c.move_child(kids[wid], before=c.children[i])
@@ -191,8 +190,14 @@ class View(Vertical):
         for c in self._split_containers():
             saved = sizes.get(self._size_key(c))
             if isinstance(saved, dict):
-                self._set_sizes(c, {w: saved[w.id] for w in self._panels_shown(c)
-                                    if isinstance(saved.get(w.id), (int, float))})
+                self._set_sizes(
+                    c,
+                    {
+                        w: saved[w.id]
+                        for w in self._panels_shown(c)
+                        if isinstance(saved.get(w.id), (int, float))
+                    },
+                )
 
     def _set_sizes(self, container: Widget, sizes: dict[Widget, float]) -> None:
         dim = "width" if self._axis(container) == "horizontal" else "height"
@@ -202,16 +207,20 @@ class View(Vertical):
 
     def _current_sizes(self, container: Widget) -> dict[Widget, int]:
         horizontal = self._axis(container) == "horizontal"
-        return {w: (w.outer_size.width if horizontal else w.outer_size.height)
-                for w in self._panels_shown(container)}
+        return {
+            w: (w.outer_size.width if horizontal else w.outer_size.height)
+            for w in self._panels_shown(container)
+        }
 
     def _save_sizes(self, container: Widget, sizes: dict[Widget, float]) -> None:
-        self.layout_state["sizes"][self._size_key(container)] = \
-            {w.id: round(n, 1) for w, n in sizes.items()}
+        self.layout_state["sizes"][self._size_key(container)] = {
+            w.id: round(n, 1) for w, n in sizes.items()
+        }
         self.layout_store.save()
 
-    def _resize_pair(self, container: Widget, a: Widget, b: Widget, delta: float,
-                     sizes: dict[Widget, float]) -> dict[Widget, float]:
+    def _resize_pair(
+        self, container: Widget, a: Widget, b: Widget, delta: float, sizes: dict[Widget, float]
+    ) -> dict[Widget, float]:
         """Move `delta` cells from b to a (negative: a to b), keeping both usable."""
         low = MIN_PANEL[self._axis(container)]
         total = sizes[a] + sizes[b]
@@ -239,8 +248,11 @@ class View(Vertical):
         child = node
         while child is not None and child is not self:
             parent = child.parent
-            if parent in containers and child in self._panels_shown(parent) \
-                    and len(self._panels_shown(parent)) > 1:
+            if (
+                parent in containers
+                and child in self._panels_shown(parent)
+                and len(self._panels_shown(parent)) > 1
+            ):
                 return parent, child
             child = parent
         return None
@@ -290,8 +302,7 @@ class View(Vertical):
         portrait = self.portrait_for(self.size.width)
         self.set_class(portrait, "-portrait")
         self.call_after_refresh(self.apply_panel_layout)
-        self.notify(f"layout: {mode} ({'stacked' if portrait else 'side by side'})",
-                    timeout=2)
+        self.notify(f"layout: {mode} ({'stacked' if portrait else 'side by side'})", timeout=2)
 
     # -- layout: dragging a border --
 
@@ -318,8 +329,14 @@ class View(Vertical):
         container, a, b = hit
         sizes = self._current_sizes(container)
         self._set_sizes(container, sizes)
-        self._drag = {"container": container, "a": a, "b": b, "sizes": sizes,
-                      "x": event.screen_x, "y": event.screen_y}
+        self._drag = {
+            "container": container,
+            "a": a,
+            "b": b,
+            "sizes": sizes,
+            "x": event.screen_x,
+            "y": event.screen_y,
+        }
         self.capture_mouse()
         event.stop()
         event.prevent_default()
@@ -329,8 +346,11 @@ class View(Vertical):
         if drag is None:
             return
         c = drag["container"]
-        delta = (event.screen_x - drag["x"] if self._axis(c) == "horizontal"
-                 else event.screen_y - drag["y"])
+        delta = (
+            event.screen_x - drag["x"]
+            if self._axis(c) == "horizontal"
+            else event.screen_y - drag["y"]
+        )
         drag["now"] = self._resize_pair(c, drag["a"], drag["b"], delta, drag["sizes"])
         self._set_sizes(c, drag["now"])
         event.stop()
@@ -400,6 +420,7 @@ class View(Vertical):
     def is_shown(self) -> bool:
         """True when this View's tab is the active one (always, outside tabs)."""
         from textual.widgets import TabbedContent, TabPane
+
         pane = next((a for a in self.ancestors if isinstance(a, TabPane)), None)
         if pane is None:
             return True

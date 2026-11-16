@@ -6,21 +6,28 @@ from pathlib import Path
 from rich.text import Text
 
 from lazyzephyr.twister.app import (
-    AppConfig, LazyTwisterApp, TwisterView, count_text, fit_status, short_port,
+    AppConfig,
+    LazyTwisterApp,
+    TwisterView,
+    count_text,
+    fit_status,
+    short_port,
 )
 from lazyzephyr.twister.discovery import Workspace
 from lazyzephyr.twister.jobs import Hardware, RunOptions
 
 
 def make_app(test_tree: Path, tmp_path: Path, fake_twister) -> LazyTwisterApp:
-    return LazyTwisterApp(AppConfig(
-        cwd=tmp_path,
-        roots=[test_tree],
-        workspace=Workspace(None, None),
-        twister_cmd=fake_twister,
-        state_dir=tmp_path / "state",
-        options=RunOptions(),
-    ))
+    return LazyTwisterApp(
+        AppConfig(
+            cwd=tmp_path,
+            roots=[test_tree],
+            workspace=Workspace(None, None),
+            twister_cmd=fake_twister,
+            state_dir=tmp_path / "state",
+            options=RunOptions(),
+        )
+    )
 
 
 async def wait_for(predicate, timeout=5.0):
@@ -46,7 +53,8 @@ async def test_tree_shows_scenarios_and_runs_one(test_tree, tmp_path, fake_twist
 
 
 async def test_marked_nodes_queue_as_one_job_and_enter_queues_more(
-        test_tree, tmp_path, fake_twister, monkeypatch):
+    test_tree, tmp_path, fake_twister, monkeypatch
+):
     monkeypatch.setenv("FAKE_DELAY", "1.0")
     app = make_app(test_tree, tmp_path, fake_twister)
     async with app.run_test(size=(160, 50)) as pilot:
@@ -106,10 +114,10 @@ async def test_new_testcase_is_picked_up_live(test_tree, tmp_path, fake_twister)
 def test_pick_layout():
     pick = TwisterView.pick_layout
     assert pick(200, 50) == ("landscape", False)
-    assert pick(160, 90) == ("portrait", False)   # tall window
-    assert pick(100, 60) == ("portrait", False)   # narrow split
-    assert pick(80, 30) == ("portrait", True)     # small
-    assert pick(200, 20) == ("landscape", True)   # short
+    assert pick(160, 90) == ("portrait", False)  # tall window
+    assert pick(100, 60) == ("portrait", False)  # narrow split
+    assert pick(80, 30) == ("portrait", True)  # small
+    assert pick(200, 20) == ("landscape", True)  # short
     assert pick(80, 30, "landscape") == ("landscape", True)
 
 
@@ -228,8 +236,9 @@ async def test_edit_jumps_to_failing_assert(test_tree, tmp_path, fake_twister, m
     monkeypatch.setenv("FAKE_LOG", str(log))
     monkeypatch.setenv("EDITOR", "my-editor")
     opened = []
-    monkeypatch.setattr("lazyzephyr.twister.app.subprocess.run",
-                        lambda cmd, check: opened.append(cmd))
+    monkeypatch.setattr(
+        "lazyzephyr.twister.app.subprocess.run", lambda cmd, check: opened.append(cmd)
+    )
     app = make_app(test_tree, tmp_path, fake_twister)
     monkeypatch.setattr(app, "suspend", contextlib.nullcontext)
     async with app.run_test(size=(160, 50)) as pilot:
@@ -287,7 +296,8 @@ def test_count_text_splits_passed_failed_and_not_run():
 
 
 async def test_big_tree_opens_only_roots_and_builds_children_on_expand(
-        tmp_path, fake_twister, monkeypatch):
+    tmp_path, fake_twister, monkeypatch
+):
     root = tmp_path / "tests"
     for group in range(4):
         for n in range(3):
@@ -314,7 +324,6 @@ async def test_big_tree_opens_only_roots_and_builds_children_on_expand(
         await wait_for(lambda: "s:g2.t1" in app.node_index)
 
 
-
 async def test_platform_only_filter(test_tree, tmp_path, fake_twister):
     app = make_app(test_tree, tmp_path, fake_twister)
     async with app.run_test(size=(160, 50)) as pilot:
@@ -334,16 +343,18 @@ async def test_platform_only_filter(test_tree, tmp_path, fake_twister):
         assert str(app.query_one("#tests-panel").border_title) == "[1] Tests"
 
 
-async def test_cancelled_job_is_listed_once_until_it_exits(test_tree, tmp_path, fake_twister,
-                                                         monkeypatch):
+async def test_cancelled_job_is_listed_once_until_it_exits(
+    test_tree, tmp_path, fake_twister, monkeypatch
+):
     monkeypatch.setenv("FAKE_DELAY", "3")
     app = make_app(test_tree, tmp_path, fake_twister)
     async with app.run_test(size=(160, 50)) as pilot:
         await wait_for(lambda: "s:drivers.beta" in app.node_index)
         app.tree.move_cursor(app.node_index["s:drivers.beta"])
         await pilot.press("enter")
-        await wait_for(lambda: app.jobs.current is not None
-                       and app.jobs.current.process is not None)
+        await wait_for(
+            lambda: app.jobs.current is not None and app.jobs.current.process is not None
+        )
         job = app.jobs.current
         app.jobs.cancel(job)
         # Cancelled, but still the current job until twister exits.
@@ -397,8 +408,12 @@ async def test_hardware_setup_is_per_platform(test_tree, tmp_path, fake_twister)
         await wait_for(lambda: isinstance(app.screen, FixtureScreen))
         assert app.screen.known == {"gpio_loopback": 1}  # from drivers.beta's testcase.yaml
         await pilot.press("space", "enter")
-        await wait_for(lambda: isinstance(app.screen, HardwareScreen)
-                       and app.screen.draft.fixtures == ["gpio_loopback"])
+        await wait_for(
+            lambda: (
+                isinstance(app.screen, HardwareScreen)
+                and app.screen.draft.fixtures == ["gpio_loopback"]
+            )
+        )
         await pilot.press("ctrl+s")
         hw = app.options.boards["frdm_k64f"]
         assert (hw.enabled, hw.serial, hw.fixtures) == (True, "/dev/ttyFAKE", ["gpio_loopback"])
@@ -442,8 +457,11 @@ async def test_hardware_setup_is_per_platform(test_tree, tmp_path, fake_twister)
         assert app.jobs.jobs[2].options.platforms == ["nucleo_f429zi"]
         await wait_for(lambda: not app.jobs.jobs[2].active, timeout=10)
         argv = json.loads((tmp_path / "state" / "run" / "argv.json").read_text())
-        assert argv[argv.index("--device-testing"):argv.index("-O")] == [
-            "--device-testing", "--device-serial", "/dev/ttyOTHER"]
+        assert argv[argv.index("--device-testing") : argv.index("-O")] == [
+            "--device-testing",
+            "--device-serial",
+            "/dev/ttyOTHER",
+        ]
 
         # Repeat reuses the board picked last instead of asking again.
         await pilot.press("full_stop")
@@ -477,11 +495,24 @@ async def test_case_details_show_full_output(test_tree, tmp_path, fake_twister):
     app = make_app(test_tree, tmp_path, fake_twister)
     async with app.run_test(size=(160, 50)):
         await wait_for(lambda: "s:lib.alpha.default" in app.node_index)
-        log = "\n".join(["START - test_adds", *(f"line {i}" for i in range(40)),
-                         " PASS - test_adds in 0.001 seconds"])
-        app.store.merge([SuiteResult("lib.alpha.default", "native_sim", "passed",
-                                     cases={"alpha_suite.adds": "passed"},
-                                     case_logs={"alpha_suite.adds": log})])
+        log = "\n".join(
+            [
+                "START - test_adds",
+                *(f"line {i}" for i in range(40)),
+                " PASS - test_adds in 0.001 seconds",
+            ]
+        )
+        app.store.merge(
+            [
+                SuiteResult(
+                    "lib.alpha.default",
+                    "native_sim",
+                    "passed",
+                    cases={"alpha_suite.adds": "passed"},
+                    case_logs={"alpha_suite.adds": log},
+                )
+            ]
+        )
         app.node_index["s:lib.alpha.default"].expand()
         await wait_for(lambda: "c:lib.alpha.default:alpha_suite.adds" in app.node_index)
 

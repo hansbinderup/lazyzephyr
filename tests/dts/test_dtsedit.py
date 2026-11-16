@@ -81,7 +81,7 @@ def test_set_existing_property_in_place():
 def test_set_new_property_in_existing_block():
     sf = scan()
     new = dtsedit.set_property(sf, "/soc/i2c@100/sensor@76", [], "foo", "<1>")
-    assert '\t\treg = <0x76>;\n\t\tfoo = <1>;\n\t};' in new
+    assert "\t\treg = <0x76>;\n\t\tfoo = <1>;\n\t};" in new
 
 
 def test_set_property_appends_override_block():
@@ -105,7 +105,7 @@ def test_set_after_delete_property():
 
 
 def test_single_line_block():
-    sf = dtsedit.scan("&i2c0 { status = \"okay\"; };\n", resolve)
+    sf = dtsedit.scan('&i2c0 { status = "okay"; };\n', resolve)
     new = dtsedit.set_property(sf, "/soc/i2c@100", ["i2c0"], "foo", "<1>")
     assert new == '&i2c0 { status = "okay";\n\tfoo = <1>;\n};\n'
 
@@ -118,17 +118,21 @@ def test_remove_statement_and_block():
     block = sf.blocks_for("/soc/i2c@100/sensor@76")[0]
     new = dtsedit.remove_block(sf, block)
     assert "sensor" not in new
-    assert "clock-frequency = <I2C_BITRATE_FAST>;\n\n};" in new or \
-        "clock-frequency = <I2C_BITRATE_FAST>;\n};" in new
+    assert (
+        "clock-frequency = <I2C_BITRATE_FAST>;\n\n};" in new
+        or "clock-frequency = <I2C_BITRATE_FAST>;\n};" in new
+    )
 
 
 def test_add_node_into_existing_block():
     sf = scan()
-    lines = dtsedit.node_lines("widget@10", "widget", [("compatible", '"vnd,widget"'),
-                                                      ("reg", "<0x10>")])
+    lines = dtsedit.node_lines(
+        "widget@10", "widget", [("compatible", '"vnd,widget"'), ("reg", "<0x10>")]
+    )
     new = dtsedit.add_node(sf, "/soc/i2c@100", ["i2c0"], lines)
-    assert ('\t};\n\n\twidget: widget@10 {\n\t\tcompatible = "vnd,widget";\n'
-            '\t\treg = <0x10>;\n\t};\n};') in new
+    assert (
+        '\t};\n\n\twidget: widget@10 {\n\t\tcompatible = "vnd,widget";\n\t\treg = <0x10>;\n\t};\n};'
+    ) in new
 
 
 def test_add_node_new_parent_block():
@@ -145,7 +149,7 @@ def test_macro_child_names_use_callback():
 
 
 def test_nested_include_root():
-    sf = dtsedit.scan("uart@1 { status = \"okay\"; };\n", resolve, root="/soc/peripheral@5")
+    sf = dtsedit.scan('uart@1 { status = "okay"; };\n', resolve, root="/soc/peripheral@5")
     assert sf.props_for("/soc/peripheral@5/uart@1", "status")
     outer = dtsedit.scan('/ {\n\tsoc {\n#include "inner.dtsi"\n\t};\n};\n', resolve)
     assert outer.nested_includes == [("inner.dtsi", "/soc")]

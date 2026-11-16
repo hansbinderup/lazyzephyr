@@ -22,15 +22,22 @@ from textual.widgets.tree import TreeNode
 
 from . import catalog, checks, macros, settings, specifiers, values
 from .catalog import BindingInfo
-from .editors import (CompleteInput, Completer, PickScreen, SpecifierEditor, SpecRow,
-                      macro_choice)
+from .editors import CompleteInput, Completer, PickScreen, SpecifierEditor, SpecRow, macro_choice
 from .model import import_edtlib
 from .session import REF_NODES, EditResult, Session
 from .state import TargetChoice, save_choice
 from ..clipboard import SystemClipboard
 from ..view import COMMON_CSS, ForwardActions, View
-from .workspace import (Board, DtInputs, Workspace, find_board, find_boards, find_build_dirs,
-                        inputs_for_board, inputs_from_build)
+from .workspace import (
+    Board,
+    DtInputs,
+    Workspace,
+    find_board,
+    find_boards,
+    find_build_dirs,
+    inputs_for_board,
+    inputs_from_build,
+)
 
 
 @dataclass
@@ -49,8 +56,9 @@ def resolve_choice(ws: Workspace, choice: TargetChoice) -> DtInputs:
     if choice.build_dir:
         return inputs_from_build(Path(choice.build_dir))
     board = find_board(ws, choice.board or "")
-    return inputs_for_board(ws, board, Path(choice.app) if choice.app else None,
-                            list(choice.shields))
+    return inputs_for_board(
+        ws, board, Path(choice.app) if choice.app else None, list(choice.shields)
+    )
 
 
 def raw_value(prop) -> str:
@@ -238,12 +246,17 @@ class ProblemsScreen(ModalScreen[checks.Problem | None]):
             dialog.border_title = f"Problems ({len(self.problems)})"
             dialog.border_subtitle = "enter: go to the node · esc: close"
             if not self.problems:
-                yield Static("Nothing found: no pin is used twice, no two devices share an "
-                             "address, partitions don't overlap and no enabled node needs a "
-                             "disabled one.", classes="hint")
+                yield Static(
+                    "Nothing found: no pin is used twice, no two devices share an "
+                    "address, partitions don't overlap and no enabled node needs a "
+                    "disabled one.",
+                    classes="hint",
+                )
                 return
-            yield OptionList(*[Option(problem_text(p), id=str(i))
-                               for i, p in enumerate(self.problems)], id="problems-list")
+            yield OptionList(
+                *[Option(problem_text(p), id=str(i)) for i, p in enumerate(self.problems)],
+                id="problems-list",
+            )
 
     @on(OptionList.OptionSelected, "#problems-list")
     def picked(self, event: OptionList.OptionSelected) -> None:
@@ -276,10 +289,15 @@ class FileScreen(ModalScreen[Path | None]):
         with Vertical(id="file-dialog", classes="panel dialog") as dialog:
             dialog.border_title = "Write edits to"
             dialog.border_subtitle = "enter: pick · esc: cancel"
-            yield Static("Files that come later override earlier ones. Zephyr's own and "
-                         "third-party module files are not offered.", classes="hint")
-            opts = [Option(("● " if f == self.current else "  ") + label, id=str(f))
-                    for label, f in file_options(self.files, self.base, self.user)]
+            yield Static(
+                "Files that come later override earlier ones. Zephyr's own and "
+                "third-party module files are not offered.",
+                classes="hint",
+            )
+            opts = [
+                Option(("● " if f == self.current else "  ") + label, id=str(f))
+                for label, f in file_options(self.files, self.base, self.user)
+            ]
             yield OptionList(*opts, id="file-list")
 
     def on_mount(self) -> None:
@@ -310,17 +328,25 @@ class TargetScreen(ModalScreen[TargetChoice | None]):
         with Vertical(id="target-dialog", classes="panel dialog") as dialog:
             dialog.border_title = "Target"
             dialog.border_subtitle = "type to filter · enter: pick · esc: cancel"
-            yield Static("A build directory is exact (uses its build_info.yml). A board "
-                         "uses the app and shields below.", classes="hint")
+            yield Static(
+                "A build directory is exact (uses its build_info.yml). A board "
+                "uses the app and shields below.",
+                classes="hint",
+            )
             yield Input(placeholder="filter boards and builds", id="target-filter")
             yield OptionList(id="target-list")
             with Horizontal(id="target-extra"):
-                app = self.current.app if self.current and self.current.app else (
-                    str(self.cwd) if (self.cwd / "CMakeLists.txt").is_file() else "")
-                yield Input(value=app, placeholder="app directory (optional)",
-                            id="target-app")
-                yield Input(value=", ".join(self.current.shields if self.current else []),
-                            placeholder="shields, comma separated", id="target-shields")
+                app = (
+                    self.current.app
+                    if self.current and self.current.app
+                    else (str(self.cwd) if (self.cwd / "CMakeLists.txt").is_file() else "")
+                )
+                yield Input(value=app, placeholder="app directory (optional)", id="target-app")
+                yield Input(
+                    value=", ".join(self.current.shields if self.current else []),
+                    placeholder="shields, comma separated",
+                    id="target-shields",
+                )
 
     def on_mount(self) -> None:
         self.query_one("#target-list", OptionList).loading = True
@@ -353,8 +379,11 @@ class TargetScreen(ModalScreen[TargetChoice | None]):
         for board in self.boards:
             hay = f"{board.target} {board.vendor or ''} {board.full_name or ''}".lower()
             if all(w in hay for w in words):
-                label = Text.assemble(("board  ", "cyan"), board.target,
-                                      (f"  {board.full_name or ''}", "bright_black"))
+                label = Text.assemble(
+                    ("board  ", "cyan"),
+                    board.target,
+                    (f"  {board.full_name or ''}", "bright_black"),
+                )
                 opts.append(Option(label, id=f"board:{board.target}"))
             if len(opts) > 400:
                 break
@@ -382,8 +411,11 @@ class TargetScreen(ModalScreen[TargetChoice | None]):
             self.dismiss(TargetChoice(build_dir=value))
             return
         app = self.query_one("#target-app", Input).value.strip()
-        shields = [s.strip() for s in self.query_one("#target-shields", Input).value.split(",")
-                   if s.strip()]
+        shields = [
+            s.strip()
+            for s in self.query_one("#target-shields", Input).value.split(",")
+            if s.strip()
+        ]
         if app:
             app = str((self.cwd / app).resolve())
         self.dismiss(TargetChoice(board=value, app=app or None, shields=shields))
@@ -435,21 +467,31 @@ class EditScreen(ModalScreen[EditResult | None]):
         if structured and self.ctrls:
             entries = specifiers.parse(text, self.ctrls)
             if entries is not None:
-                return SpecifierEditor(self.ctrls, entries, self._macro_context(),
-                                       id="edit-value")
+                return SpecifierEditor(self.ctrls, entries, self._macro_context(), id="edit-value")
         value = values.to_input(self.spec.type, text) if text is not None else ""
-        return CompleteInput(value=value, placeholder="e.g. <&gpio0 5 GPIO_ACTIVE_LOW>",
-                             id="edit-value", kind="macro", context=self._macro_context())
+        return CompleteInput(
+            value=value,
+            placeholder="e.g. <&gpio0 5 GPIO_ACTIVE_LOW>",
+            id="edit-value",
+            kind="macro",
+            context=self._macro_context(),
+        )
 
     def _macro_context(self) -> set[str]:
         node = self.session.node(self.node_path)
-        return macros.context_words(self.prop, self.space, *node.compats[:1], *node.buses,
-                                    *node.on_buses)
+        return macros.context_words(
+            self.prop, self.space, *node.compats[:1], *node.buses, *node.on_buses
+        )
 
     def _update_keys(self) -> None:
         if isinstance(self.query_one("#edit-value"), SpecifierEditor):
-            keys = ["enter: set", "ctrl+n: another entry", "ctrl+r: remove entry",
-                    "ctrl+t: type it", "esc: cancel"]
+            keys = [
+                "enter: set",
+                "ctrl+n: another entry",
+                "ctrl+r: remove entry",
+                "ctrl+t: type it",
+                "esc: cancel",
+            ]
         else:
             keys = ["enter: set", "ctrl+t: fields" if self.ctrls else "", "esc: cancel"]
         self.query_one("#edit-dialog").border_subtitle = " · ".join(k for k in keys if k)
@@ -457,13 +499,16 @@ class EditScreen(ModalScreen[EditResult | None]):
     def _choices(self, token: str, target: CompleteInput) -> list:
         if token[:1].isdigit():
             return []
-        return [macro_choice(x)
-                for x in macros.rank(self.session.model.macros, token, target.context)]
+        return [
+            macro_choice(x) for x in macros.rank(self.session.model.macros, token, target.context)
+        ]
 
     def _info(self) -> str:
         desc = " ".join((self.spec.description or "").split())
-        hint = ("Pick the controller, then fill in each field. While typing a field, "
-                "↓ shows the matching macros.")
+        hint = (
+            "Pick the controller, then fill in each field. While typing a field, "
+            "↓ shows the matching macros."
+        )
         if not self.ctrls:
             hint = f"No node in this tree can be used here (none has #{self.space}-cells)."
         return escape(f"{desc}\n{hint}" if desc else hint)
@@ -491,13 +536,20 @@ class EditScreen(ModalScreen[EditResult | None]):
 
     def on_key(self, event) -> None:
         completer = self.completer
-        if event.key == "down" and isinstance(self.focused, CompleteInput) and \
-                completer.display and completer.option_count:
+        if (
+            event.key == "down"
+            and isinstance(self.focused, CompleteInput)
+            and completer.display
+            and completer.option_count
+        ):
             event.stop()
             completer.focus()
             completer.highlighted = 0
-        elif event.key == "enter" and not isinstance(self.focused, (Input, OptionList)) and \
-                not (isinstance(self.focused, Select) and self.focused.expanded):
+        elif (
+            event.key == "enter"
+            and not isinstance(self.focused, (Input, OptionList))
+            and not (isinstance(self.focused, Select) and self.focused.expanded)
+        ):
             event.stop()
             self.action_apply()
 
@@ -516,11 +568,15 @@ class EditScreen(ModalScreen[EditResult | None]):
         if not isinstance(widget, SpecifierEditor):
             return
         focused = self.focused
-        row = next((a for a in focused.ancestors_with_self if isinstance(a, SpecRow)),
-                   None) if focused else None
+        row = (
+            next((a for a in focused.ancestors_with_self if isinstance(a, SpecRow)), None)
+            if focused
+            else None
+        )
         if not await widget.remove_row(row or widget.rows[-1]):
-            self._error("can't remove the only entry; press d in the list to remove the "
-                        "setting instead")
+            self._error(
+                "can't remove the only entry; press d in the list to remove the setting instead"
+            )
 
     async def action_toggle_text(self) -> None:
         widget = self.query_one("#edit-value")
@@ -541,8 +597,13 @@ class EditScreen(ModalScreen[EditResult | None]):
         await widget.remove()
         await self.query_one("#edit-dialog").mount(new, before=self.completer)
         self._update_keys()
-        (new.query(Input).first() if isinstance(new, SpecifierEditor) and new.query(Input)
-         else new.query_one(Select) if isinstance(new, SpecifierEditor) else new).focus()
+        (
+            new.query(Input).first()
+            if isinstance(new, SpecifierEditor) and new.query(Input)
+            else new.query_one(Select)
+            if isinstance(new, SpecifierEditor)
+            else new
+        ).focus()
 
     def action_apply(self) -> None:
         widget = self.query_one("#edit-value")
@@ -580,8 +641,9 @@ class InfoScreen(ModalScreen[None]):
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="info-dialog", classes="panel dialog") as dialog:
             dialog.border_title = self.title_text
-            dialog.border_subtitle = ("y: copy the overlay snippet · esc: close"
-                                      if self.snippet else "esc: close")
+            dialog.border_subtitle = (
+                "y: copy the overlay snippet · esc: close" if self.snippet else "esc: close"
+            )
             yield Static(self.body)
 
     def action_copy(self) -> None:
@@ -614,8 +676,9 @@ class AddScreen(ModalScreen[BindingInfo | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="add-dialog", classes="panel dialog") as dialog:
             dialog.border_title = f"Add under {self.parent_path}"
-            dialog.border_subtitle = ("enter: pick · ctrl+f: fits here only · "
-                                      "ctrl+d: with driver only · esc: cancel")
+            dialog.border_subtitle = (
+                "enter: pick · ctrl+f: fits here only · ctrl+d: with driver only · esc: cancel"
+            )
             yield Static("", id="add-mode", classes="hint")
             yield Input(placeholder="search compatibles and descriptions", id="add-filter")
             with Horizontal(id="add-body"):
@@ -636,13 +699,17 @@ class AddScreen(ModalScreen[BindingInfo | None]):
         words = self.query_one("#add-filter", Input).value.lower().split()
         mode = []
         if self.fit_only:
-            mode.append(f"only bindings for a {'/'.join(self.buses)} bus" if self.buses
-                        else "only bindings that are not on a bus")
+            mode.append(
+                f"only bindings for a {'/'.join(self.buses)} bus"
+                if self.buses
+                else "only bindings that are not on a bus"
+            )
         if self.driver_only:
             mode.append("only with a driver")
         self.query_one("#add-mode", Static).update(
             ("Showing " + ", ".join(mode) if mode else "Showing all bindings")
-            + f"  ·  ✓ = a driver uses it")
+            + f"  ·  ✓ = a driver uses it"
+        )
         shown = []
         for b in self.bindings:
             if self.fit_only and not self._fits(b):
@@ -654,9 +721,13 @@ class AddScreen(ModalScreen[BindingInfo | None]):
                 shown.append(b)
         # Exact/prefix matches on the compatible first.
         if words:
-            shown.sort(key=lambda b: (not b.compatible.lower().startswith(words[0])
-                                      and words[0] not in b.compatible.split(",")[-1],
-                                      b.compatible))
+            shown.sort(
+                key=lambda b: (
+                    not b.compatible.lower().startswith(words[0])
+                    and words[0] not in b.compatible.split(",")[-1],
+                    b.compatible,
+                )
+            )
         self.shown = shown[:500]
         lst = self.query_one("#add-list", OptionList)
         lst.clear_options()
@@ -679,11 +750,17 @@ class AddScreen(ModalScreen[BindingInfo | None]):
     def _describe(self, b: BindingInfo) -> None:
         text = Text()
         text.append(b.compatible + "\n", style="bold")
-        text.append(f"{b.path.name}" + (f" · on {b.on_bus} bus" if b.on_bus else "")
-                    + (" · provides " + "/".join(b.buses) + " bus" if b.buses else "")
-                    + "\n", style="bright_black")
-        text.append("driver found\n\n" if b.has_driver else "no driver found in the "
-                    "workspace\n\n", style="green" if b.has_driver else "yellow")
+        text.append(
+            f"{b.path.name}"
+            + (f" · on {b.on_bus} bus" if b.on_bus else "")
+            + (" · provides " + "/".join(b.buses) + " bus" if b.buses else "")
+            + "\n",
+            style="bright_black",
+        )
+        text.append(
+            "driver found\n\n" if b.has_driver else "no driver found in the workspace\n\n",
+            style="green" if b.has_driver else "yellow",
+        )
         text.append(b.description.strip())
         self.query_one("#add-info", Static).update(text)
 
@@ -734,18 +811,26 @@ class NodeFormScreen(ModalScreen[EditResult | None]):
         self.session, self.parent_path, self.info, self.base = session, parent_path, info, base
         edtlib = import_edtlib(session.ws.zephyr_base)
         m = session.model
-        self.binding = edtlib.Binding(str(info.path), m.edt._binding_fname2path,
-                                      require_description=False)
+        self.binding = edtlib.Binding(
+            str(info.path), m.edt._binding_fname2path, require_description=False
+        )
         parent = session.node(parent_path)
-        self.addr_cells = parent._node.props["#address-cells"].to_num() \
-            if "#address-cells" in parent._node.props else 2
-        self.size_cells = parent._node.props["#size-cells"].to_num() \
-            if "#size-cells" in parent._node.props else 1
+        self.addr_cells = (
+            parent._node.props["#address-cells"].to_num()
+            if "#address-cells" in parent._node.props
+            else 2
+        )
+        self.size_cells = (
+            parent._node.props["#size-cells"].to_num() if "#size-cells" in parent._node.props else 1
+        )
         specs = self.binding.prop2specs
         self.has_reg = "reg" in specs
         self.reg_required = self.has_reg and specs["reg"].required
-        self.required = [n for n, s in specs.items()
-                         if s.required and n not in self.SKIP and s.type in values.EDITABLE]
+        self.required = [
+            n
+            for n, s in specs.items()
+            if s.required and n not in self.SKIP and s.type in values.EDITABLE
+        ]
 
     def _default_name(self) -> str:
         name = self.info.compatible.split(",")[-1]
@@ -772,31 +857,44 @@ class NodeFormScreen(ModalScreen[EditResult | None]):
             yield Static("Label (for &references; empty for none)", classes="label")
             yield Input(value=self._default_label(name), id="form-label")
             if self.has_reg:
-                cells = (f"{self.addr_cells} address cell(s)"
-                         + (f" + {self.size_cells} size cell(s)" if self.size_cells else ""))
+                cells = f"{self.addr_cells} address cell(s)" + (
+                    f" + {self.size_cells} size cell(s)" if self.size_cells else ""
+                )
                 req = "" if self.reg_required else " (optional)"
-                yield Static(f"reg{req}: {cells}. The unit address (@…) is taken from it.",
-                             classes="label")
-                hint = {"i2c": "e.g. 0x76", "spi": "chip select, e.g. 0",
-                        "i3c": "e.g. 0x48 0x0 0x0"}.get(self.info.on_bus or "", "e.g. 0x1000 0x100")
+                yield Static(
+                    f"reg{req}: {cells}. The unit address (@…) is taken from it.", classes="label"
+                )
+                hint = {
+                    "i2c": "e.g. 0x76",
+                    "spi": "chip select, e.g. 0",
+                    "i3c": "e.g. 0x48 0x0 0x0",
+                }.get(self.info.on_bus or "", "e.g. 0x1000 0x100")
                 yield Input(placeholder=hint, id="form-reg")
             for name in self.required:
                 spec = self.binding.prop2specs[name]
                 desc = " ".join((spec.description or "").split())
-                yield Static(f"{name} ({spec.type}, required)"
-                             + (f": {escape(desc[:120])}" if desc else ""), classes="label")
+                yield Static(
+                    f"{name} ({spec.type}, required)" + (f": {escape(desc[:120])}" if desc else ""),
+                    classes="label",
+                )
                 if spec.type == "boolean":
                     yield Static("  (set to true)", classes="hint")
                 elif spec.enum and spec.type in ("int", "string"):
-                    yield Select([(str(v), str(v)) for v in spec.enum], id=prop_id(name),
-                                 prompt="pick a value")
+                    yield Select(
+                        [(str(v), str(v)) for v in spec.enum],
+                        id=prop_id(name),
+                        prompt="pick a value",
+                    )
                 else:
                     yield Input(id=prop_id(name), placeholder=spec.type)
             yield Static("Write to", classes="label")
             files = s.write_files(self.parent_path)
-            yield Select(file_options(files, self.base, s.inputs.user_files),
-                         value=s.default_write_file(self.parent_path), allow_blank=False,
-                         id="form-file")
+            yield Select(
+                file_options(files, self.base, s.inputs.user_files),
+                value=s.default_write_file(self.parent_path),
+                allow_blank=False,
+                id="form-file",
+            )
             yield Static("", id="form-error")
 
     def on_mount(self) -> None:
@@ -831,12 +929,13 @@ class NodeFormScreen(ModalScreen[EditResult | None]):
                     self._error(f"reg needs {self.addr_cells + self.size_cells} cells per entry")
                     return
                 if "@" not in name:
-                    addr = cells[:self.addr_cells]
+                    addr = cells[: self.addr_cells]
                     try:
                         unit = ",".join(f"{int(c, 0):x}" for c in addr)
                     except ValueError:
-                        self._error("give the unit address in the name (name@addr) when reg "
-                                    "uses macros")
+                        self._error(
+                            "give the unit address in the name (name@addr) when reg uses macros"
+                        )
                         return
                     name = f"{name}@{unit}"
                 props.append(("reg", reg))
@@ -854,8 +953,14 @@ class NodeFormScreen(ModalScreen[EditResult | None]):
                 self._error(f"{pname} is required")
                 return
             try:
-                props.append((pname, values.format_value(spec.type, str(value), spec.enum,
-                                                         self.session.model.labels)))
+                props.append(
+                    (
+                        pname,
+                        values.format_value(
+                            spec.type, str(value), spec.enum, self.session.model.labels
+                        ),
+                    )
+                )
             except ValueError as exc:
                 self._error(f"{pname}: {exc}")
                 return
@@ -1009,8 +1114,12 @@ class DtsView(View):
             return
         session = Session(self.ws, inputs, self.config.work_dir)
         if not session.reload():
-            self.notify(session.error or "parse failed", title="Devicetree does not parse",
-                        severity="error", timeout=15)
+            self.notify(
+                session.error or "parse failed",
+                title="Devicetree does not parse",
+                severity="error",
+                timeout=15,
+            )
             if self.session is None:
                 self.action_pick_target()
             return
@@ -1032,8 +1141,9 @@ class DtsView(View):
         chosen = catalog.chosen_names(roots)
         self.call_from_thread(self._catalog_loaded, drivers, bindings, chosen)
 
-    def _catalog_loaded(self, drivers: set[str], bindings: list[BindingInfo],
-                        chosen: set[str]) -> None:
+    def _catalog_loaded(
+        self, drivers: set[str], bindings: list[BindingInfo], chosen: set[str]
+    ) -> None:
         self.drivers, self.bindings_catalog, self.chosen_names = drivers, bindings, chosen
         self.show_node()
 
@@ -1043,7 +1153,9 @@ class DtsView(View):
                 self.open_target(choice)
             elif self.session is None:
                 self.query_one("#details", Static).update(
-                    "No target. Press t to pick a board or build directory.")
+                    "No target. Press t to pick a board or build directory."
+                )
+
         self.push_screen(TargetScreen(self.ws, self.config.cwd, self.choice), done)
 
     # -- tree ------------------------------------------------------------
@@ -1063,8 +1175,9 @@ class DtsView(View):
             text.append(f"  {node.status}", style="bright_black italic")
         mark = self.problem_marks.get(node.path)
         if mark:
-            text.append("  ✖" if mark == "error" else "  ⚠",
-                        style="red" if mark == "error" else "yellow")
+            text.append(
+                "  ✖" if mark == "error" else "  ⚠", style="red" if mark == "error" else "yellow"
+            )
         return text
 
     def _matches(self, node) -> bool:
@@ -1101,8 +1214,9 @@ class DtsView(View):
             for child in node.children.values():
                 if visible is not None and child.path not in visible:
                     continue
-                item = parent.add(self._node_label(child), data=child.path,
-                                  allow_expand=bool(child.children))
+                item = parent.add(
+                    self._node_label(child), data=child.path, allow_expand=bool(child.children)
+                )
                 self.node_index[child.path] = item
                 add(item, child)
 
@@ -1178,8 +1292,10 @@ class DtsView(View):
                 if self.drivers:
                     has = catalog.compat_token(compat) in self.drivers
                     t.append("driver: ", style="bright_black")
-                    t.append("found\n" if has else "none found in the workspace\n",
-                             style="green" if has else "yellow")
+                    t.append(
+                        "found\n" if has else "none found in the workspace\n",
+                        style="green" if has else "yellow",
+                    )
         elif node.compats:
             t.append("no binding found for this compatible\n", style="red")
         if node.on_buses:
@@ -1200,8 +1316,9 @@ class DtsView(View):
                 t.append("\n")
                 t.append_text(problem_text(p))
                 t.append("\n")
-        refs = [r for r in s.model.references.get(path, [])
-                if r.source not in ("/chosen", "/aliases")]
+        refs = [
+            r for r in s.model.references.get(path, []) if r.source not in ("/chosen", "/aliases")
+        ]
         if refs:
             t.append(f"\nreferenced by ({len(refs)})\n", style="bold")
             for r in refs[:40]:
@@ -1236,8 +1353,12 @@ class DtsView(View):
         """The settings list for `node` (keeps the cursor on the same row)."""
         props = self.query_one("#props", PropList)
         keep = self.last_row.get(node.path)
-        rows = settings.rows(self.session, node, node.path in self.more_open,
-                             base_name=lambda f: rel(f, self.ws.topdir))
+        rows = settings.rows(
+            self.session,
+            node,
+            node.path in self.more_open,
+            base_name=lambda f: rel(f, self.ws.topdir),
+        )
         self.setting_rows = {r.id: r for r in rows}
         props.clear_options()
         props.add_options([Option(r.text, id=r.id, disabled=r.kind == "head") for r in rows])
@@ -1301,8 +1422,9 @@ class DtsView(View):
                 self.update_status("reloaded (files changed)")
             else:
                 s._mtimes = s._snapshot()
-                self.notify(s.error or "", title="Devicetree no longer parses",
-                            severity="error", timeout=10)
+                self.notify(
+                    s.error or "", title="Devicetree no longer parses", severity="error", timeout=10
+                )
 
     # -- actions ---------------------------------------------------------
 
@@ -1392,8 +1514,10 @@ class DtsView(View):
             if path:
                 self.write_file = path
                 self.update_status()
-        self.push_screen(FileScreen(files, self.write_file, self.ws.topdir,
-                                    s.inputs.user_files), done)
+
+        self.push_screen(
+            FileScreen(files, self.write_file, self.ws.topdir, s.inputs.user_files), done
+        )
 
     def action_add_node(self) -> None:
         s, path = self.session, self.current_path
@@ -1410,6 +1534,7 @@ class DtsView(View):
         def picked(info: BindingInfo | None) -> None:
             if info:
                 self.push_screen(NodeFormScreen(s, path, info, self.ws.topdir), self.report)
+
         self.push_screen(AddScreen(self.bindings_catalog, path, list(node.buses)), picked)
 
     def action_toggle_status(self) -> None:
@@ -1439,6 +1564,7 @@ class DtsView(View):
         def confirmed(yes: bool) -> None:
             if yes:
                 self.report(s.delete_node(path, file))
+
         self.push_screen(ConfirmScreen(f"Delete {path}?", plan[0]), confirmed)
 
     def _prop_name(self) -> str | None:
@@ -1454,8 +1580,9 @@ class DtsView(View):
     def _set(self, path: str, name: str, text: str | None, delete: bool = False) -> EditResult:
         file = self._file_for(path, name)
         if file is None:
-            return EditResult(False, "none of this target's files can be edited "
-                                     "(add an app overlay)")
+            return EditResult(
+                False, "none of this target's files can be edited (add an app overlay)"
+            )
         return self.session.set_property(path, name, text, file, delete=delete)
 
     def action_toggle_prop(self) -> None:
@@ -1485,8 +1612,11 @@ class DtsView(View):
         elif row.kind == "add":
             self.action_add_node()
         elif row.kind == "readonly":
-            self.notify(f"{row.id[3:]} isn't in the node's binding, so it can't be changed "
-                        "here; press o to open the file", severity="warning")
+            self.notify(
+                f"{row.id[3:]} isn't in the node's binding, so it can't be changed "
+                "here; press o to open the file",
+                severity="warning",
+            )
         elif row.kind == "entry":
             self._pick_label(path, row.id)
         elif row.kind == "new":
@@ -1505,8 +1635,9 @@ class DtsView(View):
             return
         file = self._file_for(path, name)
         if file is None:
-            self.notify("none of this target's files can be edited (add an app overlay)",
-                        severity="warning")
+            self.notify(
+                "none of this target's files can be edited (add an app overlay)", severity="warning"
+            )
             return
         if type_ == "phandle-array":
             self.push_screen(EditScreen(s, path, name, file), self.report)
@@ -1528,18 +1659,45 @@ class DtsView(View):
                             t.append("  default", style="bright_black italic")
                         out.append((str(v), t))
                 return out
-            self.push_screen(PickScreen(title, desc, enum_choices, apply,
-                                        current or ("" if default is None else str(default)),
-                                        free=False, placeholder="type to search"),
-                             self.report)
+
+            self.push_screen(
+                PickScreen(
+                    title,
+                    desc,
+                    enum_choices,
+                    apply,
+                    current or ("" if default is None else str(default)),
+                    free=False,
+                    placeholder="type to search",
+                ),
+                self.report,
+            )
         elif type_ in settings.LABEL_TYPES:
-            self.push_screen(PickScreen(title, desc, lambda t: settings.label_choices(s, t),
-                                        apply, current, free=False,
-                                        placeholder="type to search for a node"), self.report)
+            self.push_screen(
+                PickScreen(
+                    title,
+                    desc,
+                    lambda t: settings.label_choices(s, t),
+                    apply,
+                    current,
+                    free=False,
+                    placeholder="type to search for a node",
+                ),
+                self.report,
+            )
         elif type_ == "phandles":
-            self.push_screen(PickScreen(title, desc, lambda t: settings.label_choices(s, t),
-                                        apply, current, word=True,
-                                        placeholder="&node1 &node2"), self.report)
+            self.push_screen(
+                PickScreen(
+                    title,
+                    desc,
+                    lambda t: settings.label_choices(s, t),
+                    apply,
+                    current,
+                    word=True,
+                    placeholder="&node1 &node2",
+                ),
+                self.report,
+            )
         elif type_ in ("int", "array", "compound"):
             context = macros.context_words(*node.compats[:1])
             primary = macros.context_words(name, *node.buses, *node.on_buses)
@@ -1558,23 +1716,39 @@ class DtsView(View):
                         t.append(f"  {settings.hz(v)}", style="green")
                     out.append((ins, t))
                 return out
+
             hint = {"int": "a number or a macro", "array": "numbers, e.g. 1 2 3"}.get(
-                type_, "a value")
-            self.push_screen(PickScreen(title, desc, macro_choices, apply, current, word=True,
-                                        placeholder=hint), self.report)
+                type_, "a value"
+            )
+            self.push_screen(
+                PickScreen(title, desc, macro_choices, apply, current, word=True, placeholder=hint),
+                self.report,
+            )
         else:
-            hint = {"string": "text", "string-array": "texts, separated by commas",
-                    "uint8-array": "hex bytes, e.g. 00 1f a0"}.get(type_, "a value")
-            self.push_screen(PickScreen(title, desc, lambda t: [], apply, current,
-                                        placeholder=hint), self.report)
+            hint = {
+                "string": "text",
+                "string-array": "texts, separated by commas",
+                "uint8-array": "hex bytes, e.g. 00 1f a0",
+            }.get(type_, "a value")
+            self.push_screen(
+                PickScreen(title, desc, lambda t: [], apply, current, placeholder=hint), self.report
+            )
 
     def _pick_label(self, path: str, name: str) -> None:
         s = self.session
         raw = settings.source_text(s, path, name)
-        self.push_screen(PickScreen(name, "Which node should this point at?",
-                                    lambda t: settings.label_choices(s, t),
-                                    lambda v: self._set(path, name, v), raw or "", free=False,
-                                    placeholder="type to search for a node"), self.report)
+        self.push_screen(
+            PickScreen(
+                name,
+                "Which node should this point at?",
+                lambda t: settings.label_choices(s, t),
+                lambda v: self._set(path, name, v),
+                raw or "",
+                free=False,
+                placeholder="type to search for a node",
+            ),
+            self.report,
+        )
 
     def _pick_ref_name(self, path: str) -> None:
         s = self.session
@@ -1584,38 +1758,53 @@ class DtsView(View):
 
         def named(name: str):
             if not pattern.match(name):
-                return EditResult(False, "use lowercase letters, digits and - (and , . _ "
-                                         "for chosen)" if chosen else
-                                         "use lowercase letters, digits and -")
+                return EditResult(
+                    False,
+                    "use lowercase letters, digits and - (and , . _ for chosen)"
+                    if chosen
+                    else "use lowercase letters, digits and -",
+                )
             return EditResult(True, name)
 
         def then(result) -> None:
             if result is not None:
                 self._pick_label(path, result.message)
-        choices = (lambda t: settings.chosen_choices(self.chosen_names, used, t)) if chosen \
+
+        choices = (
+            (lambda t: settings.chosen_choices(self.chosen_names, used, t))
+            if chosen
             else (lambda t: [])
-        self.push_screen(PickScreen("New chosen entry" if chosen else "New alias",
-                                    "First the name, then the node it points at.", choices,
-                                    named, placeholder="e.g. zephyr,console" if chosen
-                                    else "e.g. led0"), then)
+        )
+        self.push_screen(
+            PickScreen(
+                "New chosen entry" if chosen else "New alias",
+                "First the name, then the node it points at.",
+                choices,
+                named,
+                placeholder="e.g. zephyr,console" if chosen else "e.g. led0",
+            ),
+            then,
+        )
 
     def action_info(self) -> None:
         """i: the reference card for the highlighted property."""
         row, path, s = self._row(), self.current_path, self.session
         if row is None or not s or not path:
             return
-        name = {"status": "status", "prop": row.id,
-                "readonly": row.id[3:]}.get(row.kind)
+        name = {"status": "status", "prop": row.id, "readonly": row.id[3:]}.get(row.kind)
         if name is None:
             self.notify("pick a property to see its details", severity="warning")
             return
         node = s.node(path)
         spec = s.spec(node, name)
         snippet = settings.example(s, node, name, spec) if spec is not None else None
-        self.push_screen(InfoScreen(settings.friendly(name),
-                                    settings.prop_info(s, node, name,
-                                                       lambda f: rel(f, self.ws.topdir)),
-                                    snippet))
+        self.push_screen(
+            InfoScreen(
+                settings.friendly(name),
+                settings.prop_info(s, node, name, lambda f: rel(f, self.ws.topdir)),
+                snippet,
+            )
+        )
 
     def action_delete_prop(self) -> None:
         row, path, s = self._row(), self.current_path, self.session

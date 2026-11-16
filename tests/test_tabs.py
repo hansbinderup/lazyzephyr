@@ -21,9 +21,14 @@ async def wait_for(predicate, timeout=10.0):
 
 
 def twister_config(tmp_path, roots):
-    return TwisterConfig(cwd=tmp_path, roots=roots, workspace=Workspace(None, None),
-                         twister_cmd=["true"], state_dir=tmp_path / "state",
-                         options=RunOptions())
+    return TwisterConfig(
+        cwd=tmp_path,
+        roots=roots,
+        workspace=Workspace(None, None),
+        twister_cmd=["true"],
+        state_dir=tmp_path / "state",
+        options=RunOptions(),
+    )
 
 
 async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypatch):
@@ -31,9 +36,12 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
     tests = tmp_path / "tests" / "t"
     tests.mkdir(parents=True)
     (tests / "testcase.yaml").write_text("tests:\n  demo.one: {}\n")
-    dts = DtsConfig(cwd=workspace / "app", workspace=find_workspace(workspace),
-                    choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
-                    work_dir=tmp_path / "work")
+    dts = DtsConfig(
+        cwd=workspace / "app",
+        workspace=find_workspace(workspace),
+        choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
+        work_dir=tmp_path / "work",
+    )
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     app = LazyZephyrApp(twister_config(tmp_path, [tmp_path / "tests"]), dts)
     async with app.run_test(size=(180, 50)) as pilot:
@@ -67,6 +75,7 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
 
 def test_tab_order():
     from lazyzephyr.app import TABS
+
     assert TABS == ("build", "dts", "kconfig", "tests")
 
 
@@ -81,21 +90,26 @@ async def test_drag_and_maximize_in_every_tab(workspace, tmp_path):
     tests = tmp_path / "tests" / "t"
     tests.mkdir(parents=True)
     (tests / "testcase.yaml").write_text("tests:\n  demo.one: {}\n")
-    dts = DtsConfig(cwd=workspace / "app", workspace=find_workspace(workspace),
-                    choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
-                    work_dir=tmp_path / "work")
+    dts = DtsConfig(
+        cwd=workspace / "app",
+        workspace=find_workspace(workspace),
+        choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
+        work_dir=tmp_path / "work",
+    )
     app = LazyZephyrApp(twister_config(tmp_path, [tmp_path / "tests"]), dts)
     # (tab, left column, the two stacked panels on the right)
-    tabs = [("build", "#b-left", "#b-configs-panel", "#b-details-panel"),
-            ("dts", "#left", "#details-panel", "#settings-panel"),
-            ("kconfig", "#kleft", "#kdetails-panel", "#krelated-panel"),
-            ("tests", "#left", "#log", "#details-panel")]
+    tabs = [
+        ("build", "#b-left", "#b-configs-panel", "#b-details-panel"),
+        ("dts", "#left", "#details-panel", "#settings-panel"),
+        ("kconfig", "#kleft", "#kdetails-panel", "#krelated-panel"),
+        ("tests", "#left", "#log", "#details-panel"),
+    ]
     async with app.run_test(size=(180, 50)) as pilot:
         await wait_for(lambda: "s:demo.one" in app.twister.node_index)
         for tab, left_id, upper_id, lower_id in tabs:
             app.tabs.active = tab
             await pilot.pause(0.3)
-            if app.screen is not app.screen_stack[0]:   # Kconfig asks for a build
+            if app.screen is not app.screen_stack[0]:  # Kconfig asks for a build
                 await pilot.press("escape")
                 await pilot.pause()
             view = app.view(tab)
@@ -109,8 +123,7 @@ async def test_drag_and_maximize_in_every_tab(workspace, tmp_path):
             assert upper.outer_size.height == height + 3, tab
             assert lower.region.y == upper.region.bottom, tab
             # z maximizes the focused panel itself, not the whole tab area.
-            target = upper if upper.can_focus else next(
-                w for w in upper.query("*") if w.can_focus)
+            target = upper if upper.can_focus else next(w for w in upper.query("*") if w.can_focus)
             target.focus()
             await pilot.press("z")
             await pilot.pause()
@@ -122,8 +135,9 @@ async def test_drag_and_maximize_in_every_tab(workspace, tmp_path):
         app.tabs.active = "build"
         await pilot.pause(0.3)
         build = app.view("build")
-        build.store.configs.append(BuildConfig(name="mon", app="app", board="native_sim",
-                                               monitor="echo ready; sleep 30"))
+        build.store.configs.append(
+            BuildConfig(name="mon", app="app", board="native_sim", monitor="echo ready; sleep 30")
+        )
         build.refresh_list(select="cfg:mon")
         build.configs_list.focus()
         await pilot.press("o")

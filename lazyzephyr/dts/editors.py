@@ -37,8 +37,14 @@ class CompleteInput(Input):
     whole: complete the whole value, not just the word being typed.
     """
 
-    def __init__(self, *args, kind: str = "macro", context: set[str] | None = None,
-                 whole: bool = False, **kwargs):
+    def __init__(
+        self,
+        *args,
+        kind: str = "macro",
+        context: set[str] | None = None,
+        whole: bool = False,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.kind = kind
         self.context = context or set()
@@ -46,7 +52,7 @@ class CompleteInput(Input):
 
     def token(self) -> str:
         if self.whole:
-            return self.value[:self.cursor_position]
+            return self.value[: self.cursor_position]
         return token_before(self.value, self.cursor_position)
 
 
@@ -73,7 +79,7 @@ class Completer(OptionList):
 
     def update_choices(self) -> None:
         t = self.target
-        items = self.provider(t.token(), t)[:self.LIMIT] if t is not None else []
+        items = self.provider(t.token(), t)[: self.LIMIT] if t is not None else []
         self.clear_options()
         self._inserts = [i for i, _ in items]
         self.add_options([Option(d) for _, d in items])
@@ -97,8 +103,8 @@ class Completer(OptionList):
         t = self.target
         if t is None or not 0 <= index < len(self._inserts):
             return
-        before, after = t.value[:t.cursor_position], t.value[t.cursor_position:]
-        new = before[:len(before) - len(t.token())] + self._inserts[index]
+        before, after = t.value[: t.cursor_position], t.value[t.cursor_position :]
+        new = before[: len(before) - len(t.token())] + self._inserts[index]
         t.value = new + after
         t.cursor_position = len(new)
         t.focus()
@@ -115,8 +121,9 @@ def macro_choice(m: macros.Macro) -> Choice:
 class SpecRow(Horizontal):
     """One phandle-array entry: the controller and an input per cell."""
 
-    def __init__(self, ctrls: list[Controller], ref: str | None, cells: list[str],
-                 context: set[str]):
+    def __init__(
+        self, ctrls: list[Controller], ref: str | None, cells: list[str], context: set[str]
+    ):
         super().__init__(classes="spec-row")
         self.ctrls = ctrls
         self.by_ref = {c.ref: c for c in ctrls}
@@ -125,9 +132,12 @@ class SpecRow(Horizontal):
         self.context = context
 
     def compose(self) -> ComposeResult:
-        yield Select([(c.title, c.ref) for c in self.ctrls],
-                     value=self.ref if self.ref else Select.BLANK,
-                     prompt="controller", classes="spec-ctrl")
+        yield Select(
+            [(c.title, c.ref) for c in self.ctrls],
+            value=self.ref if self.ref else Select.BLANK,
+            prompt="controller",
+            classes="spec-ctrl",
+        )
         yield from self._cell_inputs(self._initial)
 
     def _cell_inputs(self, vals: list[str]) -> list[CompleteInput]:
@@ -137,10 +147,15 @@ class SpecRow(Horizontal):
         out = []
         for i, name in enumerate(ctrl.cells):
             hint = f"{name} (0-{ctrl.limit - 1})" if name == "pin" and ctrl.limit else name
-            out.append(CompleteInput(value=vals[i] if i < len(vals) else "", placeholder=hint,
-                                     kind="macro", classes="spec-cell",
-                                     context=self.context | macros.context_words(name,
-                                                                                 ctrl.compat)))
+            out.append(
+                CompleteInput(
+                    value=vals[i] if i < len(vals) else "",
+                    placeholder=hint,
+                    kind="macro",
+                    classes="spec-cell",
+                    context=self.context | macros.context_words(name, ctrl.compat),
+                )
+            )
         return out
 
     @on(Select.Changed, ".spec-ctrl")
@@ -161,8 +176,7 @@ class SpecRow(Horizontal):
 class SpecifierEditor(Vertical):
     """A phandle-array as rows of controller + cells."""
 
-    def __init__(self, ctrls: list[Controller], entries: list[Entry], context: set[str],
-                 **kwargs):
+    def __init__(self, ctrls: list[Controller], entries: list[Entry], context: set[str], **kwargs):
         super().__init__(**kwargs)
         self.ctrls, self._initial, self.context = ctrls, entries, context
 
@@ -207,9 +221,17 @@ class PickScreen(ModalScreen):
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
-    def __init__(self, title: str, help: str, choices: Callable[[str], list[Choice]],
-                 apply: Callable[[str], object], value: str = "", free: bool = True,
-                 placeholder: str = "", word: bool = False):
+    def __init__(
+        self,
+        title: str,
+        help: str,
+        choices: Callable[[str], list[Choice]],
+        apply: Callable[[str], object],
+        value: str = "",
+        free: bool = True,
+        placeholder: str = "",
+        word: bool = False,
+    ):
         """word: a choice replaces only the word being typed (`A | B` + macro)."""
         super().__init__()
         self.title_text, self.help = title, help
@@ -221,9 +243,11 @@ class PickScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="pick-dialog", classes="panel dialog") as dialog:
             dialog.border_title = self.title_text
-            dialog.border_subtitle = ("type to search or enter a value · ↑↓ pick · "
-                                      "enter: set · esc: cancel" if self.free else
-                                      "type to search · ↑↓ pick · enter: set · esc: cancel")
+            dialog.border_subtitle = (
+                "type to search or enter a value · ↑↓ pick · enter: set · esc: cancel"
+                if self.free
+                else "type to search · ↑↓ pick · enter: set · esc: cancel"
+            )
             if self.help:
                 yield Static(self.help, classes="hint", markup=False)
             yield Input(value=self.value, placeholder=self.placeholder, id="pick-input")
@@ -279,8 +303,12 @@ class PickScreen(ModalScreen):
         lst = self.query_one("#pick-list", OptionList)
         if event.key in ("up", "down", "pageup", "pagedown") and lst.option_count:
             event.stop()
-            {"up": lst.action_cursor_up, "down": lst.action_cursor_down,
-             "pageup": lst.action_page_up, "pagedown": lst.action_page_down}[event.key]()
+            {
+                "up": lst.action_cursor_up,
+                "down": lst.action_cursor_down,
+                "pageup": lst.action_page_up,
+                "pagedown": lst.action_page_down,
+            }[event.key]()
 
     @on(Input.Submitted, "#pick-input")
     def submitted(self, event: Input.Submitted) -> None:
@@ -301,7 +329,7 @@ class PickScreen(ModalScreen):
         elif self._rows[index] is None:
             value = text
         elif self.word and self.touched:
-            value = text[:len(text) - len(token_before(text, len(text)))] + self._rows[index]
+            value = text[: len(text) - len(token_before(text, len(text)))] + self._rows[index]
         else:
             value = self._rows[index]
         result = self.apply(value)
@@ -310,7 +338,8 @@ class PickScreen(ModalScreen):
             self.dismiss(result)
         else:
             self.query_one("#pick-error", Static).update(
-                Text(getattr(result, "message", "can't set that"), style="red"))
+                Text(getattr(result, "message", "can't set that"), style="red")
+            )
 
     def action_cancel(self) -> None:
         self.dismiss(None)

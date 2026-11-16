@@ -37,9 +37,7 @@ SKIP_PREFIXES = ("twister-out", "build-", "build_", ".")
 SOURCE_SUFFIXES = frozenset({".c", ".cpp", ".cxx", ".cc"})
 
 # ZTEST(suite, test), ZTEST_F, ZTEST_USER, ZTEST_USER_F
-_ZTEST_RE = re.compile(
-    r"^[ \t]*ZTEST(?:_USER)?(?:_F)?\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)", re.MULTILINE
-)
+_ZTEST_RE = re.compile(r"^[ \t]*ZTEST(?:_USER)?(?:_F)?\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -93,8 +91,11 @@ class Scenario:
         `nrf52840dk` and `nrf52840dk/nrf52840` match each other.
         """
         named = {*self.platform_allow, *self.integration_platforms}
-        return any(p == n or n.startswith(f"{p}/") or p.startswith(f"{n}/")
-                   for p in platforms for n in named)
+        return any(
+            p == n or n.startswith(f"{p}/") or p.startswith(f"{n}/")
+            for p in platforms
+            for n in named
+        )
 
 
 @dataclass
@@ -120,11 +121,7 @@ class Discovery:
     def under(self, folder: Path) -> list[Scenario]:
         """Scenarios whose directory is `folder` or below it."""
         folder = folder.resolve()
-        return [
-            s
-            for s in self.scenarios
-            if s.directory == folder or folder in s.directory.parents
-        ]
+        return [s for s in self.scenarios if s.directory == folder or folder in s.directory.parents]
 
     def platforms(self) -> list[str]:
         found: set[str] = set()
@@ -245,8 +242,10 @@ def parse_testcase_yaml(path: Path) -> list[Scenario]:
         def merged(key: str):
             return spec.get(key, common.get(key))
 
-        harness_config = {**_as_dict(common.get("harness_config")),
-                          **_as_dict(spec.get("harness_config"))}
+        harness_config = {
+            **_as_dict(common.get("harness_config")),
+            **_as_dict(spec.get("harness_config")),
+        }
 
         scenarios.append(
             Scenario(

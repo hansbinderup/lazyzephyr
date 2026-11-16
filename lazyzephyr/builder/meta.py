@@ -10,8 +10,19 @@ from pathlib import Path
 
 from ..dts.workspace import Board, Workspace, load_yaml
 
-_SKIP = {".git", ".west", ".venv", "venv", "__pycache__", "node_modules", "build", "twister-out",
-         "modules", "external", "bootloader"}
+_SKIP = {
+    ".git",
+    ".west",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    "build",
+    "twister-out",
+    "modules",
+    "external",
+    "bootloader",
+}
 
 
 def _skip(name: str) -> bool:
@@ -27,8 +38,10 @@ def find_apps(ws: Workspace, max_depth: int = 5) -> list[Path]:
     """Application folders (CMakeLists.txt + prj.conf): the workspace's own first,
     then Zephyr's samples."""
     own, samples = [], []
-    for base, out, depth_limit in ((ws.topdir, own, max_depth),
-                                   (ws.zephyr_base / "samples", samples, 6)):
+    for base, out, depth_limit in (
+        (ws.topdir, own, max_depth),
+        (ws.zephyr_base / "samples", samples, 6),
+    ):
         if not base.is_dir():
             continue
         for dirpath, dirnames, filenames in os.walk(base):
@@ -40,8 +53,7 @@ def find_apps(ws: Workspace, max_depth: int = 5) -> list[Path]:
             if "CMakeLists.txt" in filenames and "prj.conf" in filenames:
                 if not (here / "testcase.yaml").exists():
                     out.append(here)
-            dirnames[:] = sorted(d for d in dirnames if not _skip(d)) \
-                if depth < depth_limit else []
+            dirnames[:] = sorted(d for d in dirnames if not _skip(d)) if depth < depth_limit else []
     return own + samples
 
 
@@ -63,11 +75,15 @@ def board_revisions(board: Board) -> Revisions:
     for entry in entries:
         if isinstance(entry, dict) and entry.get("name") == board.name:
             rev = entry.get("revision") or {}
-            names = tuple(str(r.get("name")) for r in rev.get("revisions") or []
-                          if isinstance(r, dict) and r.get("name") is not None)
+            names = tuple(
+                str(r.get("name"))
+                for r in rev.get("revisions") or []
+                if isinstance(r, dict) and r.get("name") is not None
+            )
             default = rev.get("default")
-            return Revisions(str(default) if default is not None else None, names,
-                             rev.get("format"))
+            return Revisions(
+                str(default) if default is not None else None, names, rev.get("format")
+            )
     return Revisions(None, ())
 
 
@@ -96,8 +112,10 @@ def find_shields(ws: Workspace) -> list[Shield]:
             if entries:
                 for e in entries:
                     if isinstance(e, dict) and e.get("name"):
-                        shields.setdefault(e["name"], Shield(e["name"], directory,
-                                                             e.get("full_name"), e.get("vendor")))
+                        shields.setdefault(
+                            e["name"],
+                            Shield(e["name"], directory, e.get("full_name"), e.get("vendor")),
+                        )
             else:
                 for overlay in directory.glob("*.overlay"):
                     shields.setdefault(overlay.stem, Shield(overlay.stem, directory))
@@ -112,8 +130,11 @@ class Snippet:
 
 def find_snippets(ws: Workspace) -> list[Snippet]:
     found: dict[str, Snippet] = {}
-    roots = [ws.zephyr_base, *(m.path for m in ws.modules),
-             *(m.dts_root for m in ws.modules if m.dts_root)]
+    roots = [
+        ws.zephyr_base,
+        *(m.path for m in ws.modules),
+        *(m.dts_root for m in ws.modules if m.dts_root),
+    ]
     for root in dict.fromkeys(roots):
         base = root / "snippets"
         if base.is_dir():
@@ -143,8 +164,10 @@ class Runners:
 def board_runners(board: Board, build_dir: Path | None = None) -> Runners:
     """Runners from the build's runners.yaml if built, else from board.cmake."""
     if build_dir:
-        for yaml_path in (build_dir / "zephyr" / "runners.yaml",
-                          *sorted(build_dir.glob("*/zephyr/runners.yaml"))):
+        for yaml_path in (
+            build_dir / "zephyr" / "runners.yaml",
+            *sorted(build_dir.glob("*/zephyr/runners.yaml")),
+        ):
             data = load_yaml(yaml_path)
             if isinstance(data, dict) and data.get("runners"):
                 return Runners(tuple(data["runners"]), data.get("flash-runner"), True)
