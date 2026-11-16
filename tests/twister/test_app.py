@@ -253,9 +253,12 @@ async def test_edit_jumps_to_failing_assert(test_tree, tmp_path, fake_twister, m
 
         app.node_index["s:drivers.beta"].expand()
         await wait_for(lambda: "c:drivers.beta:beta_suite.one" in app.node_index)
-        app.tree.move_cursor(app.node_index["c:drivers.beta:beta_suite.one"])
-        await pilot.pause()
-        assert "failed at" in str(app.query_one("#details").render())
+        case = app.node_index["c:drivers.beta:beta_suite.one"]
+        # A just-expanded node has no line until the tree redraws, and
+        # move_cursor() goes by line.
+        await wait_for(lambda: case.line >= 0)
+        app.tree.move_cursor(case)
+        await wait_for(lambda: "failed at" in str(app.query_one("#details").render()))
         await pilot.press("e")
         assert opened == [["my-editor", "+1", str(source)]]
 
