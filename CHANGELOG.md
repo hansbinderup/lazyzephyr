@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.2.0](https://github.com/hansbinderup/lazyzephyr/compare/v0.1.0...v0.2.0) (2026-11-16)
+
+
+### Features
+
+* **build:** Select and copy text in the monitor ([6061249](https://github.com/hansbinderup/lazyzephyr/commit/606124936a9afca3d2bcf30a37bfddb015bd138f))
+* **build:** Show the copy key in the monitor footer ([1e3f15c](https://github.com/hansbinderup/lazyzephyr/commit/1e3f15c4d3f6065312d65a1b78164982e017fcfd))
+* **tests:** Filter to the chosen platforms ([975de5f](https://github.com/hansbinderup/lazyzephyr/commit/975de5f3ceb4c1724a6545d1ce7f97e1c44f5185))
+* **tests:** Fit the status line and footer to the width ([85a9793](https://github.com/hansbinderup/lazyzephyr/commit/85a9793785341e659cceee355cf759aae83a30f4))
+* **tests:** Remember the settings as last used ([265b0d1](https://github.com/hansbinderup/lazyzephyr/commit/265b0d1bf389bd2a1c8407762c039ed28cb07b4b))
+* **tests:** Run on a board and show case results ([9cb564a](https://github.com/hansbinderup/lazyzephyr/commit/9cb564adbb3f5b1ec958c7aa418ffb36acf0de2b))
+* **tests:** Set up a board per platform ([2f7afeb](https://github.com/hansbinderup/lazyzephyr/commit/2f7afeb392c407e03408428b3d5738ee9e816494))
+* **tests:** Show each test's output ([52af171](https://github.com/hansbinderup/lazyzephyr/commit/52af171516ff3840186ee678769fac2a491f9358))
+
+
+### Fixes
+
+* **build:** Keep selected monitor text readable ([4fb0fdb](https://github.com/hansbinderup/lazyzephyr/commit/4fb0fdb5c9ebcb6e70027ba9d53f2e0d31da3da0))
+* Copy to the system clipboard, not only via the terminal ([1fee2ea](https://github.com/hansbinderup/lazyzephyr/commit/1fee2ea5b62687e1aeb2700b85760c6d9c1626d9))
+* **tests:** List a cancelled job once until twister exits ([d12fa05](https://github.com/hansbinderup/lazyzephyr/commit/d12fa0552bbfbcc0c4170d4ae00a44d4c0ba5fb9))
+
+
+### Documentation
+
+* Add guidelines for AI assistants ([6866064](https://github.com/hansbinderup/lazyzephyr/commit/6866064cf684781d49d415ba809462db64789711))
+
 ## 0.1.0 (2026-11-12)
 
 
