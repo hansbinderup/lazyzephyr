@@ -77,7 +77,7 @@ class LazyZephyrApp(SystemClipboard, App):
                     yield Static(f"Kconfig unavailable: {self.dts_error}", classes="tab-error")
             with TabPane("Tests", id="tests"):
                 yield TwisterView(self.twister_config, id="twister")
-        yield Footer()
+        yield Footer(compact=True, show_command_palette=False)
 
     def on_mount(self) -> None:
         self.call_after_refresh(self._activate, self.initial_tab)

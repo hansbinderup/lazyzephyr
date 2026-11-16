@@ -3,7 +3,11 @@
 import asyncio
 from pathlib import Path
 
-from lazyzephyr.twister.app import AppConfig, LazyTwisterApp, TwisterView, count_text
+from rich.text import Text
+
+from lazyzephyr.twister.app import (
+    AppConfig, LazyTwisterApp, TwisterView, count_text, fit_status, short_port,
+)
 from lazyzephyr.twister.discovery import Workspace
 from lazyzephyr.twister.jobs import RunOptions
 
@@ -147,6 +151,24 @@ async def test_zoom_maximizes_focused_panel(test_tree, tmp_path, fake_twister):
         assert app.screen.maximized is None
         await pilot.press("4", "z")
         assert app.screen.maximized is app.query_one("#log")
+
+
+def test_fit_status_drops_low_priority_parts_first():
+    left = [(1, Text("workspace")), (3, Text("native_sim")), (2, Text("tests"))]
+    right = Text("3 scenarios")
+    assert str(fit_status(left, right)) == "workspace · native_sim · tests · 3 scenarios"
+    wide = fit_status(left, right, 60)
+    assert len(wide) == 60 and str(wide).endswith("  3 scenarios")
+    assert str(fit_status(left, right, 40)).startswith("native_sim · tests  ")
+    assert str(fit_status(left, right, 25)).startswith("native_sim  ")
+    assert str(fit_status(left, right, 14)).strip() == "3 scenarios"
+    assert str(fit_status(left, right, 8)) == "3 scena…"
+
+
+def test_short_port():
+    assert short_port("/dev/serial/by-id/usb-SEGGER_J-Link_000683-if00") == "SEGGER_J-Link_000683"
+    assert short_port("/dev/serial/by-id/usb-FTDI_FT232R_A1-if00-port0") == "FTDI_FT232R_A1"
+    assert short_port("/dev/ttyACM0") == "/dev/ttyACM0"
 
 
 async def test_status_bar_at_bottom_and_full_status_popup(test_tree, tmp_path, fake_twister):
