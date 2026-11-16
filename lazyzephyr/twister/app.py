@@ -1166,8 +1166,10 @@ class TwisterView(View):
 
     def job_order(self) -> list[Job]:
         """Display order: running job, queue in execution order, then history."""
-        done = [j for j in reversed(self.jobs.jobs) if not j.active]
-        return [*self.jobs.running(), *self.jobs.queued(), *done]
+        running = self.jobs.running()
+        # A cancelled job stays current until twister exits: list it only once.
+        done = [j for j in reversed(self.jobs.jobs) if not j.active and j not in running]
+        return [*running, *self.jobs.queued(), *done]
 
     def refresh_jobs(self) -> None:
         job_list = self.query_one(JobList)
