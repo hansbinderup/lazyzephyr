@@ -97,34 +97,38 @@ def test_broken_config_exits_with_message(tmp_path, monkeypatch):
         config_from_args(parse(), [])
 
 
-def test_hardware_table(tmp_path):
+def test_hardware_tables_per_platform(tmp_path):
     cfg = load_config(write(tmp_path / ".lazyzephyr.toml", """
 case_results = true
 
-[hardware]
+[hardware.frdm_k64f]
 serial = "/dev/ttyACM0"
 baud = 921600
 runner = "jlink"
 dev_id = "683"
 fixtures = ["gpio_loopback"]
+
+[hardware."nrf52840dk/nrf52840"]
+fixtures = ["x"]
 """))
-    hw = cfg.hardware
     assert cfg.case_results is True
+    assert set(cfg.boards) == {"frdm_k64f", "nrf52840dk/nrf52840"}
+    hw = cfg.boards["frdm_k64f"]
     assert hw.enabled is True  # a serial port alone turns it on
     assert (hw.serial, hw.baud, hw.runner, hw.dev_id) == ("/dev/ttyACM0", 921600, "jlink", "683")
     assert hw.fixtures == ["gpio_loopback"]
-
-    fixtures_only = load_config(write(tmp_path / "b.toml", '[hardware]\nfixtures = ["x"]\n'))
-    assert fixtures_only.hardware.enabled is False
+    assert cfg.boards["nrf52840dk/nrf52840"].enabled is False
 
 
 @pytest.mark.parametrize("body, message", [
     ("hardware = 1", "'hardware' must be a table"),
-    ("[hardware]\nport = 'x'", "unknown key(s) in [hardware]: port"),
-    ("[hardware]\nenabled = 1", "'hardware.enabled' must be true or false"),
-    ("[hardware]\nserial = ''", "'hardware.serial' must be a non-empty string"),
-    ("[hardware]\nbaud = 0", "'hardware.baud' must be a positive integer"),
-    ("[hardware]\nfixtures = 'x'", "'hardware.fixtures' must be a list"),
+    ("[hardware]\nserial = 'x'", "put board settings under [hardware.<platform>]"),
+    ("[hardware.b]\nport = 'x'", "unknown key(s) in [hardware.b]: port"),
+    ("[hardware.b]\nenabled = 1", "'hardware.b.enabled' must be true or false"),
+    ("[hardware.b]\nserial = ''", "'hardware.b.serial' must be a non-empty string"),
+    ("[hardware.b]\nbaud = 0", "'hardware.b.baud' must be a positive integer"),
+    ("[hardware.b]\nfixtures = 'x'", "'hardware.b.fixtures' must be a list"),
+    ('[hardware."b/soc"]\nbaud = 0', "'hardware.\"b/soc\".baud' must be a positive integer"),
     ("case_results = 'yes'", "'case_results' must be true or false"),
 ])
 def test_invalid_hardware_is_rejected(tmp_path, body, message):
@@ -136,7 +140,8 @@ def test_cli_hardware_flags_override_config(tmp_path, monkeypatch):
     (tmp_path / "tests").mkdir()
     write(tmp_path / ".lazyzephyr.toml", """
 roots = ["tests"]
-[hardware]
+platforms = ["frdm_k64f"]
+[hardware.frdm_k64f]
 serial = "/dev/ttyACM0"
 runner = "jlink"
 fixtures = ["a"]
@@ -147,6 +152,7 @@ fixtures = ["a"]
     from_file = config_from_args(parse(), [])
     assert from_file.options.hardware.serial == "/dev/ttyACM0"
     assert from_file.options.case_results is False
+    assert from_file.fixed_boards == {"frdm_k64f"}
 
     cli = config_from_args(parse("--device-serial", "/dev/ttyUSB1", "--west-runner", "pyocd",
                                  "-X", "b", "-X", "a", "--case-results"), [])
@@ -154,3 +160,29 @@ fixtures = ["a"]
     assert (hw.enabled, hw.serial, hw.runner) == (True, "/dev/ttyUSB1", "pyocd")
     assert hw.fixtures == ["a", "b"]
     assert cli.options.case_results is True
+
+    # The flags set up one platform's board, so they need exactly one.
+    with pytest.raises(SystemExit, match="exactly one platform"):
+        config_from_args(parse("-p", "a", "-p", "b", "--device-serial", "/dev/x"), [])
+
+
+def test_saved_board_setups_are_loaded(tmp_path, monkeypatch):
+    from lazyzephyr.twister import boards
+    from lazyzephyr.twister.jobs import Hardware
+
+    (tmp_path / "tests").mkdir()
+    write(tmp_path / ".lazyzephyr.toml", """
+roots = ["tests"]
+[hardware.frdm_k64f]
+serial = "/dev/from-file"
+""")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ZEPHYR_BASE", raising=False)
+    state = tmp_path / "state"
+    boards.save(state, {"frdm_k64f": Hardware(enabled=True, serial="/dev/saved"),
+                        "nucleo_f429zi": Hardware(enabled=True, serial="/dev/ttyACM3")})
+
+    cfg = config_from_args(parse("--state-dir", str(state)), [])
+    assert cfg.options.boards["nucleo_f429zi"].serial == "/dev/ttyACM3"
+    assert cfg.options.boards["frdm_k64f"].serial == "/dev/from-file"  # the file wins
+    assert cfg.fixed_boards == {"frdm_k64f"}

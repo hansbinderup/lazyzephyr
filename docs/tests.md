@@ -33,8 +33,9 @@
 - **Jump to the failure**: lazyzephyr reads where each failed assertion happened (file,
   line and message) from the test log, and shows it in Details. Press `e` on a failed case
   or scenario to open `$EDITOR` at the failing `zassert`.
-- **Run on a board** (`d`): pick the console serial port, baud rate, flash runner and
-  debug probe, and the fixtures the board has. See [Running on a board](#running-on-a-board).
+- **Run on a board** (`d`): set up each platform's board (console serial port, baud rate,
+  flash runner, debug probe, fixtures). With several boards enabled, lazyzephyr asks which
+  one to run on. See [Running on a board](#running-on-a-board).
 - **Output per test**: each ztest case's console output (from `START - test_x` to its
   `PASS`/`FAIL`) is split out of the run's `handler.log` / `device.log` and kept with the
   results. Details shows all of it for a case, and the last lines of every case for a
@@ -93,12 +94,15 @@ jobs = 8                       # twister -j
 extra_args = ["--coverage"]
 case_results = true            # print case results in Output when a job ends
 
-[hardware]                     # run on a board (twister --device-testing)
-serial = "/dev/ttyACM0"        # console UART; setting it turns hardware on
+[hardware.frdm_k64f]           # this platform's board (twister --device-testing)
+serial = "/dev/ttyACM0"        # console UART; setting it turns the board on
 baud = 115200
 runner = "jlink"               # west flash runner; default: the board's
 dev_id = "000683"              # debug probe serial number
 fixtures = ["gpio_loopback"]   # twister -X
+
+[hardware."nrf52840dk/nrf52840"]   # quote platform names that contain "/"
+serial = "/dev/ttyACM1"
 ```
 
 Unknown keys and wrong types are rejected with a clear error.
@@ -110,8 +114,10 @@ Unknown keys and wrong types are rejected with a clear error.
 
 ## Running on a board
 
-Press `d` to open the hardware settings. `enter` changes the row under the cursor,
-`ctrl+s` applies and `esc` cancels.
+Each platform has its own board setup, so a setup made for one board never carries
+over to another. Press `d` to set up the board of the platform chosen with `p`. With
+several platforms chosen, it asks which one first. `enter` changes the row under the
+cursor, `ctrl+s` applies and `esc` cancels.
 
 | Setting | Twister option | Notes |
 | --- | --- | --- |
@@ -122,12 +128,28 @@ Press `d` to open the hardware settings. `enter` changes the row under the curso
 | Debug probe | `--west-flash=--dev-id=<id>` | lists the probes plugged in |
 | Fixtures | `-X` | a checklist of the fixtures the tests need (`harness_config: fixture`), with how many tests need each; type others below it. Also applies without a board |
 
-Twister needs exactly one platform (`p`) when it uses a serial port, so lazyzephyr
-refuses to queue a run otherwise. With `--hardware-map` in the extra arguments, no
-serial port is needed. The status bar shows `board: <port> · <runner>` while it is on.
+Simulated platforms (`native_sim`, `qemu_*` and others whose twister yaml has
+`type: native`, `qemu`, `sim` or `unit`) run without a board, so only their fixtures can
+be set.
 
-From the command line: `--device-serial PORT` (turns it on), `--west-runner RUNNER`,
-`-X FIXTURE` (repeatable) and `--case-results`.
+Setups made in the app are saved for the workspace in lazyzephyr's state dir
+(`hardware.json`), not in the repo. `[hardware.<platform>]` in `.lazyzephyr.toml` and
+the command-line flags override the saved setup of their platform.
+
+When you queue a run:
+
+- Twister runs on one board at a time, so a platform with its board enabled runs on its
+  own. The chosen platforms without a board run together in a second job.
+- With several boards enabled among the chosen platforms, lazyzephyr asks which one to
+  run on. Repeat (`.`), auto-run and rerunning a job reuse the board you picked last.
+- With `--hardware-map` in the extra arguments, no serial port is needed.
+
+The status bar shows `board: <port> · <runner>` for one enabled board, or
+`boards: <platforms>` for several.
+
+From the command line, with exactly one platform (`-p`): `--device-serial PORT` (turns
+its board on), `--west-runner RUNNER` and `-X FIXTURE` (repeatable). `--case-results`
+works with any platforms.
 
 ## Keys
 
@@ -140,7 +162,7 @@ From the command line: `--device-serial PORT` (turns it on), `--west-runner RUNN
 | `r` | queue the marked nodes as one job |
 | `a` / `F` / `.` | queue all / queue failed / repeat the last run |
 | `p` / `g` | choose platforms / toggle integration mode `-G` |
-| `d` | hardware: run on a board, serial port, flash runner, probe, fixtures |
+| `d` | the chosen platform's board: serial port, flash runner, probe, fixtures |
 | `V` | print every case's result in Output when a job ends |
 | `O` | choose the test folders (folder browser) |
 | `w` | toggle auto-run on file change |

@@ -9,7 +9,7 @@ from lazyzephyr.twister.app import (
     AppConfig, LazyTwisterApp, TwisterView, count_text, fit_status, short_port,
 )
 from lazyzephyr.twister.discovery import Workspace
-from lazyzephyr.twister.jobs import RunOptions
+from lazyzephyr.twister.jobs import Hardware, RunOptions
 
 
 def make_app(test_tree: Path, tmp_path: Path, fake_twister) -> LazyTwisterApp:
@@ -334,16 +334,23 @@ async def test_platform_only_filter(test_tree, tmp_path, fake_twister):
         assert str(app.query_one("#tests-panel").border_title) == "[1] Tests"
 
 
-async def test_hardware_screen_sets_device_flags(test_tree, tmp_path, fake_twister):
+async def test_hardware_setup_is_per_platform(test_tree, tmp_path, fake_twister):
     import json
 
+    from lazyzephyr.builder.app import PickerScreen
     from lazyzephyr.twister.hardware import FixtureScreen, HardwareScreen
 
     app = make_app(test_tree, tmp_path, fake_twister)
     async with app.run_test(size=(160, 50)) as pilot:
         await wait_for(lambda: "s:drivers.beta" in app.node_index)
+        await pilot.press("d")  # no platform chosen: nothing to set up
+        await pilot.pause()
+        assert not isinstance(app.screen, HardwareScreen)
+
+        app.options.platforms = ["frdm_k64f"]
         await pilot.press("d")
         await wait_for(lambda: isinstance(app.screen, HardwareScreen))
+        assert app.screen.platform == "frdm_k64f" and not app.screen.simulated
         await pilot.press("enter")  # "Run on the board": on
         await pilot.press("down", "enter")  # serial port: picker, then "other…"
         await pilot.press(*"other", "enter")
@@ -355,25 +362,56 @@ async def test_hardware_screen_sets_device_flags(test_tree, tmp_path, fake_twist
         await wait_for(lambda: isinstance(app.screen, HardwareScreen)
                        and app.screen.draft.fixtures == ["gpio_loopback"])
         await pilot.press("ctrl+s")
-        hw = app.options.hardware
+        hw = app.options.boards["frdm_k64f"]
         assert (hw.enabled, hw.serial, hw.fixtures) == (True, "/dev/ttyFAKE", ["gpio_loopback"])
         assert "board: /dev/ttyFAKE" in str(app.view._status_line())
+        saved = json.loads((tmp_path / "state" / "hardware.json").read_text())
+        assert saved["frdm_k64f"]["serial"] == "/dev/ttyFAKE"
 
-        # Twister needs exactly one platform with a serial port: refused, nothing queued.
+        # Another platform has its own (empty) setup; native_sim needs no board.
+        app.options.platforms = ["native_sim"]
+        app.view.update_status()
+        assert "board:" not in str(app.view._status_line())
+        await pilot.press("d")
+        await wait_for(lambda: isinstance(app.screen, HardwareScreen))
+        assert app.screen.simulated and [k for k, _ in app.screen.rows] == ["fixtures"]
+        assert app.screen.draft.serial is None
+        await pilot.press("escape")
+
+        # A board and a simulated platform: the board runs alone, the rest without it.
+        app.options.platforms = ["frdm_k64f", "native_sim"]
         app.tree.focus()
         app.tree.move_cursor(app.node_index["s:drivers.beta"])
-        await pilot.press("enter")
-        assert app.jobs.jobs == []
-
-        app.options.platforms = ["native_sim"]
         await pilot.press("V")  # case results in Output
         await pilot.press("enter")
-        await wait_for(lambda: app.jobs.jobs and not app.jobs.jobs[0].active, timeout=10)
-        assert app.jobs.jobs[0].state == "passed", app.jobs.jobs[0].lines
+        await wait_for(lambda: len(app.jobs.jobs) == 2)
+        assert [j.options.platforms for j in app.jobs.jobs] == [["frdm_k64f"], ["native_sim"]]
+        board_job = app.jobs.jobs[0]
+        await wait_for(lambda: not board_job.active, timeout=10)
+        assert board_job.state == "passed", board_job.lines
+        assert any("── results" in line for line in board_job.lines)
+        await wait_for(lambda: not app.jobs.jobs[1].active, timeout=10)
+
+        # Two boards enabled: asked which one to run on.
+        app.options.boards["nucleo_f429zi"] = Hardware(enabled=True, serial="/dev/ttyOTHER")
+        app.options.platforms = ["frdm_k64f", "nucleo_f429zi"]
+        app.view.update_status()
+        assert "boards: frdm_k64f, nucleo_f429zi" in str(app.view._status_line())
+        await pilot.press("enter")
+        await wait_for(lambda: isinstance(app.screen, PickerScreen))
+        await pilot.press(*"nucleo", "enter")
+        await wait_for(lambda: len(app.jobs.jobs) == 3)
+        assert app.jobs.jobs[2].options.platforms == ["nucleo_f429zi"]
+        await wait_for(lambda: not app.jobs.jobs[2].active, timeout=10)
         argv = json.loads((tmp_path / "state" / "run" / "argv.json").read_text())
         assert argv[argv.index("--device-testing"):argv.index("-O")] == [
-            "--device-testing", "--device-serial", "/dev/ttyFAKE", "-X", "gpio_loopback"]
-        assert any("── results" in line for line in app.jobs.jobs[0].lines)
+            "--device-testing", "--device-serial", "/dev/ttyOTHER"]
+
+        # Repeat reuses the board picked last instead of asking again.
+        await pilot.press("full_stop")
+        await wait_for(lambda: len(app.jobs.jobs) == 4)
+        assert not isinstance(app.screen, PickerScreen)
+        assert app.jobs.jobs[3].options.platforms == ["nucleo_f429zi"]
 
 
 async def test_details_show_each_case_output(test_tree, tmp_path, fake_twister, monkeypatch):

@@ -1,4 +1,4 @@
-"""Hardware settings for the Tests tab: run on a board, its console UART and flasher."""
+"""Hardware settings for the Tests tab: one platform's board, its console UART and flasher."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from textual.widgets.option_list import Option
 
 from ..builder import meta
 from ..builder.app import PickerScreen, TextEditScreen
+from .boards import SIMULATED_TYPES, board_type, simulated_by_name
 from .jobs import Hardware
 
 OTHER = "\0other"  # picker item: type a value instead
@@ -30,14 +31,19 @@ ROWS = (
 )
 
 
-def platform_runners(cwd: Path, platform: str) -> meta.Runners | None:
-    """The flash runners a twister platform's board supports, if the board is found."""
+def board_info(cwd: Path, platform: str) -> tuple[meta.Runners | None, str | None]:
+    """The flash runners and twister `type:` of a platform's board, if the board is found."""
     from ..dts.workspace import find_board, find_workspace
 
     try:
-        return meta.board_runners(find_board(find_workspace(cwd), platform))
+        board = find_board(find_workspace(cwd), platform)
     except (LookupError, OSError):
-        return None
+        return None, None
+    try:
+        runners = meta.board_runners(board)
+    except (LookupError, OSError):
+        runners = None
+    return runners, board_type(board.directory, platform)
 
 
 class FixtureScreen(ModalScreen[list[str] | None]):
@@ -97,44 +103,57 @@ class HardwareScreen(ModalScreen[Hardware | None]):
         Binding("ctrl+s", "apply", "Apply", priority=True),
     ]
 
-    def __init__(self, hardware: Hardware, platforms: list[str], cwd: Path,
-                 fixtures: dict[str, int] | None = None):
+    def __init__(self, hardware: Hardware, platform: str, cwd: Path,
+                 fixtures: dict[str, int] | None = None, fixed: bool = False):
         super().__init__()
-        self.draft = replace(hardware, fixtures=list(hardware.fixtures))
-        self.platforms, self.cwd = platforms, cwd
+        self.draft = hardware.copy()
+        self.platform, self.cwd = platform, cwd
         self.known_fixtures = fixtures or {}  # fixture -> how many scenarios need it
+        self.fixed = fixed  # set in .lazyzephyr.toml or on the command line
         self.runners: meta.Runners | None = None
-        self.runners_loading = len(platforms) == 1
+        self.runners_loading = True
+        self.simulated = simulated_by_name(platform)  # until the board's yaml says
 
     def compose(self) -> ComposeResult:
         with Vertical(id="hardware-dialog", classes="panel dialog") as dialog:
-            dialog.border_title = "Hardware"
+            dialog.border_title = f"Hardware · {self.platform}"
             dialog.border_subtitle = "enter: change · ctrl+s: apply · esc: cancel"
-            yield Static(self._platform_hint(), classes="hint")
+            yield Static(id="hardware-hint", classes="hint")
             yield OptionList(id="hardware-rows")
-            yield Static("Twister flashes with west flash and reads the console from the "
-                         "serial port. Fixtures (-X) also apply without a board.",
-                         classes="hint")
+            yield Static(self._footer_hint(), classes="hint")
 
     def on_mount(self) -> None:
         self.refill()
         self.query_one(OptionList).focus()
-        if self.runners_loading:
-            self._load_runners(self.platforms[0])
+        self._load_board(self.platform)
 
     @work(thread=True, exclusive=True)
-    def _load_runners(self, platform: str) -> None:
-        runners = platform_runners(self.cwd, platform)
-        self.app.call_from_thread(self._runners_loaded, runners)
+    def _load_board(self, platform: str) -> None:
+        runners, kind = board_info(self.cwd, platform)
+        self.app.call_from_thread(self._board_loaded, runners, kind)
 
-    def _runners_loaded(self, runners: meta.Runners | None) -> None:
+    def _board_loaded(self, runners: meta.Runners | None, kind: str | None) -> None:
         self.runners, self.runners_loading = runners, False
+        if kind is not None:
+            self.simulated = kind in SIMULATED_TYPES
         self.refill()
 
-    def _platform_hint(self) -> Text:
-        if len(self.platforms) == 1:
-            return Text(f"platform: {self.platforms[0]}")
-        return Text("pick exactly one platform with p to run on a board", style="yellow")
+    def _hint(self) -> Text:
+        if self.simulated:
+            return Text(f"{self.platform} runs without a board (simulated): "
+                        "only its fixtures can be set.")
+        return Text(f"The board setup for {self.platform}; other platforms have their own.")
+
+    def _footer_hint(self) -> Text:
+        if self.fixed:
+            return Text("Set in .lazyzephyr.toml or on the command line: changes here last "
+                        "until you quit.", style="yellow")
+        return Text("Twister flashes with west flash and reads the console from the serial "
+                    "port. Saved for this workspace.")
+
+    @property
+    def rows(self) -> tuple[tuple[str, str], ...]:
+        return tuple(r for r in ROWS if r[0] == "fixtures") if self.simulated else ROWS
 
     def _value(self, key: str) -> Text:
         d = self.draft
@@ -155,14 +174,15 @@ class HardwareScreen(ModalScreen[Hardware | None]):
         return Text(", ".join(d.fixtures)) if d.fixtures else Text("none", style=muted)
 
     def refill(self) -> None:
+        self.query_one("#hardware-hint", Static).update(self._hint())
         rows = self.query_one(OptionList)
         highlighted = rows.highlighted
         rows.clear_options()
-        for key, label in ROWS:
+        for key, label in self.rows:
             prompt = Text(f"{label:<18}", style="bold")
             prompt.append_text(self._value(key))
             rows.add_option(Option(prompt, id=key))
-        rows.highlighted = highlighted if highlighted is not None else 0
+        rows.highlighted = min(highlighted or 0, len(self.rows) - 1)
 
     @on(OptionList.OptionSelected, "#hardware-rows")
     def _selected(self, event: OptionList.OptionSelected) -> None:
@@ -228,7 +248,7 @@ class HardwareScreen(ModalScreen[Hardware | None]):
         if self.runners_loading:
             hint = "still reading the board's runners…"
         elif runners is None:
-            hint = "board not found: pick one platform with p, or type a runner"
+            hint = f"board {self.platform} not found: type a runner"
         else:
             hint = "from the board's board.cmake"
         self._pick("Flash runner", items, "runner", hint, "jlink")
@@ -250,7 +270,8 @@ class HardwareScreen(ModalScreen[Hardware | None]):
         self.app.push_screen(FixtureScreen(self.known_fixtures, self.draft.fixtures), done)
 
     def action_apply(self) -> None:
-        self.dismiss(self.draft)
+        # A simulated platform never runs on a board, whatever was saved for it.
+        self.dismiss(replace(self.draft, enabled=False) if self.simulated else self.draft)
 
     def action_cancel(self) -> None:
         self.dismiss(None)

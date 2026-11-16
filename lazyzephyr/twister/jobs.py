@@ -8,7 +8,7 @@ import re
 import shlex
 import signal
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
@@ -58,7 +58,7 @@ class NodeRef:
 
 @dataclass
 class Hardware:
-    """Running on a connected board (twister --device-testing)."""
+    """One platform's board setup (twister --device-testing), and its fixtures."""
 
     enabled: bool = False
     serial: str | None = None  # console UART, --device-serial
@@ -66,6 +66,13 @@ class Hardware:
     runner: str | None = None  # --west-runner; None = the board's default
     dev_id: str | None = None  # debug probe serial, passed to west flash as --dev-id
     fixtures: list[str] = field(default_factory=list)  # -X, also used without a board
+
+    def copy(self) -> Hardware:
+        return replace(self, fixtures=list(self.fixtures))
+
+    @property
+    def is_empty(self) -> bool:
+        return self == Hardware()
 
     @property
     def summary(self) -> str:
@@ -84,8 +91,46 @@ class RunOptions:
     verbose: bool = True  # -v: twister prints one line per finished scenario (live status)
     extra_args: list[str] = field(default_factory=list)
     jobs: int | None = None  # twister -j; None = twister's default
-    hardware: Hardware = field(default_factory=Hardware)
+    # Board setup per platform; only used when that platform is the one chosen.
+    boards: dict[str, Hardware] = field(default_factory=dict)
     case_results: bool = False  # print every scenario's case results when a job ends
+
+    @property
+    def hardware(self) -> Hardware:
+        """What applies to this run: the platform's setup when there is one platform.
+
+        Several platforms never run on a board (see plan_runs); they get only the
+        fixtures of their setups.
+        """
+        if len(self.platforms) == 1:
+            return self.boards.get(self.platforms[0], Hardware())
+        fixtures = [f for p in self.platforms for f in self.boards.get(p, Hardware()).fixtures]
+        return Hardware(fixtures=list(dict.fromkeys(fixtures)))
+
+    def board_platforms(self, platforms: list[str] | None = None) -> list[str]:
+        """The platforms (of `platforms`, default: the chosen ones) with a board enabled."""
+        chosen = self.platforms if platforms is None else platforms
+        return [p for p in chosen if self.boards.get(p, Hardware()).enabled]
+
+
+def plan_runs(options: RunOptions, platforms: list[str],
+              board: str | None = None) -> list[list[str]] | None:
+    """Split `platforms` into the twister runs to queue, one platform list each.
+
+    Twister runs on one board at a time, so a board platform runs alone, and the
+    platforms without a board run together in a second run. With several
+    boards, `board` says which one; None is returned when it is needed but
+    missing (the caller asks).
+    """
+    boards = options.board_platforms(platforms)
+    if not boards:
+        return [list(platforms)]
+    if len(boards) > 1:
+        if board not in boards:
+            return None
+        boards = [board]
+    rest = [p for p in platforms if p not in options.board_platforms(platforms)]
+    return [boards] + ([rest] if rest else [])
 
 
 def hardware_problem(options: RunOptions) -> str | None:
@@ -94,9 +139,7 @@ def hardware_problem(options: RunOptions) -> str | None:
     if not hw.enabled:
         return None
     if not hw.serial and "--hardware-map" not in options.extra_args:
-        return "device testing needs a serial port (d to pick one)"
-    if hw.serial and len(options.platforms) != 1:
-        return "device testing needs exactly one platform (p to pick it)"
+        return f"device testing on {options.platforms[0]} needs a serial port (d to pick one)"
     return None
 
 
@@ -300,8 +343,9 @@ class JobManager:
 
     def submit(self, target: RunTarget, options: RunOptions) -> Job | None:
         """Append a run to the queue. Returns None if an identical run is already queued."""
-        signature = target.signature()
-        if any(job.target.signature() == signature for job in self.queue):
+        signature = (target.signature(), tuple(options.platforms))
+        if any((job.target.signature(), tuple(job.options.platforms)) == signature
+               for job in self.queue):
             return None
         job = Job(self._next_id, target, options)
         self._next_id += 1

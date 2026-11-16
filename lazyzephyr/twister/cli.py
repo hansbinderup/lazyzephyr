@@ -7,7 +7,7 @@ import shlex
 import shutil
 from pathlib import Path
 
-from . import cache, folders
+from . import boards, cache, folders
 from .config import CONFIG_NAME, ConfigError, FileConfig, find_config, load_config
 from .discovery import default_roots, find_workspace
 from .jobs import Hardware, RunOptions
@@ -52,12 +52,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-j", "--jobs", type=int, default=None,
                         help="twister -j (default: twister's own default)")
     parser.add_argument("--device-serial", default=None, metavar="PORT",
-                        help="run on a connected board: its console UART "
+                        help="run on the -p platform's board: its console UART "
                              "(twister --device-testing --device-serial)")
     parser.add_argument("--west-runner", default=None, metavar="RUNNER",
-                        help="flash runner for --device-serial (default: the board's)")
+                        help="flash runner for the -p platform's board (default: the board's)")
     parser.add_argument("-X", "--fixture", action="append", default=[],
-                        help="twister fixture the board has (repeatable)")
+                        help="twister fixture the -p platform's board has (repeatable)")
     parser.add_argument("--case-results", action="store_true", default=None,
                         help="print every case's result in Output when a job ends")
     parser.add_argument("-w", "--watch", action="append", type=Path, default=[],
@@ -124,12 +124,22 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
     twister = shlex.split(twister_str) if twister_str else default_twister_cmd(
         workspace.zephyr_base
     )
-    hardware = file_config.hardware or Hardware()
-    if args.device_serial:
-        hardware.enabled, hardware.serial = True, args.device_serial
-    if args.west_runner:
-        hardware.runner = args.west_runner
-    hardware.fixtures = list(dict.fromkeys([*hardware.fixtures, *args.fixture]))
+    platforms = args.platform or file_config.platforms
+    # Board setups: saved in the app, then the config file, then the flags.
+    board_setups = {**boards.load_saved(state_dir), **file_config.boards}
+    fixed_boards = set(file_config.boards)
+    if args.device_serial or args.west_runner or args.fixture:
+        if len(platforms) != 1:
+            raise SystemExit("lazyzephyr: --device-serial, --west-runner and -X need exactly "
+                             "one platform (-p) to set up the board for")
+        hardware = board_setups.get(platforms[0], Hardware()).copy()
+        if args.device_serial:
+            hardware.enabled, hardware.serial = True, args.device_serial
+        if args.west_runner:
+            hardware.runner = args.west_runner
+        hardware.fixtures = list(dict.fromkeys([*hardware.fixtures, *args.fixture]))
+        board_setups[platforms[0]] = hardware
+        fixed_boards.add(platforms[0])
     return AppConfig(
         cwd=cwd,
         roots=roots,
@@ -137,19 +147,20 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
         twister_cmd=twister,
         state_dir=state_dir,
         options=RunOptions(
-            platforms=args.platform or file_config.platforms,
+            platforms=platforms,
             integration=pick(None if args.no_integration is None else False,
                              file_config.integration, True),
             verbose=pick(None if args.quiet is None else False, file_config.verbose, True),
             extra_args=[*file_config.extra_args, *extra],
             jobs=pick(args.jobs, file_config.jobs, None),
-            hardware=hardware,
+            boards=board_setups,
             case_results=pick(args.case_results, file_config.case_results, False),
         ),
         watch_paths=[w.resolve() for w in args.watch] or file_config.watch,
         auto_run=pick(args.auto_run, file_config.auto_run, False),
         config_file=file_config.path,
         roots_source=source,
+        fixed_boards=fixed_boards,
         pick_folders=pick_folders,
     )
 

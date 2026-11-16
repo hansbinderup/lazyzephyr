@@ -8,7 +8,7 @@ import re
 import shlex
 import subprocess
 from collections import defaultdict
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from rich.text import Text
@@ -21,13 +21,16 @@ from textual.widgets import Footer, Input, OptionList, RichLog, SelectionList, S
 from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 
-from . import cache, folders
+from . import boards, cache, folders
 from .discovery import Discovery, Scenario, Workspace, default_roots, discover
 from .hardware import HardwareScreen
-from .jobs import Job, JobManager, NodeRef, RunOptions, RunTarget, hardware_problem, make_target
+from .jobs import (
+    Hardware, Job, JobManager, NodeRef, RunOptions, RunTarget, hardware_problem, make_target,
+    plan_runs,
+)
 from .results import ResultStore, worst
 from .watcher import WatchError, watch_changes
-from ..builder.app import BUILD_CSS
+from ..builder.app import BUILD_CSS, PickerScreen
 from ..clipboard import SystemClipboard
 from ..view import COMMON_CSS, ForwardActions, View
 
@@ -141,6 +144,9 @@ class AppConfig:
     roots_source: str = "default"
     # Open the folder browser on start (first run in this directory).
     pick_folders: bool = False
+    # Platforms whose board setup comes from the config file or the command line:
+    # changes made in the app to these last only until quit.
+    fixed_boards: set[str] = field(default_factory=set)
 
 
 # --------------------------------------------------------------------------
@@ -436,7 +442,7 @@ HELP_TEXT = """\
 [b]Global[/]
   a          queue all test roots        F   queue failed scenarios
   p          choose platforms            g   toggle integration mode (-G)
-  d          hardware: run on a board, serial port, flash runner, probe, fixtures
+  d          the chosen platform's board: serial port, flash runner, probe, fixtures
   V          print every case's result in Output when a job ends
   w          toggle auto-run on change   ctrl+r  rediscover tests
   .          repeat the last run         ctrl+x  clear queue + stop running job
@@ -638,6 +644,7 @@ class TwisterView(View):
         self.platform_only = False  # only scenarios whose yaml names a chosen platform
         self.viewed_job: int | None = None
         self.last_target: RunTarget | None = None
+        self.board_choice: str | None = None  # board picked last when several are enabled
         self._tree_built = False
         self.expanded: set[str] | None = None  # open folder/scenario keys
         self.seen_folders: set[str] = set()
@@ -1066,15 +1073,20 @@ class TwisterView(View):
         ]
         if self.options.integration:
             left.append((5, Text("-G")))
-        hw = self.options.hardware
-        if hw.enabled:
+        boards_on = self.options.board_platforms()
+        if len(boards_on) == 1:
+            hw = self.options.boards[boards_on[0]]
             port = short_port(hw.serial) if hw.serial else "no serial port"
             board = [port, hw.runner or "default runner"]
             if hw.dev_id and hw.dev_id not in port:
                 board.append(hw.dev_id)
             left.append((7, Text(f"board: {' · '.join(board)}", style="cyan")))
-        if hw.fixtures:
-            left.append((4, Text(f"-X {','.join(hw.fixtures)}")))
+        elif boards_on:
+            left.append((7, Text(f"boards: {', '.join(boards_on)}", style="cyan")))
+        fixtures = [f for p in self.options.platforms
+                    for f in self.options.boards.get(p, Hardware()).fixtures]
+        if fixtures:
+            left.append((4, Text(f"-X {','.join(dict.fromkeys(fixtures))}")))
         if self.options.case_results:
             left.append((3, Text("case results")))
         if self.auto_run:
@@ -1109,9 +1121,16 @@ class TwisterView(View):
         row("config", cfg.config_file or "none (.lazyzephyr.toml)")
         row("platforms", ", ".join(self.options.platforms) or "twister default")
         row("integration", on if self.options.integration else off)
-        hw = self.options.hardware
-        row("hardware", Text(hw.summary, style="cyan") if hw.enabled else off)
-        row("fixtures", ", ".join(hw.fixtures) or "none")
+        boards_on = self.options.board_platforms()
+        row("boards", Text(", ".join(boards_on), style="cyan") if boards_on else off)
+        for platform, setup in sorted(self.options.boards.items()):
+            if setup.is_empty:
+                continue
+            summary = setup.summary if setup.enabled else "no board"
+            if setup.fixtures:
+                summary += f" · -X {','.join(setup.fixtures)}"
+            active = platform in self.options.platforms
+            row(f"  {platform}", Text(summary, style="cyan" if active else "bright_black"))
         row("case results", on if self.options.case_results else off)
         row("auto-run", on if self.auto_run else off)
         current = self.jobs.current
@@ -1350,38 +1369,64 @@ class TwisterView(View):
 
     # -- running ------------------------------------------------------------------
 
-    def submit(self, refs: list[NodeRef]) -> None:
+    def submit(self, refs: list[NodeRef], ask: bool = True) -> None:
         try:
             target = make_target(refs, self.discovery)
         except ValueError as exc:
             self.notify(str(exc), severity="warning")
             return
-        self._submit_target(target)
+        self._submit_target(target, ask=ask)
 
-    def _submit_target(self, target: RunTarget) -> None:
-        hw = self.options.hardware
-        options = RunOptions(
-            platforms=list(self.options.platforms),
-            integration=self.options.integration,
-            inline_logs=self.options.inline_logs,
-            verbose=self.options.verbose,
-            extra_args=list(self.options.extra_args),
-            jobs=self.options.jobs,
-            hardware=replace(hw, fixtures=list(hw.fixtures)),
-            case_results=self.options.case_results,
-        )
-        problem = hardware_problem(options)
-        if problem:
-            self.notify(problem, severity="error", timeout=5)
+    def _submit_target(self, target: RunTarget, platforms: list[str] | None = None,
+                       ask: bool = True) -> None:
+        """Queue `target` on `platforms` (default: the chosen ones).
+
+        With several boards enabled this asks which one to run on; with `ask`
+        False (repeat, auto-run, rerun) the board picked last is used if it
+        still applies.
+        """
+        platforms = list(self.options.platforms if platforms is None else platforms)
+        boards_on = self.options.board_platforms(platforms)
+        if len(boards_on) > 1 and (ask or self.board_choice not in boards_on):
+            def picked(result: list[str] | None) -> None:
+                if result:
+                    self.board_choice = result[0]
+                    self._queue_runs(target, plan_runs(self.options, platforms, result[0]))
+
+            items = [(p, Text.assemble(p, (f"  {short_port(self.options.boards[p].serial or '')}"
+                                           f" · {self.options.boards[p].runner or 'default runner'}",
+                                           "bright_black")), p) for p in boards_on]
+            others = [p for p in platforms if p not in boards_on]
+            hint = f"the others run without a board: {', '.join(others)}" if others else ""
+            self.push_screen(PickerScreen("Run on which board?", items, hint=hint), picked)
             return
-        job = self.jobs.submit(target, options)
-        if job is None:
-            self.notify("already queued", severity="warning", timeout=2)
-            return
-        self.last_target = target
-        position = self.jobs.position(job)
-        if position is not None:
-            self.notify(f"queued #{job.id} ({position} waiting)", timeout=2)
+        self._queue_runs(target, plan_runs(self.options, platforms, self.board_choice))
+
+    def _queue_runs(self, target: RunTarget, plans: list[list[str]] | None) -> None:
+        for platforms in plans or []:
+            options = RunOptions(
+                platforms=platforms,
+                integration=self.options.integration,
+                inline_logs=self.options.inline_logs,
+                verbose=self.options.verbose,
+                extra_args=list(self.options.extra_args),
+                jobs=self.options.jobs,
+                boards={p: hw.copy() for p, hw in self.options.boards.items()},
+                case_results=self.options.case_results,
+            )
+            problem = hardware_problem(options)
+            if problem:
+                self.notify(problem, severity="error", timeout=5)
+                continue
+            job = self.jobs.submit(target, options)
+            if job is None:
+                self.notify("already queued", severity="warning", timeout=2)
+                continue
+            self.last_target = target
+            position = self.jobs.position(job)
+            if position is not None:
+                where = f" on {platforms[0]}" if options.hardware.enabled else ""
+                self.notify(f"queued #{job.id}{where} ({position} waiting)", timeout=2)
         self._dirty = True
 
     def _cursor_ref(self) -> NodeRef | None:
@@ -1466,7 +1511,7 @@ class TwisterView(View):
     def action_rerun_job(self) -> None:
         job = self._selected_job()
         if job is not None:
-            self._submit_target(job.target)
+            self._submit_target(job.target, job.options.platforms, ask=False)
 
     def action_clear_jobs(self) -> None:
         self.jobs.clear_finished()
@@ -1491,16 +1536,52 @@ class TwisterView(View):
                     self.rebuild_tree()
                 self.update_status()
 
-        self.push_screen(PlatformScreen(self.discovery.platforms(), self.options.platforms), apply)
+        configured = [p for p, hw in self.options.boards.items() if not hw.is_empty]
+        known = sorted({*configured, *self.discovery.platforms()})
+        self.push_screen(PlatformScreen(known, self.options.platforms), apply)
 
     def action_hardware(self) -> None:
-        def apply(result) -> None:
-            if result is not None:
-                self.options.hardware = result
-                self.update_status()
+        platforms = self.options.platforms
+        if not platforms:
+            self.notify("pick a platform with p to set up its board", severity="warning",
+                        timeout=4)
+        elif len(platforms) == 1:
+            self._edit_board(platforms[0])
+        else:
+            def picked(result: list[str] | None) -> None:
+                if result:
+                    self._edit_board(result[0])
 
-        self.push_screen(HardwareScreen(self.options.hardware, self.options.platforms,
-                                        self.config.cwd, self.discovery.fixtures()), apply)
+            items = []
+            for p in platforms:
+                hw = self.options.boards.get(p, Hardware())
+                note = hw.summary if hw.enabled else "no board"
+                items.append((p, Text.assemble(p, (f"  {note}", "bright_black")), p))
+            self.push_screen(PickerScreen("Set up which platform's board?", items), picked)
+
+    def _edit_board(self, platform: str) -> None:
+        fixed = platform in self.config.fixed_boards
+
+        def apply(result: Hardware | None) -> None:
+            if result is None:
+                return
+            self.options.boards[platform] = result
+            if not fixed:
+                self._save_board(platform, result)
+            self.update_status()
+
+        current = self.options.boards.get(platform, Hardware())
+        self.push_screen(HardwareScreen(current, platform, self.config.cwd,
+                                        self.discovery.fixtures(), fixed), apply)
+
+    def _save_board(self, platform: str, hardware: Hardware) -> None:
+        state_dir = self.config.state_dir
+        saved = boards.load_saved(state_dir)
+        saved[platform] = hardware
+        try:
+            boards.save(state_dir, saved)
+        except OSError as exc:
+            self.notify(f"could not save the board setup: {exc}", severity="error")
 
     def action_toggle_case_results(self) -> None:
         self.options.case_results = not self.options.case_results
@@ -1641,7 +1722,7 @@ class TwisterView(View):
         if self.last_target is None:
             self.notify("nothing to repeat yet", timeout=2)
         else:
-            self._submit_target(self.last_target)
+            self._submit_target(self.last_target, ask=False)
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
@@ -1739,9 +1820,9 @@ class TwisterView(View):
         if affected:
             names = list(dict.fromkeys(s.name for s in affected))
             by_name = self.discovery.by_name()
-            self.submit([NodeRef("scenario", by_name[n].directory, n) for n in names])
+            self.submit([NodeRef("scenario", by_name[n].directory, n) for n in names], ask=False)
         elif self.last_target is not None:
-            self._submit_target(self.last_target)
+            self._submit_target(self.last_target, ask=False)
 
     async def on_unmount(self) -> None:
         self.jobs.shutdown()
