@@ -334,6 +334,26 @@ async def test_platform_only_filter(test_tree, tmp_path, fake_twister):
         assert str(app.query_one("#tests-panel").border_title) == "[1] Tests"
 
 
+async def test_cancelled_job_is_listed_once_until_it_exits(test_tree, tmp_path, fake_twister,
+                                                         monkeypatch):
+    monkeypatch.setenv("FAKE_DELAY", "3")
+    app = make_app(test_tree, tmp_path, fake_twister)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await wait_for(lambda: "s:drivers.beta" in app.node_index)
+        app.tree.move_cursor(app.node_index["s:drivers.beta"])
+        await pilot.press("enter")
+        await wait_for(lambda: app.jobs.current is not None
+                       and app.jobs.current.process is not None)
+        job = app.jobs.current
+        app.jobs.cancel(job)
+        # Cancelled, but still the current job until twister exits.
+        assert job.state == "cancelled" and app.jobs.current is job
+        assert app.job_order() == [job]
+        app.view.refresh_jobs()  # used to raise DuplicateID
+        await wait_for(lambda: app.jobs.current is None, timeout=10)
+        assert app.job_order() == [job]
+
+
 async def test_settings_are_saved_for_next_time(test_tree, tmp_path, fake_twister):
     import json
 
