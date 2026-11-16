@@ -379,6 +379,7 @@ HELP_TEXT = """\
   O          choose test folders (file browser)
   h/l j/k    navigate, collapse / expand
   /          filter        f   only failed
+  P          only scenarios whose testcase.yaml names a chosen platform (p)
 
 [b]Global[/]
   a          queue all test roots        F   queue failed scenarios
@@ -548,6 +549,7 @@ class TwisterView(View):
         Binding("w", "toggle_autorun", "Auto-run"),
         Binding("slash", "filter", "Filter"),
         Binding("f", "toggle_failed_only", "Failed only", show=False),
+        Binding("P", "toggle_platform_only", "Platform only", show=False),
         Binding("ctrl+x", "cancel_all", "Clear queue", show=False),
         Binding("ctrl+r", "rediscover", "Rediscover", show=False),
         Binding("z", "toggle_maximize", "Zoom"),
@@ -581,6 +583,7 @@ class TwisterView(View):
         self.live: dict[str, str] = {}  # scenario -> queued/running/live result
         self.filter_text = ""
         self.failed_only = False
+        self.platform_only = False  # only scenarios whose yaml names a chosen platform
         self.viewed_job: int | None = None
         self.last_target: RunTarget | None = None
         self._tree_built = False
@@ -754,6 +757,8 @@ class TwisterView(View):
     def _matches(self, scenario: Scenario) -> bool:
         if self.failed_only and self.status_of(scenario.name) not in ("failed", "error", "blocked"):
             return False
+        if self.platform_only and not scenario.names_platform(self.options.platforms):
+            return False
         if not self.filter_text:
             return True
         needle = self.filter_text.lower()
@@ -827,7 +832,8 @@ class TwisterView(View):
             self.expanded |= folder_keys - self.seen_folders
         self.seen_folders |= folder_keys
         self._open_now = set(self.expanded)
-        if (self.filter_text or self.failed_only) and shown <= self.OPEN_ALL_MAX:
+        if (self.filter_text or self.failed_only or self.platform_only) \
+                and shown <= self.OPEN_ALL_MAX:
             self._open_now |= {f"d:{p}" for p in known_folders}
 
         tree.clear()
@@ -1422,6 +1428,11 @@ class TwisterView(View):
         def apply(result: list[str] | None) -> None:
             if result is not None:
                 self.options.platforms = result
+                if self.platform_only and not result:
+                    self.platform_only = False
+                    self._update_tests_title()
+                if self.platform_only:
+                    self.rebuild_tree()
                 self.update_status()
 
         self.push_screen(PlatformScreen(self.discovery.platforms(), self.options.platforms), apply)
@@ -1489,8 +1500,25 @@ class TwisterView(View):
     def action_toggle_failed_only(self) -> None:
         self.failed_only = not self.failed_only
         self.rebuild_tree()
+        self._update_tests_title()
+
+    def action_toggle_platform_only(self) -> None:
+        if not self.platform_only and not self.options.platforms:
+            self.notify("pick platforms with p first", severity="warning", timeout=3)
+            return
+        self.platform_only = not self.platform_only
+        self.rebuild_tree()
+        self._update_tests_title()
+
+    def _update_tests_title(self) -> None:
+        shown = []
+        if self.failed_only:
+            shown.append("failed only")
+        if self.platform_only:
+            shown.append("on " + ", ".join(self.options.platforms))
+        title = "[1] Tests"
         self.query_one("#tests-panel").border_title = (
-            "[1] Tests (failed only)" if self.failed_only else "[1] Tests"
+            f"{title} ({' · '.join(shown)})" if shown else title
         )
 
     async def action_rediscover(self) -> None:

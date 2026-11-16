@@ -145,6 +145,7 @@ From the command line: `--device-serial PORT` (turns it on), `--west-runner RUNN
 | `O` | choose the test folders (folder browser) |
 | `w` | toggle auto-run on file change |
 | `/` / `f` | filter / show failed only |
+| `P` | show only scenarios whose `platform_allow` or `integration_platforms` names a chosen platform (`p`) |
 | `e` | open `$EDITOR` at the failing assert, else at the test source or yaml |
 | Jobs panel: `x` / `J` `K` | cancel the selected job / move a queued job later or earlier |
 | Jobs panel: `r` / `L` | requeue the job / clear finished jobs |
