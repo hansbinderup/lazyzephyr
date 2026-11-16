@@ -7,6 +7,8 @@ How to use each tab, and every key:
 - [Kconfig](kconfig.md): a build's options, and changing them in your conf files
 - [Tests](tests.md): running twister, the job queue, results, `.lazyzephyr.toml`
 
+Working on lazyzephyr itself: [Development](development.md) (running the tests, CI versions).
+
 The footer always shows the keys of the tab you are in, and `?` opens that tab's help.
 
 ## Tabs

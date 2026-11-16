@@ -1,5 +1,5 @@
 # Checks every pull request into main: the test suite on each supported
-# Python, and ruff lint and format.
+# Python and several Zephyr versions, and ruff lint and format.
 name: CI
 
 on:
@@ -14,27 +14,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  # Two axes, following the Python versions each Zephyr release supports
+  # (its own CI). How to update them: docs/development.md.
+  python:
+    name: Python ${{ matrix.python }} / Zephyr ${{ matrix.zephyr }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Install
-        run: python -m pip install -e '.[dev]'
-      - name: Test
-        # Tests that need a Zephyr tree skip themselves. The live-reload test relies
-        # on file watching, which is unreliable on CI runners.
-        run: python -m pytest -q -k "not test_new_testcase_is_picked_up_live"
+        # Each Python lazyzephyr supports, against the newest Zephyr release
+        # that supports that Python.
+        include:
+          - { python: "3.11", zephyr: v4.3.2 }
+          - { python: "3.12", zephyr: v4.5.0 }
+          - { python: "3.13", zephyr: v4.5.0 }
+          - { python: "3.14", zephyr: v4.5.0 }
+    uses: ./.github/workflows/test.yml
+    with:
+      python: ${{ matrix.python }}
+      zephyr: ${{ matrix.zephyr }}
+
+  zephyr:
+    name: Zephyr ${{ matrix.zephyr }} / Python 3.12
+    strategy:
+      fail-fast: false
+      matrix:
+        # The other Zephyr releases on Python 3.12, which all of them support.
+        # main is reported but doesn't fail the PR; nightly.yml checks it too.
+        zephyr: [v4.2.2, v4.3.2, v4.4.2, main]
+    uses: ./.github/workflows/test.yml
+    with:
+      python: "3.12"
+      zephyr: ${{ matrix.zephyr }}
+      allow-failure: ${{ matrix.zephyr == 'main' }}
 
   ruff:
     runs-on: ubuntu-latest

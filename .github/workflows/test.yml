@@ -1,0 +1,52 @@
+# The test suite on one Python against one Zephyr checkout. Called by ci.yml
+# (pull requests) and nightly.yml. Which versions are tested, and why, is
+# described in docs/development.md.
+name: Test
+
+on:
+  workflow_call:
+    inputs:
+      python:
+        type: string
+        required: true
+      zephyr:
+        description: A Zephyr tag or branch
+        type: string
+        required: true
+      allow-failure:
+        description: Report a failure without failing the caller
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ inputs.allow-failure }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ inputs.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: python -m pip install -e '.[dev]'
+      - name: Get Zephyr
+        # The Devicetree, Kconfig and Build tests need a Zephyr tree, nothing
+        # else from a workspace (no modules, no SDK).
+        env:
+          ZEPHYR_REF: ${{ inputs.zephyr }}
+        run: |
+          git clone --quiet --depth 1 --branch "$ZEPHYR_REF" \
+            https://github.com/zephyrproject-rtos/zephyr "$RUNNER_TEMP/zephyr"
+          echo "Zephyr $ZEPHYR_REF at $(git -C "$RUNNER_TEMP/zephyr" rev-parse --short HEAD)"
+          echo "LAZYZEPHYR_TEST_ZEPHYR_BASE=$RUNNER_TEMP/zephyr" >> "$GITHUB_ENV"
+      - name: Test
+        # The live-reload test relies on file watching, which is unreliable on
+        # CI runners.
+        run: python -m pytest -q -k "not test_new_testcase_is_picked_up_live"

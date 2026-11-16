@@ -171,9 +171,9 @@ nix develop -c python -m pytest
 nix build                       # builds the package and runs the tests; result in ./result
 ```
 
-The Tests tab's tests use `tests/twister/fake_twister.py` in place of twister. The
-Devicetree, Kconfig and Build tests need a Zephyr tree: set `LAZYZEPHYR_TEST_ZEPHYR_BASE`
-(or `ZEPHYR_BASE`) to one, else they are skipped.
+The Tests tab's tests use a fake twister; the Devicetree, Kconfig and Build tests need
+a Zephyr tree. See [docs/development.md](docs/development.md) for running them, and for
+which Zephyr and Python versions CI tests.
 
 ### Releasing
 
