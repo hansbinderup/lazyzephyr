@@ -259,7 +259,8 @@ def problems(edt, macros=(), refs: dict[str, list[Ref]] | None = None) -> list[P
             on_bus.setdefault(node.parent.path, {}).setdefault(addr, []).append(node)
         if node.buses and addr is not None and not node.parent.buses:
             controllers.setdefault(addr, []).append(node)
-        if "fixed-partitions" in node.parent.compats:
+        # Older Zephyr marks the partitions node, newer marks each partition.
+        if "fixed-partitions" in node.parent.compats or "zephyr,mapped-partition" in node.compats:
             partitions.setdefault(node.parent.path, []).append(node)
     for bus_path, by_addr in on_bus.items():
         bus = edt.get_node(bus_path)

@@ -39,6 +39,7 @@ BROKEN = """
 &flash0 {
 	partitions {
 		bad_partition: partition@d000 {
+			compatible = "zephyr,mapped-partition";
 			label = "bad";
 			reg = <0xd000 0x1000>;
 		};
