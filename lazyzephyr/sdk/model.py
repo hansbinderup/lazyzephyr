@@ -16,6 +16,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .pyenv import venv_env
+
 SETTINGS_FILE = "lazyzephyr-sdk.json"
 BACKENDS = ("nix", "west")
 
@@ -202,19 +204,25 @@ class Settings:
 # -- environment for builds --------------------------------------------------
 
 
-def sdk_env(env: dict[str, str], zephyr_base: Path | None, store: Path | None = None) -> dict:
-    """`env` plus what points builds at our SDK for this Zephyr tree, if we have it.
+def sdk_env(
+    env: dict[str, str],
+    zephyr_base: Path | None,
+    store: Path | None = None,
+    topdir: Path | None = None,
+) -> dict:
+    """`env` plus what points builds at the workspace's .venv and our SDK.
 
-    An SDK the user picked themselves (ZEPHYR_SDK_INSTALL_DIR already set) wins.
+    What the user set up themselves wins: an active virtualenv (VIRTUAL_ENV), an SDK
+    in ZEPHYR_SDK_INSTALL_DIR. `u` in the SDK tab turns both off.
     """
-    env = dict(env)
+    store = store or store_dir()
+    if not Settings.load(store).use:
+        return dict(env)
+    env = venv_env(dict(env), topdir)
     if env.get("ZEPHYR_SDK_INSTALL_DIR"):
         return env
     version = required_version(zephyr_base)
     if version is None:
-        return env
-    store = store or store_dir()
-    if not Settings.load(store).use:
         return env
     sdk = sdk_path(store, version)
     if inspect_sdk(sdk) is None:

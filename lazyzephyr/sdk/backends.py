@@ -61,7 +61,7 @@ def west_sdk_script(zephyr_base: Path | None) -> Path | None:
 def west_available(zephyr_base: Path | None, west: list[str] | None = None) -> Availability:
     if (west or west_command()) is None:
         return Availability(
-            False, "west not found: start lazyzephyr from the workspace's Python environment"
+            False, "west not found: p sets up the workspace's Python environment with it"
         )
     if west_sdk_script(zephyr_base) is None:
         return Availability(False, "this Zephyr has no `west sdk` (it needs Zephyr 4.0 or later)")

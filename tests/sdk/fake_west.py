@@ -1,4 +1,5 @@
-"""Stands in for `west sdk install`: lays out an SDK the way the real one does.
+"""Stands in for `west sdk install` (lays out an SDK the way the real one does) and
+`west packages pip --install`.
 
 Appends its arguments as a JSON line to $FAKE_LOG.
 """
@@ -11,7 +12,10 @@ from pathlib import Path
 args = sys.argv[1:]
 with open(os.environ["FAKE_LOG"], "a") as log:
     log.write(json.dumps(["west", *args]) + "\n")
-print("fake west", " ".join(args), flush=True)
+if args[:3] == ["packages", "pip", "--install"]:
+    assert os.environ.get("FAKE_VENV"), "not run from the venv"
+    print("Successfully installed pyelftools-0.32 pykwalify-1.8.0 west-1.5.0 …", flush=True)
+    sys.exit(0)
 assert args[:2] == ["sdk", "install"], args
 
 
@@ -20,6 +24,7 @@ def value(flag):
 
 
 version = value("--version")
+print(f"Found 'zephyr/SDK_VERSION', installing version {version}.", flush=True)
 sdk = Path(value("--install-base")) / f"zephyr-sdk-{version}"
 sdk.mkdir(parents=True, exist_ok=True)
 (sdk / "sdk_version").write_text(version + "\n")

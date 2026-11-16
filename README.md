@@ -81,7 +81,9 @@ curl -fsSL https://raw.githubusercontent.com/hansbinderup/lazyzephyr/main/uninst
 This removes the virtualenv and the `~/.local/bin/lazyzephyr` link (only if it points
 at that virtualenv). What lazyzephyr keeps in `~/.cache/lazyzephyr` (build configs, test
 results, layouts) stays; add `--purge` to remove it too (`… | bash -s -- --purge`, or
-`./uninstall.sh --purge`).
+`./uninstall.sh --purge`). SDKs installed from the SDK tab, in
+`~/.local/share/lazyzephyr/sdk`, always stay; delete that folder yourself to free the
+space.
 
 ### With Nix
 
@@ -125,7 +127,8 @@ together with `west` and the SDK.
 ## Running
 
 Start it **from inside the workspace's dev shell**, so that `west`, the Zephyr SDK and a C
-compiler are on `PATH`:
+compiler are on `PATH`. Without one, the SDK tab can set up the workspace's Python
+environment (a `.venv` with `west`) and the SDK for you:
 
 ```sh
 cd ~/zephyrproject && nix develop

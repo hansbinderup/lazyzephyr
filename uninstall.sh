@@ -49,6 +49,10 @@ main() {
         removed=1
     done
     rmdir "$home" 2>/dev/null || true
+    # SDKs installed from the SDK tab are big but shared with other tools; keep them.
+    if [[ -d "$home/sdk" ]]; then
+        echo "kept the Zephyr SDKs in $home/sdk (delete it to free the space)"
+    fi
 
     if [[ "$purge" == 1 && -d "$cache" ]]; then
         rm -rf "$cache"

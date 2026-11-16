@@ -18,11 +18,11 @@ from textual.widgets import Footer, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ..builder.app import BUILD_CSS, ConfirmScreen, Panel, ScrollPanel
-from ..builder.runner import Job, Runner
+from ..builder.runner import Job, Runner, west_command
 from ..clipboard import SystemClipboard
 from ..dts.workspace import Workspace
 from ..view import COMMON_CSS, ForwardActions, View
-from . import backends
+from . import backends, pyenv
 from .backends import Availability
 from .model import (
     SETTINGS_FILE,
@@ -84,9 +84,11 @@ workspace's Zephyr asks for in its SDK_VERSION file.
   a                  all or none
   [green]+[/green] to install · [red]-[/red] to remove · ✔ installed
 [b]Anywhere in the tab[/b]
+  p                  set up the workspace's Python environment: a .venv with
+                     west and Zephyr's requirements (again when they change)
   i                  install: apply the changes in the list
   D                  remove this SDK version from lazyzephyr's folder
-  u                  builds use this SDK: on/off
+  u                  builds use the .venv and this SDK: on/off
   r                  look again (installed SDKs, toolchain list)
   x                  stop the running install
   L                  clear the output
@@ -95,8 +97,9 @@ workspace's Zephyr asks for in its SDK_VERSION file.
 
 SDKs are kept in one folder shared by every workspace, one
 zephyr-sdk-<version> per version (set LAZYZEPHYR_SDK_DIR to move it). Builds
-and twister runs started by lazyzephyr use the version this Zephyr needs,
-unless ZEPHYR_SDK_INSTALL_DIR is already set.
+and twister runs started by lazyzephyr use the version this Zephyr needs and
+the workspace's .venv, unless you set ZEPHYR_SDK_INSTALL_DIR or activated a
+virtualenv yourself.
 """
 
     def compose(self) -> ComposeResult:
@@ -130,6 +133,7 @@ class SdkView(View):
     SPLITS = ("s-main", "s-left", "s-right")
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("i", "install", "Install"),
+        Binding("p", "setup_python", "Python env"),
         Binding("D", "remove_sdk", "Remove SDK", show=False),
         Binding("u", "toggle_use", "Use for builds", show=False),
         Binding("r", "rescan", "Refresh", show=False),
@@ -145,16 +149,22 @@ class SdkView(View):
         store: Path | None = None,
         west: list[str] | None = None,
         nix: list[str] | None = None,
+        python: str | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.ws = ws
         self.zephyr_base = ws.zephyr_base if ws else None
+        self.topdir = ws.topdir if ws else None
+        self.python = python  # creates the .venv (default: lazyzephyr's Python)
+        self.pyenv: pyenv.PyEnv | None = None
         self.store = store or store_dir()
         self.west, self.nix = west, nix
         self.settings = Settings.load(self.store)
         self.version = required_version(self.zephyr_base)
-        self.runner = Runner(ws.topdir if ws else self.store, self._on_line, self._on_change, west)
+        self.runner = Runner(
+            self.topdir or self.store, self._on_line, self._on_change, west, topdir=self.topdir
+        )
         self.job: Job | None = None
         self.availability: dict[str, Availability] = {}
         self.available: list[str] | None = None  # toolchains in the SDK release
@@ -223,8 +233,11 @@ class SdkView(View):
     def rescan(self) -> None:
         self.availability = {
             "nix": backends.nix_available(self.nix, self.flake),
-            "west": backends.west_available(self.zephyr_base, self.west),
+            "west": backends.west_available(
+                self.zephyr_base, self.west or west_command(self.topdir)
+            ),
         }
+        self.pyenv = pyenv.inspect(self.topdir, self.zephyr_base) if self.topdir else None
         sdks = store_sdks(self.store)
         self.installed = next((s for s in sdks if s.version == self.version), None)
         self.others = [s for s in sdks if s is not self.installed] + elsewhere(self.store)
@@ -357,6 +370,7 @@ class SdkView(View):
             row("Needs", "unknown: this Zephyr has no SDK_VERSION file", "yellow")
         elif self.version:
             row("Needs", f"Zephyr SDK {self.version}", "cyan")
+        self._python_rows(row)
         row("Folder", home(self.store))
         t.append(" " * 12 + "shared by every workspace\n", style="bright_black")
         if self.installed:
@@ -374,7 +388,9 @@ class SdkView(View):
             t.append(" " * 12 + reason + "\n", style="bright_black")
         else:
             row("Builds use", reason, "bright_black")
-        row("u", f"use lazyzephyr's SDK for builds: {'on' if self.settings.use else 'off'}")
+        row(
+            "u", f"builds use the .venv and SDK set up here: {'on' if self.settings.use else 'off'}"
+        )
         problem = self.backend_problem(self.settings.backend) if self.version else None
         if problem:
             t.append("\n")
@@ -389,6 +405,68 @@ class SdkView(View):
                 t.append(f"{sdk.backend:<6}", style="bright_black")
                 t.append(home(sdk.path) + "\n")
         self.query_one("#s-status", Static).update(t)
+
+    def _python_rows(self, row) -> None:
+        env = self.pyenv
+        if env is None:
+            return
+        active = os.environ.get("VIRTUAL_ENV")
+        if active and Path(active).resolve() != env.path.resolve():
+            row("Python", f"your virtualenv {home(active)} (active, so it's used)", "green")
+            return
+        where = home(env.path)
+        if not env.exists:
+            row("Python", "no .venv in the workspace: p sets it up", "yellow")
+        elif not env.python_ok:
+            version = ".".join(map(str, env.python))
+            row(
+                "Python",
+                f"{where} has Python {version}; Zephyr needs 3.12 or later. Delete it, then p",
+                "red",
+            )
+        elif not env.ours:
+            row(
+                "Python",
+                f"{where} (not set up by lazyzephyr): p installs west and Zephyr's "
+                "requirements into it",
+                "yellow",
+            )
+        elif not env.has_west:
+            row("Python", f"{where} has no west: p sets it up again", "yellow")
+        elif not env.up_to_date:
+            row("Python", f"{where}: Zephyr's requirements changed, p updates them", "yellow")
+        else:
+            version = ".".join(map(str, env.python)) if env.python else "?"
+            row("Python", Text(f"{where} · Python {version} · ready", "green"))
+
+    def action_setup_python(self) -> None:
+        if self._busy():
+            return
+        if self.topdir is None or self.zephyr_base is None:
+            self.notify("no west workspace to set up", severity="error")
+            return
+        env = pyenv.inspect(self.topdir, self.zephyr_base)
+        if env.exists and not env.python_ok:
+            self.notify(
+                f"{home(env.path)} has a Python older than 3.12: delete it first",
+                severity="error",
+            )
+            return
+        if env.exists and not env.ours:
+            self._confirm(
+                "Use the existing .venv?",
+                f"{home(env.path)} already exists.\n"
+                "Install west and Zephyr's Python requirements into it?",
+                self._setup_python,
+            )
+            return
+        self._setup_python()
+
+    def _setup_python(self) -> None:
+        commands = pyenv.setup_commands(self.topdir, self.zephyr_base, self.python)
+        job = Job("set up the Python environment", "python", "python", commands, program=[])
+        self.job = job
+        self.run_job(job)
 
     def fill_backends(self) -> None:
         lst = self.backend_list
@@ -647,6 +725,7 @@ class SdkView(View):
 
     def _on_line(self, job: Job, line: str) -> None:
         log = self.query_one("#s-log", RichLog)
+        line = line.replace(str(Path.home()) + "/", "~/")
         if line.startswith("$ "):
             log.write(Text(line, style="bold cyan"))
         else:
@@ -658,7 +737,9 @@ class SdkView(View):
             log = self.query_one("#s-log", RichLog)
             style = "green" if job.status == "passed" else "red"
             log.write(Text(f"{job.title}: {job.status}", style=f"bold {style}"))
-            if job.status == "passed":
+            if job.status == "passed" and job.action == "python":
+                pyenv.mark_set_up(self.topdir, self.zephyr_base)
+            elif job.status == "passed":
                 self._finished_settings()
                 if not sdk_path(self.store, self.version).exists():
                     log.write(

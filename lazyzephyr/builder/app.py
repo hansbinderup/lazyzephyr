@@ -849,7 +849,12 @@ class BuildView(View):
         self.options: BuildConfigOptions | None = None
         self.found: list[Path] = []
         self.runner = Runner(
-            ws.topdir, self._on_line, self._on_change, west, zephyr_base=ws.zephyr_base
+            ws.topdir,
+            self._on_line,
+            self._on_change,
+            west,
+            zephyr_base=ws.zephyr_base,
+            topdir=ws.topdir,
         )
         self.job: Job | None = None
         self.last_job: Job | None = None
@@ -1097,8 +1102,10 @@ class BuildView(View):
 
     def update_status(self) -> None:
         parts = []
-        if west_command() is None:
-            parts.append("west not found on PATH: start from the dev shell")
+        if west_command(self.ws.topdir) is None:
+            parts.append(
+                "west not found: set it up in the SDK tab (p), or start from the dev shell"
+            )
         if self.job and self.job.status == "running":
             parts.append(f"running: {self.job.title} ({self.job.duration or 0:.0f}s) · x: stop")
         elif self.last_job:
@@ -1172,7 +1179,7 @@ class BuildView(View):
         await self.runner.run(job)
 
     def _terminal(self, args: list[str]) -> None:
-        west = west_command()
+        west = west_command(self.ws.topdir)
         if west is None:
             self.notify("west not found: start from the dev shell", severity="error")
             return
@@ -1181,7 +1188,7 @@ class BuildView(View):
             subprocess.run(
                 [*west, *args],
                 cwd=self.ws.topdir,
-                env=sdk_env(dict(os.environ), self.ws.zephyr_base),
+                env=sdk_env(dict(os.environ), self.ws.zephyr_base, topdir=self.ws.topdir),
                 check=False,
             )
 

@@ -13,10 +13,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..sdk.model import sdk_env
+from ..sdk.pyenv import venv_west
 
 
-def west_command() -> list[str] | None:
-    """How to start west: from PATH (the workspace dev shell), else this Python."""
+def west_command(topdir: Path | None = None) -> list[str] | None:
+    """How to start west: the workspace's .venv, PATH (a dev shell), else this Python."""
+    venv = venv_west(topdir)
+    if venv is not None:
+        return [str(venv)]
     west = shutil.which("west")
     if west:
         return [west]
@@ -33,7 +37,8 @@ class Job:
     config: str  # config name
     action: str  # build, pristine, flash, ...
     steps: list[list[str]]  # west arguments per step
-    program: list[str] | None = None  # run this instead of west (e.g. nix)
+    # Run this instead of west (e.g. nix); [] means each step is a whole command.
+    program: list[str] | None = None
     status: str = "queued"  # queued, running, passed, failed, cancelled, error
     returncode: int | None = None
     started: float | None = None
@@ -58,9 +63,11 @@ class Runner:
         on_change: Callable[[Job], None],
         west: list[str] | None = None,
         zephyr_base: Path | None = None,
+        topdir: Path | None = None,
     ):
         self.cwd = cwd
         self.zephyr_base = zephyr_base
+        self.topdir = topdir
         self.on_line = on_line
         self.on_change = on_change
         self.west = west
@@ -73,21 +80,22 @@ class Runner:
         return self.current is not None
 
     async def run(self, job: Job) -> Job:
-        program = job.program or self.west or west_command()
+        program = job.program if job.program is not None else self.west
+        program = program if program is not None else west_command(self.topdir)
         if program is None:
             job.status = "error"
             self.on_line(job, "west not found: start lazyzephyr from the workspace dev shell")
             self.on_change(job)
             return job
-        name = "west" if job.program is None else Path(program[0]).name
+        name = "west" if job.program is None else Path(program[0]).name if program else ""
         self.current, self._cancelled = job, False
         job.status, job.started = "running", time.time()
         self.on_change(job)
-        env = sdk_env(dict(os.environ, CLICOLOR_FORCE="1"), self.zephyr_base)
+        env = sdk_env(dict(os.environ, CLICOLOR_FORCE="1"), self.zephyr_base, topdir=self.topdir)
         try:
             for i, args in enumerate(job.steps):
                 job.step = i
-                self.on_line(job, f"$ {name} " + " ".join(args))
+                self.on_line(job, "$ " + " ".join([name, *args] if name else args))
                 try:
                     self._proc = await asyncio.create_subprocess_exec(
                         *program,

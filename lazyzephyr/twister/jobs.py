@@ -327,9 +327,11 @@ class JobManager:
         on_line: Callable[[Job, str], None] | None = None,
         on_finished: Callable[[Job], None] | None = None,
         zephyr_base: Path | None = None,
+        topdir: Path | None = None,
     ):
         self.twister_cmd = twister_cmd
         self.zephyr_base = zephyr_base
+        self.topdir = topdir
         self.state_dir = state_dir
         self.cwd = cwd
         self.on_change = on_change or (lambda job: None)
@@ -403,7 +405,7 @@ class JobManager:
         self._emit(job, "$ " + display_command(job.command, self.cwd))
         self.on_change(job)
 
-        env = sdk_env(dict(os.environ, PYTHONUNBUFFERED="1"), self.zephyr_base)
+        env = sdk_env(dict(os.environ, PYTHONUNBUFFERED="1"), self.zephyr_base, topdir=self.topdir)
         try:
             job.process = await asyncio.create_subprocess_exec(
                 *job.command,

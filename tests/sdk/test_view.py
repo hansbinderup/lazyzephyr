@@ -1,21 +1,12 @@
 """Drive the SDK tab headlessly, with fake west and nix."""
 
 import asyncio
-import json
-import os
-import sys
-from pathlib import Path
 
-import pytest
-
-from lazyzephyr.dts.workspace import Workspace
 from lazyzephyr.sdk import backends
 from lazyzephyr.sdk.app import LazySdkApp, SdkView, cache_dir
-from lazyzephyr.sdk.model import Settings, host_platform, hosttools_path, sdk_env, sdk_path
+from lazyzephyr.sdk.model import Settings, hosttools_path, sdk_env, sdk_path
 
-HERE = Path(__file__).parent
-FAKE_WEST = [sys.executable, str(HERE / "fake_west.py")]
-FAKE_NIX = [sys.executable, str(HERE / "fake_nix.py")]
+from .conftest import FAKE_NIX, FAKE_WEST
 
 
 async def wait_for(predicate, timeout=15.0):
@@ -24,38 +15,6 @@ async def wait_for(predicate, timeout=15.0):
             return
         await asyncio.sleep(0.05)
     raise AssertionError("condition not met")
-
-
-@pytest.fixture
-def setup(tmp_path, monkeypatch):
-    """A Zephyr that needs SDK 1.0.1, its toolchain list cached, fake installers."""
-    zephyr = tmp_path / "ws" / "zephyr"
-    (zephyr / "scripts" / "west_commands").mkdir(parents=True)
-    (zephyr / "SDK_VERSION").write_text("1.0.1\n")
-    (zephyr / "scripts" / "west_commands" / "sdk.py").write_text('"--gnu-toolchains"')
-    system, arch = host_platform()
-    names = [
-        f"toolchain_gnu_{system}-{arch}_{tc}.tar.xz"
-        for tc in ("arm-zephyr-eabi", "riscv64-zephyr-elf", "x86_64-zephyr-elf")
-    ]
-    cache = backends.release_cache(cache_dir(), "1.0.1")
-    cache.parent.mkdir(parents=True)
-    cache.write_text(json.dumps(names))
-    log = tmp_path / "calls.jsonl"
-    monkeypatch.setenv("FAKE_LOG", str(log))
-    monkeypatch.setenv("FAKE_NIX_STORE", str(tmp_path / "nix-store"))
-    (tmp_path / "nix-store").mkdir()
-    store = Path(os.environ["LAZYZEPHYR_SDK_DIR"])
-
-    def calls():
-        return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
-
-    def view():
-        return SdkView(
-            Workspace(tmp_path / "ws", zephyr), west=FAKE_WEST, nix=FAKE_NIX, id="sdk-view"
-        )
-
-    return zephyr, store, view, calls
 
 
 async def choose(pilot, view, backend):
@@ -175,7 +134,7 @@ async def test_remove_sdk_and_use_switch(setup):
         await pilot.press("i")
         await wait_for(lambda: view.installed is not None)
         await pilot.press("u")
-        assert not Settings.load(store).use and "for builds: off" in status(view)
+        assert not Settings.load(store).use and "set up here: off" in status(view)
         assert "ZEPHYR_SDK_INSTALL_DIR" not in sdk_env({}, zephyr, store)
         await pilot.press("u")
         await pilot.press("D")

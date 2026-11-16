@@ -1,19 +1,45 @@
 # SDK tab
 
-Installs the Zephyr SDK (the cross toolchains and host tools) that the workspace's
-Zephyr asks for, and makes lazyzephyr's builds and twister runs use it.
+Sets up what a build needs besides the code: the workspace's Python environment (`west`
+and Zephyr's Python requirements) and the Zephyr SDK (the cross toolchains and host
+tools) that the workspace's Zephyr asks for. lazyzephyr's builds and twister runs then
+use both.
+
+![The SDK tab: the workspace's .venv is ready and SDK 1.0.1 is installed with west sdk; one toolchain is ticked to add and one to remove](images/sdk-tab.png)
 
 ## What it shows
 
 - **Needs**: the SDK version this Zephyr wants, from its `SDK_VERSION` file.
+- **Python**: the workspace's `.venv`, and whether it has `west` and Zephyr's current
+  requirements.
 - **This SDK**: whether lazyzephyr has installed that version, how, and with which
   toolchains.
 - **Builds use**: the SDK that builds started from lazyzephyr will use, and why (see
-  [Which SDK builds use](#which-sdk-builds-use)).
+  [What builds use](#what-builds-use)).
 - **Other SDKs**: other versions in lazyzephyr's folder, and SDKs installed elsewhere
   (`~/zephyr-sdk-*`, `/opt/zephyr-sdk-*` and the other places Zephyr looks).
 
-## Installing
+## The Python environment
+
+Zephyr's getting-started guide keeps a virtualenv in the west workspace, with `west` and
+Zephyr's Python requirements in it. `p` sets that up:
+
+1. creates `.venv` in the workspace (the folder with `.west`), with the Python lazyzephyr
+   runs on (3.12 or later);
+2. installs `west` into it;
+3. runs `west packages pip --install`, which installs Zephyr's requirements and those of
+   any modules that list some.
+
+![A workspace without a .venv or an SDK yet: the tab says what to do](images/sdk-tab-new-workspace.png)
+
+If the workspace already has a `.venv`, lazyzephyr asks first, then installs into that
+one. When Zephyr's requirement files change (after a `west update` to a new Zephyr, say),
+the tab says so, and `p` installs them again.
+
+Then `west sdk` below, and the builds and twister runs started from lazyzephyr, run from
+that `.venv`. A virtualenv you activated yourself before starting lazyzephyr wins.
+
+## Installing the SDK
 
 1. Pick how to install it in **Install with** (`enter`). lazyzephyr remembers the choice:
    - **Nix** builds the SDK with [zephyr-nix](https://github.com/nix-community/zephyr-nix).
@@ -22,8 +48,7 @@ Zephyr asks for, and makes lazyzephyr's builds and twister runs use it.
      zephyr-nix lazyzephyr uses). If it doesn't have the exact version your Zephyr
      needs, the tab says so (see [Which zephyr-nix](#which-zephyr-nix)).
    - **west sdk** is Zephyr's own installer (`west sdk install`). It needs Zephyr 4.0 or
-     later, and lazyzephyr started from the workspace's Python environment, where
-     `west` is.
+     later and `west`: the workspace's `.venv` (`p`), or one on your `PATH`.
 2. Tick the toolchains you need with `space` (`a` for all or none). Most boards need
    one: `arm-zephyr-eabi` for Arm Cortex-M, `riscv64-zephyr-elf` for RISC-V,
    `x86_64-zephyr-elf` for `qemu_x86`. The **host tools** row adds the SDK's `dtc`, QEMU,
@@ -79,25 +104,29 @@ forward. For an SDK version that only a newer zephyr-nix has, set `zephyr_nix` i
 
 `github:nix-community/zephyr-nix` follows its latest commit; add `/<commit>` to fix it.
 
-## Which SDK builds use
+## What builds use
 
-Builds, flashing, menuconfig and twister runs started from lazyzephyr get
-`ZEPHYR_SDK_INSTALL_DIR` set to the SDK in lazyzephyr's folder that matches this
-workspace's Zephyr, if there is one. Then:
+Builds, flashing, menuconfig and twister runs started from lazyzephyr get:
 
-- If you set `ZEPHYR_SDK_INSTALL_DIR` yourself, yours wins; lazyzephyr changes nothing.
-- `u` turns this off. Zephyr then looks for an SDK itself, as it does outside lazyzephyr.
-- With Nix's host tools, their `bin` folder is also put first on the `PATH`.
+- the workspace's `.venv` first on the `PATH` (and `VIRTUAL_ENV` set), if it has
+  `west`. A virtualenv you activated yourself wins.
+- `ZEPHYR_SDK_INSTALL_DIR` set to the SDK in lazyzephyr's folder that matches this
+  workspace's Zephyr, if there is one. One you set yourself wins.
+- with Nix's host tools, their `bin` folder first on the `PATH` too.
+
+`u` turns all of this off; builds then find `west` and an SDK the way they would outside
+lazyzephyr.
 
 ## Keys
 
 | Key | Action |
 | --- | --- |
+| `p` | set up the workspace's Python environment, or update its requirements |
 | `enter` (Install with) | use this way of installing |
 | `space` / `a` | tick a toolchain or the host tools / all or none |
 | `i` | install: apply the ticked changes |
 | `D` | remove this SDK version from lazyzephyr's folder (asks first) |
-| `u` | builds use lazyzephyr's SDK: on/off |
+| `u` | builds use the workspace's `.venv` and lazyzephyr's SDK: on/off |
 | `r` | look again: installed SDKs, toolchain list, zephyr-nix's versions |
 | `x` / `L` | stop the install / clear the output |
 | `z` | maximize the focused panel |

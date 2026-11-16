@@ -26,6 +26,7 @@ def _own_cache(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
     monkeypatch.setenv("LAZYZEPHYR_SDK_DIR", str(tmp_path / "sdk-store"))
     monkeypatch.delenv("ZEPHYR_SDK_INSTALL_DIR", raising=False)
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
 
     def no_network(*args, **kwargs):
         raise OSError("tests don't use the network")
