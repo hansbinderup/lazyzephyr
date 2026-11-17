@@ -155,5 +155,6 @@ lazyzephyr.
 | `u` | builds use the workspace's `.venv` and lazyzephyr's SDK: on/off |
 | `r` | look again: installed SDKs, toolchain list, zephyr-nix's versions |
 | `x` / `L` | stop the install / clear the output |
+| `ctrl+c` (Output) | copy the selection (drag the mouse), or the whole output when nothing is selected |
 | `z` | maximize the focused panel |
 | `?` | help |

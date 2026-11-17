@@ -396,6 +396,40 @@ async def test_job_rows_show_their_platforms(test_tree, tmp_path, fake_twister, 
         app.jobs.cancel_all()
 
 
+async def test_output_copies_the_selection_or_the_whole_output(test_tree, tmp_path, fake_twister):
+    app = make_app(test_tree, tmp_path, fake_twister)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await wait_for(lambda: "s:drivers.beta" in app.node_index)
+        app.tree.move_cursor(app.node_index["s:drivers.beta"])
+        await pilot.press("enter")
+        await wait_for(lambda: app.jobs.jobs and not app.jobs.jobs[0].active)
+        job = app.jobs.jobs[0]
+        log = app.query_one("#log")
+        await wait_for(lambda: len(log.lines) >= 2)
+        log.focus()
+        copied = []
+        app.copy_to_clipboard = copied.append
+
+        # Nothing selected: the job's whole output, without colours.
+        await pilot.press("ctrl+c")
+        assert copied == ["\n".join(Text.from_ansi(line).plain for line in job.lines)]
+
+        # Dragging selects text; ctrl+c copies just that.
+        first, second = (line.text.rstrip() for line in log.lines[:2])
+        await pilot.mouse_down(log, offset=(1 + 2, 1))
+        await pilot.hover(log, offset=(1 + 3, 2))
+        await pilot.mouse_up(log, offset=(1 + 3, 2))
+        await pilot.pause()
+        assert app.screen.get_selected_text() == first[2:] + "\n" + second[:4]
+        # The selection keeps the text readable: its own colour on the selection's background.
+        selection_bg = app.screen.get_component_rich_style("screen--selection").bgcolor
+        cell = next(seg.style for seg in log.render_line(0) if seg.style.bgcolor == selection_bg)
+        assert cell.color != cell.bgcolor
+        await pilot.press("ctrl+c")
+        assert copied[-1] == first[2:] + "\n" + second[:4]
+        assert log.text_selection is None
+
+
 async def test_settings_are_saved_for_next_time(test_tree, tmp_path, fake_twister):
     import json
 

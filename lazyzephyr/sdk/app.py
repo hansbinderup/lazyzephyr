@@ -22,6 +22,7 @@ from ..builder.app import BUILD_CSS, ConfirmScreen, Panel, ScrollPanel
 from ..builder.runner import Job, Runner, west_command
 from ..clipboard import SystemClipboard
 from ..dts.workspace import Workspace
+from ..outputlog import OutputLog
 from ..view import COMMON_CSS, ForwardActions, View
 from . import backends, pyenv
 from .backends import Availability
@@ -85,6 +86,9 @@ workspace's Zephyr asks for in its SDK_VERSION file.
   space              add or remove a toolchain (or the host tools)
   a                  all or none
   [green]+[/green] to install · [red]-[/red] to remove · ✔ installed
+[b]Output[/b]
+  drag the mouse     select text
+  ctrl+c             copy the selection, or the whole output when nothing is selected
 [b]Anywhere in the tab[/b]
   g                  the setup steps: what this workspace still needs
   p                  set up the workspace's Python environment: a .venv with
@@ -247,14 +251,7 @@ class SdkView(View):
                     tcs.border_title = "Toolchains"
                     tcs.border_subtitle = "space: toggle · i: install"
                     yield ToolchainList(id="s-toolchains")
-                log = RichLog(
-                    id="s-log",
-                    classes="panel",
-                    markup=False,
-                    highlight=False,
-                    wrap=False,
-                    max_lines=20000,
-                )
+                log = OutputLog(id="s-log", classes="panel", max_lines=20000)
                 log.border_title = "Output"
                 yield log
         yield Static("", id="s-statusbar")

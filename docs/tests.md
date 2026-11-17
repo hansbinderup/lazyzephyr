@@ -43,6 +43,8 @@
   (`pytest_dut_scope` other than `session`); a session-scoped run is one log.
 - **Case results in Output** (`V`): when a job ends, print every scenario's result and
   each of its cases (with the failing assert and the case's output) in the Output panel.
+- **Copy output** (`ctrl+c` in Output): drag the mouse to select text and `ctrl+c` copies
+  it. With nothing selected, `ctrl+c` copies the viewed job's whole output.
 - **Auto-run** (`w`): when a file changes, lazyzephyr reruns the scenarios it belongs to.
   For a change outside a test directory (any path passed with `-w`), it repeats the last run.
 
@@ -177,6 +179,7 @@ works with any platforms.
 | `e` | open `$EDITOR` at the failing assert, else at the test source or yaml |
 | Jobs panel: `x` / `J` `K` | cancel the selected job / move a queued job later or earlier |
 | Jobs panel: `r` / `L` | requeue the job / clear finished jobs |
+| Output panel: `ctrl+c` | copy the selection, or the whole output when nothing is selected |
 | `ctrl+x` / `ctrl+r` | clear the queue and stop the running job / rediscover tests |
 | `z` | maximise / restore the focused panel |
 | `v` | layout: auto → landscape → portrait |

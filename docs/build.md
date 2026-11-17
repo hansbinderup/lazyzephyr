@@ -34,6 +34,8 @@
   `p` sets up the workspace's Python environment with west; the bar goes once west is
   found.
 - The details panel shows the exact `west build` and `west flash` commands.
+- **Copy output**: in the Output panel, drag the mouse to select text and `ctrl+c` copies
+  it. With nothing selected, `ctrl+c` copies the whole output.
 - The default build directory is `build-<app>-<board>` in the workspace, or west's
   `build.dir-fmt` if you set one.
 
@@ -49,4 +51,5 @@
 | `ctrl+o` / `ctrl+z` / `ctrl+x` | in the monitor: back to the configs / full screen / close |
 | `n` / `e` / `c` / `d` | new / edit / copy / delete config |
 | `x` | stop the running command |
+| `ctrl+c` (Output) | copy the selection, or the whole output when nothing is selected |
 | `L` / `z` / `?` | clear the output / maximize the focused panel / help |

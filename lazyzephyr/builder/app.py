@@ -23,6 +23,7 @@ from textual.widgets.option_list import Option
 
 from ..clipboard import SystemClipboard
 from ..dts.workspace import Board, Workspace, find_boards, find_build_dirs
+from ..outputlog import OutputLog
 from ..sdk.model import sdk_env
 from ..view import COMMON_CSS, ForwardActions, View
 from . import meta
@@ -311,6 +312,9 @@ class HelpScreen(ModalScreen[None]):
   ctrl+x             close the monitor (ends the connection)
   shift+pgup/pgdn    scroll back (or the mouse wheel)
   drag the mouse     select text; ctrl+c then copies it (else ctrl+c goes to it)
+[b]Output[/b]
+  drag the mouse     select text
+  ctrl+c             copy the selection, or the whole output when nothing is selected
 [b]Anywhere in the tab[/b]
   x                  stop the running command
   L                  clear the output
@@ -893,14 +897,7 @@ class BuildView(View):
                     details.border_title = "Details"
                     yield Static("", id="b-details")
             with Vertical(id="b-right"):
-                log = RichLog(
-                    id="b-log",
-                    classes="panel",
-                    markup=False,
-                    highlight=False,
-                    wrap=False,
-                    max_lines=20000,
-                )
+                log = OutputLog(id="b-log", classes="panel", max_lines=20000)
                 log.border_title = "Output"
                 yield log
                 with Panel(id="b-monitor-panel", classes="panel") as mon:
