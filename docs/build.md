@@ -30,6 +30,9 @@
 - **Runners** come from the build's `runners.yaml` once built, before that from the
   board's `board.cmake`. **Probes** (J-Link, ST-Link, CMSIS-DAP, MCU-Link…) are read from
   USB, so you can pick the serial number of the one to flash.
+- Without `west`, a red bar across the top says so. Click it to go to the SDK tab, where
+  `p` sets up the workspace's Python environment with west; the bar goes once west is
+  found.
 - The details panel shows the exact `west build` and `west flash` commands.
 - The default build directory is `build-<app>-<board>` in the workspace, or west's
   `build.dir-fmt` if you set one.

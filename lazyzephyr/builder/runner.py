@@ -84,7 +84,11 @@ class Runner:
         program = program if program is not None else west_command(self.topdir)
         if program is None:
             job.status = "error"
-            self.on_line(job, "west not found: start lazyzephyr from the workspace dev shell")
+            self.on_line(
+                job,
+                "west not found: set up the Python environment in the SDK tab (F5, then p), "
+                "or start lazyzephyr where west is on the PATH",
+            )
             self.on_change(job)
             return job
         name = "west" if job.program is None else Path(program[0]).name if program else ""

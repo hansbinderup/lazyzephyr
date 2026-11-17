@@ -285,3 +285,21 @@ async def test_monitor_select_and_copy():
         assert "ctrl+c" not in footer_keys(app)
         await pilot.press("ctrl+c")  # nothing selected: ctrl+c goes to the device
         assert sent == [b"\x03"]
+
+
+async def test_missing_west_gets_a_banner(workspace, tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr("lazyzephyr.builder.app.west_command", lambda topdir: None)
+    ws = find_workspace(workspace)
+    store = ConfigStore(ws.topdir, tmp_path / "builds.json")
+    view = BuildView(ws, workspace / "app", store=store, id="builder")
+    async with LazyBuildApp(view).run_test(size=(180, 50)) as pilot:
+        await wait_for(lambda: view.options is not None)
+        banner = view.query_one("#b-no-west")
+        assert view.has_class("-no-west") and banner.display
+        assert "west not found" in str(banner.render())
+        # Once west turns up (set up in the SDK tab, say), the banner goes.
+        view.west = FAKE_WEST
+        view.activated()
+        await pilot.pause()
+        assert not view.has_class("-no-west") and not banner.display
