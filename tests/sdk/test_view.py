@@ -76,6 +76,20 @@ async def test_west_install_add_and_remove(setup):
         assert calls()[-1][-3:] == ["--gnu-toolchains", "riscv64-zephyr-elf", "--no-hosttools"]
 
 
+async def test_west_install_keeps_the_users_toolchain_variant(setup, monkeypatch):
+    # The fake west checks it gets the user's variant instead of "zephyr".
+    monkeypatch.setenv("ZEPHYR_TOOLCHAIN_VARIANT", "gnuarmemb")
+    monkeypatch.setenv("FAKE_VARIANT", "gnuarmemb")
+    _, _, make, calls = setup
+    view = make()
+    async with LazySdkApp(view).run_test(size=(160, 45)) as pilot:
+        await wait_for(lambda: view.available is not None)
+        await tick(pilot, view, "arm-zephyr-eabi")
+        await pilot.press("i")
+        await wait_for(lambda: view.installed is not None)
+        assert calls()[-1][:2] == ["west", "sdk"]
+
+
 async def test_nix_install_and_switch_to_west(setup):
     _, store, make, calls = setup
     view = make()

@@ -39,6 +39,8 @@ class Job:
     steps: list[list[str]]  # west arguments per step
     # Run this instead of west (e.g. nix); [] means each step is a whole command.
     program: list[str] | None = None
+    # Environment variables to set when the user's environment doesn't.
+    env: dict[str, str] = field(default_factory=dict)
     status: str = "queued"  # queued, running, passed, failed, cancelled, error
     returncode: int | None = None
     started: float | None = None
@@ -96,6 +98,8 @@ class Runner:
         job.status, job.started = "running", time.time()
         self.on_change(job)
         env = sdk_env(dict(os.environ, CLICOLOR_FORCE="1"), self.zephyr_base, topdir=self.topdir)
+        for key, value in job.env.items():
+            env.setdefault(key, value)
         try:
             for i, args in enumerate(job.steps):
                 job.step = i

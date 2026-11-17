@@ -881,7 +881,15 @@ class SdkView(View):
                 hosttools,
                 backends.west_toolchain_flag(self.zephyr_base),
             )
-            job = Job(f"install SDK {version}", version, "install", [args])
+            # Zephyr's FindZephyr-sdk.cmake fails on newer CMake when this is unset,
+            # and `west sdk install` runs it to list the installed SDKs.
+            job = Job(
+                f"install SDK {version}",
+                version,
+                "install",
+                [args],
+                env={"ZEPHYR_TOOLCHAIN_VARIANT": "zephyr"},
+            )
         else:
             commands = backends.nix_install_commands(
                 self.nix_attr(), version, self.store, toolchains, self.hosttools, self.flake
