@@ -22,9 +22,9 @@
   - `enter` adds the node under the cursor to the queue. Mark several nodes with `space`,
     then `r` queues them all as **one** job (a single twister invocation).
   - In the Jobs panel, the running job is listed first, then the queue in execution order,
-    then finished jobs. `x` cancels the selected job, queued or running, and `J`/`K`
-    move a queued job later or earlier. `ctrl+x` clears the whole queue and stops the
-    running job.
+    then finished jobs. Each job shows the platforms it runs on after `@`. `x` cancels
+    the selected job, queued or running, and `J`/`K` move a queued job later or earlier.
+    `ctrl+x` clears the whole queue and stops the running job.
   - The next job only starts once the previous twister process has fully exited,
     including after a cancel.
 - **Results** are kept across runs (per scenario and platform), with failing cases and

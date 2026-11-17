@@ -102,6 +102,14 @@ def short_port(path: str) -> str:
     return re.sub(r"-if\d+(-port\d+)?$", "", name)
 
 
+def platform_tag(platforms: list[str], limit: int = 3) -> str:
+    """The platforms a job runs on, shortened to `limit` names: `a, b, c +2`."""
+    tag = ", ".join(platforms[:limit])
+    if len(platforms) > limit:
+        tag += f" +{len(platforms) - limit}"
+    return tag
+
+
 class StatusBar(Static):
     """The one-line status bar; fits its parts to its width."""
 
@@ -466,6 +474,7 @@ Layout adapts to the terminal: two columns when wide, stacked when narrow or
 tall, and compact (details as a popup via 5) when small.
 
 [b]Jobs[/]   one job runs at a time; the rest wait in the queue
+  each job shows its platforms after @
   x cancel (queued or running) · J/K move queued job later/earlier
   r requeue · L clear finished
 
@@ -1219,6 +1228,8 @@ class TwisterView(View):
             prompt.append(f"{icon} ", style=style)
             prompt.append(f"#{job.id} ", style="bright_black")
             prompt.append(job.target.title)
+            if job.options.platforms:
+                prompt.append(f"  @ {platform_tag(job.options.platforms)}", style="magenta")
             position = self.jobs.position(job)
             if position is not None:
                 prompt.append(f"  queued {position}", style="yellow")
@@ -1251,7 +1262,8 @@ class TwisterView(View):
             log.border_title = "[4] Output"
             return
         self.viewed_job = job.id
-        log.border_title = f"[4] Output — #{job.id} {job.target.title}"
+        where = f" @ {platform_tag(job.options.platforms)}" if job.options.platforms else ""
+        log.border_title = f"[4] Output — #{job.id} {job.target.title}{where}"
         for line in job.lines[-5000:]:
             log.write(Text.from_ansi(line))
 
