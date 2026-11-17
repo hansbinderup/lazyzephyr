@@ -34,6 +34,7 @@ def setup(tmp_path, monkeypatch):
     cache.write_text(json.dumps(names))
     log = tmp_path / "calls.jsonl"
     monkeypatch.setenv("FAKE_LOG", str(log))
+    monkeypatch.delenv("ZEPHYR_TOOLCHAIN_VARIANT", raising=False)
     monkeypatch.setenv("FAKE_NIX_STORE", str(tmp_path / "nix-store"))
     (tmp_path / "nix-store").mkdir()
     store = Path(os.environ["LAZYZEPHYR_SDK_DIR"])

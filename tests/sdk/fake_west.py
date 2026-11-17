@@ -17,6 +17,9 @@ if args[:3] == ["packages", "pip", "--install"]:
     print("Successfully installed pyelftools-0.32 pykwalify-1.8.0 west-1.5.0 …", flush=True)
     sys.exit(0)
 assert args[:2] == ["sdk", "install"], args
+# Older Zephyr's FindZephyr-sdk.cmake breaks on newer CMake without it.
+variant = os.environ.get("ZEPHYR_TOOLCHAIN_VARIANT")
+assert variant == os.environ.get("FAKE_VARIANT", "zephyr"), variant
 
 
 def value(flag):
