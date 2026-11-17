@@ -24,6 +24,7 @@ from textual.widgets.tree import TreeNode
 
 from ..builder.app import BUILD_CSS, PickerScreen
 from ..clipboard import SystemClipboard
+from ..outputlog import OutputLog
 from ..view import COMMON_CSS, ForwardActions, View
 from . import boards, cache, folders, session
 from .discovery import Discovery, Scenario, Workspace, default_roots, discover
@@ -478,6 +479,9 @@ tall, and compact (details as a popup via 5) when small.
   x cancel (queued or running) · J/K move queued job later/earlier
   r requeue · L clear finished
 
+[b]Output[/]  drag the mouse to select text
+  ctrl+c     copy the selection, or the whole output when nothing is selected
+
 Single ztest cases are filtered with the native_sim `-test=` option,
 so they only narrow the run on native (posix) platforms.
 """
@@ -703,7 +707,7 @@ class TwisterView(View):
                 jobs = JobList(id="jobs", classes="panel")
                 jobs.border_title = "[3] Jobs"
                 yield jobs
-                log = RichLog(id="log", classes="panel", markup=False, highlight=False, wrap=False)
+                log = OutputLog(id="log", classes="panel", full_text=self.viewed_output)
                 log.border_title = "[4] Output"
                 yield log
                 with ScrollPanel(id="details-panel", classes="panel") as details:
@@ -1565,6 +1569,11 @@ class TwisterView(View):
             return None
         option = job_list.get_option_at_index(job_list.highlighted)
         return next((j for j in self.jobs.jobs if str(j.id) == option.id), None)
+
+    def viewed_output(self) -> str:
+        """The viewed job's whole output, without colours: what ctrl+c copies in Output."""
+        job = next((j for j in self.jobs.jobs if j.id == self.viewed_job), None)
+        return "\n".join(Text.from_ansi(line).plain for line in job.lines) if job else ""
 
     @on(OptionList.OptionHighlighted, "#jobs")
     def _job_highlighted(self, event: OptionList.OptionHighlighted) -> None:
