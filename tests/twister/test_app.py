@@ -11,6 +11,7 @@ from lazyzephyr.twister.app import (
     TwisterView,
     count_text,
     fit_status,
+    platform_tag,
     short_port,
 )
 from lazyzephyr.twister.discovery import Workspace
@@ -368,6 +369,31 @@ async def test_cancelled_job_is_listed_once_until_it_exits(
         app.view.refresh_jobs()  # used to raise DuplicateID
         await wait_for(lambda: app.jobs.current is None, timeout=10)
         assert app.job_order() == [job]
+
+
+def test_platform_tag_shortens_long_lists():
+    assert platform_tag(["native_sim"]) == "native_sim"
+    assert platform_tag(["native_sim", "qemu_x86", "frdm_k64f", "qemu_cortex_m3", "nrf52dk"]) == (
+        "native_sim, qemu_x86, frdm_k64f +2"
+    )
+
+
+async def test_job_rows_show_their_platforms(test_tree, tmp_path, fake_twister, monkeypatch):
+    monkeypatch.setenv("FAKE_DELAY", "3")
+    app = make_app(test_tree, tmp_path, fake_twister)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await wait_for(lambda: "s:drivers.beta" in app.node_index)
+        app.options.platforms = ["qemu_x86"]
+        app.tree.move_cursor(app.node_index["s:drivers.beta"])
+        await pilot.press("enter")
+        app.options.platforms = ["native_sim"]
+        await pilot.press("enter")
+        await wait_for(lambda: len(app.jobs.queued()) == 1)
+        app.view.refresh_jobs()
+        job_list = app.query_one("#jobs")
+        rows = [str(job_list.get_option_at_index(i).prompt) for i in range(job_list.option_count)]
+        assert "@ qemu_x86" in rows[0] and "@ native_sim" in rows[1]
+        app.jobs.cancel_all()
 
 
 async def test_settings_are_saved_for_next_time(test_tree, tmp_path, fake_twister):
