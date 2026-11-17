@@ -17,11 +17,12 @@ from .dts.app import AppConfig as DtsConfig
 from .dts.state import TargetChoice
 from .kconfig.app import KCONFIG_CSS, KconfigView
 from .kconfig.app import AppConfig as KconfigConfig
+from .sdk.app import SDK_CSS, SdkView
 from .twister.app import TWISTER_CSS, TwisterView
 from .twister.app import AppConfig as TwisterConfig
 from .view import COMMON_CSS, View
 
-TABS = ("build", "dts", "kconfig", "tests")
+TABS = ("build", "dts", "kconfig", "tests", "sdk")
 
 
 class LazyZephyrApp(SystemClipboard, App):
@@ -32,11 +33,12 @@ class LazyZephyrApp(SystemClipboard, App):
         + DTS_CSS
         + BUILD_CSS
         + KCONFIG_CSS
+        + SDK_CSS
         + """
     #tabs { height: 1fr; }
     #tabs > ContentSwitcher { height: 1fr; }
     #tabs TabPane { padding: 0; height: 1fr; }
-    TwisterView, DtsView, BuildView, KconfigView { height: 1fr; }
+    TwisterView, DtsView, BuildView, KconfigView, SdkView { height: 1fr; }
     .tab-error { padding: 1 2; color: $error; }
     """
     )
@@ -49,6 +51,7 @@ class LazyZephyrApp(SystemClipboard, App):
         Binding("f2", "show_tab('dts')", show=False),
         Binding("f3", "show_tab('kconfig')", show=False),
         Binding("f4", "show_tab('tests')", show=False),
+        Binding("f5", "show_tab('sdk')", show=False),
     ]
 
     def __init__(
@@ -91,6 +94,9 @@ class LazyZephyrApp(SystemClipboard, App):
                     yield Static(f"Kconfig unavailable: {self.dts_error}", classes="tab-error")
             with TabPane("Tests", id="tests"):
                 yield TwisterView(self.twister_config, id="twister")
+            with TabPane("SDK", id="sdk"):
+                ws = self.dts_config.workspace if self.dts_config is not None else None
+                yield SdkView(ws, id="sdk-view")
         yield Footer(compact=True, show_command_palette=False)
 
     def on_mount(self) -> None:

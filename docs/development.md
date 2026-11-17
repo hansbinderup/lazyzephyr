@@ -11,6 +11,19 @@ git clone --depth 1 --branch v4.5.0 https://github.com/zephyrproject-rtos/zephyr
 LAZYZEPHYR_TEST_ZEPHYR_BASE=/tmp/zephyr pytest
 ```
 
+## zephyr-nix in the SDK tab
+
+The SDK tab's Nix backend uses a fixed zephyr-nix commit, `ZEPHYR_NIX` in
+`lazyzephyr/sdk/backends.py`. Bump it when zephyr-nix adds an SDK version that a
+supported Zephyr needs (`sdks/` in zephyr-nix lists them):
+
+```sh
+git ls-remote https://github.com/nix-community/zephyr-nix HEAD
+```
+
+Check that the attribute names (`sdk-1_0`, `hosttools-1_0`) and `sdk.override { targets }`
+still work: `tests/sdk/fake_nix.py` copies them.
+
 ## Zephyr and Python versions in CI
 
 lazyzephyr runs Zephyr's own Python code (edtlib, kconfiglib) in its interpreter, so CI
@@ -50,7 +63,8 @@ grep -rh "python-version: \[" /tmp/z/.github/workflows/ | sort -u
    Move the Python axis entries it supports to it, add the previous newest release to
    the Zephyr axis, and drop the oldest release from it. Keep about four releases.
 3. A Python missing from the newest release stays on the newest release that still
-   supports it (like 3.11 on v4.3.2). Once no tested release supports it, drop it
-   from `requires-python` and the classifiers in `pyproject.toml`.
+   supports it. Once no tested release supports it, drop it from `requires-python`,
+   the classifiers in `pyproject.toml` and `install.sh`. lazyzephyr's oldest Python
+   follows current Zephyr's: 3.12 since Zephyr 4.4.
 4. A new Python lazyzephyr supports: add it to the classifiers and to the Python axis.
 5. If Zephyr's `main` drops or adds a Python, update the nightly matrix too.

@@ -76,7 +76,7 @@ async def test_tabs_switch_and_keep_their_own_keys(workspace, tmp_path, monkeypa
 def test_tab_order():
     from lazyzephyr.app import TABS
 
-    assert TABS == ("build", "dts", "kconfig", "tests")
+    assert TABS == ("build", "dts", "kconfig", "tests", "sdk")
 
 
 async def drag(pilot, x, y, dx, dy):
@@ -103,6 +103,7 @@ async def test_drag_and_maximize_in_every_tab(workspace, tmp_path):
         ("dts", "#left", "#details-panel", "#settings-panel"),
         ("kconfig", "#kleft", "#kdetails-panel", "#krelated-panel"),
         ("tests", "#left", "#log", "#details-panel"),
+        ("sdk", "#s-left", "#s-toolchains-panel", "#s-log"),
     ]
     async with app.run_test(size=(180, 50)) as pilot:
         await wait_for(lambda: "s:demo.one" in app.twister.node_index)

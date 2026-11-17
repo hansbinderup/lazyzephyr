@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -22,6 +23,7 @@ from textual.widgets.option_list import Option
 
 from ..clipboard import SystemClipboard
 from ..dts.workspace import Board, Workspace, find_boards, find_build_dirs
+from ..sdk.model import sdk_env
 from ..view import COMMON_CSS, ForwardActions, View
 from . import meta
 from .configs import (
@@ -794,6 +796,20 @@ class ConfigScreen(ModalScreen[BuildConfig | None]):
 # View
 # --------------------------------------------------------------------------
 
+NO_WEST = (
+    "⚠ west not found, so nothing can be built. Set up the workspace's Python "
+    "environment in the SDK tab (F5, then p), or start lazyzephyr where west is on the PATH."
+)
+
+
+class NoWestBanner(Static):
+    """Shown while there is no west; a click goes to the SDK tab, where it's set up."""
+
+    def on_click(self) -> None:
+        if hasattr(self.app, "action_show_tab"):
+            self.app.action_show_tab("sdk")
+
+
 BUILD_CSS = """
     BuildView #b-main { layout: horizontal; height: 1fr; }
     BuildView #b-left { width: 40%; min-width: 36; }
@@ -805,6 +821,10 @@ BUILD_CSS = """
     BuildView #b-monitor-panel { height: 2fr; display: none; }
     BuildView.-monitor #b-monitor-panel { display: block; }
     BuildView #b-statusbar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
+    BuildView #b-no-west {
+        display: none; height: auto; padding: 0 1; background: $error; color: $text;
+        text-style: bold; }
+    BuildView.-no-west #b-no-west { display: block; }
     BuildView.-portrait #b-main { layout: vertical; }
     BuildView.-portrait #b-left, BuildView.-portrait #b-right { width: 100%; min-width: 0; }
     BuildView.-portrait #b-left { height: 45%; }
@@ -843,10 +863,18 @@ class BuildView(View):
     ):
         super().__init__(**kwargs)
         self.ws, self.cwd = ws, cwd
+        self.west = west
         self.store = store or ConfigStore(ws.topdir)
         self.options: BuildConfigOptions | None = None
         self.found: list[Path] = []
-        self.runner = Runner(ws.topdir, self._on_line, self._on_change, west)
+        self.runner = Runner(
+            ws.topdir,
+            self._on_line,
+            self._on_change,
+            west,
+            zephyr_base=ws.zephyr_base,
+            topdir=ws.topdir,
+        )
         self.job: Job | None = None
         self.last_job: Job | None = None
         self.editing: BuildConfig | None = None
@@ -855,6 +883,7 @@ class BuildView(View):
         self._ids: list[str] = []
 
     def compose(self) -> ComposeResult:
+        yield NoWestBanner(NO_WEST, id="b-no-west")
         with Horizontal(id="b-main"):
             with Vertical(id="b-left"):
                 with Panel(id="b-configs-panel", classes="panel") as configs:
@@ -894,6 +923,10 @@ class BuildView(View):
     def activated(self) -> None:
         if self.focused is None or self not in self.focused.ancestors:
             self.configs_list.focus()
+        self.update_status()  # west may have been set up in the SDK tab meanwhile
+
+    def has_west(self) -> bool:
+        return (self.west or west_command(self.ws.topdir)) is not None
 
     @work(thread=True, exclusive=True, group="scan")
     def scan(self) -> None:
@@ -1093,8 +1126,7 @@ class BuildView(View):
 
     def update_status(self) -> None:
         parts = []
-        if west_command() is None:
-            parts.append("west not found on PATH: start from the dev shell")
+        self.set_class(not self.has_west(), "-no-west")
         if self.job and self.job.status == "running":
             parts.append(f"running: {self.job.title} ({self.job.duration or 0:.0f}s) · x: stop")
         elif self.last_job:
@@ -1127,6 +1159,8 @@ class BuildView(View):
         log = self.query_one("#b-log", RichLog)
         if line.startswith("$ "):
             log.write(Text(line, style="bold cyan"))
+        elif line.startswith("west not found"):
+            log.write(Text(line, style="bold red"))
         else:
             log.write(Text.from_ansi(line))
 
@@ -1168,13 +1202,18 @@ class BuildView(View):
         await self.runner.run(job)
 
     def _terminal(self, args: list[str]) -> None:
-        west = west_command()
+        west = west_command(self.ws.topdir)
         if west is None:
-            self.notify("west not found: start from the dev shell", severity="error")
+            self.notify(NO_WEST, severity="error")
             return
         with self.suspend():
             print("$ west " + " ".join(args), flush=True)
-            subprocess.run([*west, *args], cwd=self.ws.topdir, check=False)
+            subprocess.run(
+                [*west, *args],
+                cwd=self.ws.topdir,
+                env=sdk_env(dict(os.environ), self.ws.zephyr_base, topdir=self.ws.topdir),
+                check=False,
+            )
 
     def _built(self, cfg: BuildConfig) -> bool:
         d = build_dir(self.ws, cfg)

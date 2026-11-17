@@ -77,12 +77,14 @@ async def test_marked_nodes_queue_as_one_job_and_enter_queues_more(
         await pilot.press("3")
         order = app.job_order()
         assert order[0] is app.jobs.current
+        last = order[2]
         # As a real highlight does (via OptionHighlighted); otherwise a refresh tick
-        # in between restores the highlight to the job whose output is shown.
-        app.viewed_job = order[2].id
-        app.query_one("#jobs").highlighted = 2
+        # in between restores the highlight to the job whose output is shown. Its
+        # row is looked up again: the first job may have finished meanwhile.
+        app.viewed_job = last.id
+        app.query_one("#jobs").highlighted = app.job_order().index(last)
         await pilot.press("x")
-        assert order[2].state == "cancelled" and len(app.jobs.queued()) == 1
+        assert last.state == "cancelled" and len(app.jobs.queued()) <= 1
 
         await wait_for(lambda: all(not j.active for j in app.jobs.jobs), timeout=15)
         assert [j.state for j in app.jobs.jobs] == ["passed", "passed", "cancelled"]

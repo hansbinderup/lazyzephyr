@@ -7,6 +7,7 @@ import shlex
 import shutil
 from pathlib import Path
 
+from ..sdk.pyenv import venv_west
 from . import boards, cache, folders, session
 from .config import CONFIG_NAME, ConfigError, FileConfig, find_config, load_config
 from .discovery import default_roots, find_workspace
@@ -17,8 +18,9 @@ def default_state_dir(anchor: Path) -> Path:
     return cache.state_dir_for(anchor)
 
 
-def default_twister_cmd(zephyr_base: Path | None) -> list[str]:
-    if shutil.which("west"):
+def default_twister_cmd(zephyr_base: Path | None, topdir: Path | None = None) -> list[str]:
+    # The workspace's .venv goes first on PATH for runs (see sdk.model.sdk_env).
+    if shutil.which("west") or venv_west(topdir):
         return ["west", "twister"]
     if zephyr_base and (zephyr_base / "scripts" / "twister").is_file():
         return ["python3", str(zephyr_base / "scripts" / "twister")]
@@ -188,7 +190,9 @@ def config_from_args(args: argparse.Namespace, extra: list[str]):
         raise SystemExit("lazyzephyr: --jobs must be >= 1")
     twister_str = args.twister or file_config.twister
     twister = (
-        shlex.split(twister_str) if twister_str else default_twister_cmd(workspace.zephyr_base)
+        shlex.split(twister_str)
+        if twister_str
+        else default_twister_cmd(workspace.zephyr_base, workspace.topdir)
     )
     saved_session = session.load(state_dir)
     platforms = args.platform or (
