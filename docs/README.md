@@ -6,7 +6,7 @@ How to use each tab, and every key:
 - [Devicetree](devicetree.md): browse and edit a target's devicetree
 - [Kconfig](kconfig.md): a build's options, and changing them in your conf files
 - [Tests](tests.md): running twister, the job queue, results, `.lazyzephyr.toml`
-- [SDK](sdk.md): installing the Zephyr SDK and toolchains, with Nix or west sdk
+- [SDK](sdk.md): installing the Zephyr SDK and toolchains, with west sdk or Nix
 
 Working on lazyzephyr itself: [Development](development.md) (running the tests, CI versions).
 

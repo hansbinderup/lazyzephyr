@@ -19,7 +19,7 @@ from pathlib import Path
 from .pyenv import venv_env
 
 SETTINGS_FILE = "lazyzephyr-sdk.json"
-BACKENDS = ("nix", "west")
+BACKENDS = ("west", "nix")  # west sdk first: Zephyr's own installer
 
 
 def store_dir() -> Path:
@@ -157,11 +157,12 @@ def elsewhere(store: Path) -> list[InstalledSdk]:
 class Settings:
     """Choices made in the SDK tab, shared by every workspace (kept in the store)."""
 
-    backend: str | None = None  # "nix" or "west"; None until chosen
+    backend: str = "west"  # "west" or "nix"
     toolchains: list[str] = field(default_factory=list)
     hosttools: bool = True
     use: bool = True  # point builds at our SDK
     zephyr_nix: str | None = None  # a flake to use instead of the pinned zephyr-nix
+    guide: bool = True  # offer the setup steps when the tab opens and something is missing
 
     @classmethod
     def load(cls, store: Path) -> Settings:
@@ -174,12 +175,13 @@ class Settings:
         backend = data.get("backend")
         toolchains = data.get("toolchains")
         return cls(
-            backend=backend if backend in BACKENDS else None,
+            backend=backend if backend in BACKENDS else "west",
             toolchains=[t for t in toolchains if isinstance(t, str)]
             if isinstance(toolchains, list)
             else [],
             hosttools=data.get("hosttools") is not False,
             use=data.get("use") is not False,
+            guide=data.get("guide") is not False,
             zephyr_nix=data["zephyr_nix"] if isinstance(data.get("zephyr_nix"), str) else None,
         )
 
@@ -193,6 +195,7 @@ class Settings:
                     "toolchains": sorted(set(self.toolchains)),
                     "hosttools": self.hosttools,
                     "use": self.use,
+                    "guide": self.guide,
                     **({"zephyr_nix": self.zephyr_nix} if self.zephyr_nix else {}),
                 },
                 indent=2,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import ClassVar
@@ -25,6 +26,7 @@ from ..view import COMMON_CSS, ForwardActions, View
 from . import backends, pyenv
 from .backends import Availability
 from .model import (
+    BACKENDS,
     SETTINGS_FILE,
     InstalledSdk,
     Settings,
@@ -38,7 +40,7 @@ from .model import (
 )
 
 HOSTTOOLS = "hosttools"
-BACKEND_LABELS = {"nix": "Nix (zephyr-nix)", "west": "west sdk"}
+BACKEND_LABELS = {"west": "west sdk", "nix": "Nix (zephyr-nix)"}
 
 
 def cache_dir() -> Path:
@@ -77,13 +79,14 @@ workspace's Zephyr asks for in its SDK_VERSION file.
 
 [b]Install with[/b]
   enter              use this way of installing (remembered)
+  west sdk           Zephyr's own installer (Zephyr 4.0 or later), the default
   Nix                builds it with nix-community/zephyr-nix (needs nix)
-  west sdk           Zephyr's own installer (Zephyr 4.0 or later)
 [b]Toolchains[/b]
   space              add or remove a toolchain (or the host tools)
   a                  all or none
   [green]+[/green] to install · [red]-[/red] to remove · ✔ installed
 [b]Anywhere in the tab[/b]
+  g                  the setup steps: what this workspace still needs
   p                  set up the workspace's Python environment: a .venv with
                      west and Zephyr's requirements (again when they change)
   i                  install: apply the changes in the list
@@ -111,6 +114,47 @@ virtualenv yourself.
         self.dismiss(None)
 
 
+class SetupScreen(ModalScreen[str | None]):
+    """The setup steps, and what's done: "next" does the next one, "never" opts out."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("enter", "answer('next')", "Next step"),
+        Binding("escape,q", "answer(None)", "Not now"),
+        Binding("n", "answer('never')", "Don't show again"),
+    ]
+
+    def __init__(self, steps: list[tuple[bool, str, str]], next_step: str | None):
+        super().__init__()
+        self.steps, self.next_step = steps, next_step
+
+    def compose(self) -> ComposeResult:
+        t = Text()
+        if self.next_step is None:
+            t.append("This workspace is set up for building.\n\n", style="green")
+        else:
+            t.append("Before this workspace can build, it needs:\n\n")
+        for n, (done, title, detail) in enumerate(self.steps, 1):
+            t.append(" ✔ " if done else " ○ ", style="green" if done else "yellow")
+            t.append(f"{n}  {title}\n", style="bold" if not done else "")
+            t.append(f"      {detail}\n", style="bright_black")
+        t.append("\n")
+        keys = [("enter", self.next_step or "close")]
+        if self.next_step is not None:
+            keys.append(("esc", "not now"))
+        keys.append(("n", "don't show this again (g shows it)"))
+        for key, what in keys:
+            t.append(f" {key:<7}", style="bold")
+            t.append(what + "\n")
+        with Vertical(id="sdk-setup-dialog", classes="panel dialog") as dialog:
+            dialog.border_title = "Set up"
+            yield Static(t)
+
+    def action_answer(self, value: str | None) -> None:
+        if value == "next" and self.next_step is None:
+            value = None
+        self.dismiss(value)
+
+
 SDK_CSS = """
     SdkView #s-main { layout: horizontal; height: 1fr; }
     SdkView #s-left { width: 50%; min-width: 40; }
@@ -125,7 +169,8 @@ SDK_CSS = """
     SdkView.-portrait #s-main { layout: vertical; }
     SdkView.-portrait #s-left, SdkView.-portrait #s-right { width: 100%; min-width: 0; }
     #sdk-help-dialog { width: 84; height: 80%; }
-    HelpScreen { align: center middle; }
+    #sdk-setup-dialog { width: 80; height: auto; max-height: 90%; padding: 0 1; }
+    HelpScreen, SetupScreen { align: center middle; }
 """
 
 
@@ -134,6 +179,7 @@ class SdkView(View):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("i", "install", "Install"),
         Binding("p", "setup_python", "Python env"),
+        Binding("g", "guide", "Setup"),
         Binding("D", "remove_sdk", "Remove SDK", show=False),
         Binding("u", "toggle_use", "Use for builds", show=False),
         Binding("r", "rescan", "Refresh", show=False),
@@ -178,6 +224,12 @@ class SdkView(View):
         self.hosttools = self.settings.hosttools
         self._rows: list[str] = []
         self._loaded = False
+        self._guided = False  # the setup steps were offered this session
+        self._guide_waiting = False  # offer the steps once own_missing is known
+        self.own_west: str | None = None  # a west of the user's own (Nix shell, ...)
+        # Zephyr's base packages its Python lacks; None: not known (yet)
+        self.own_missing: list[str] | None = None
+        self._own_checked: str | None = None  # the west own_missing is for
 
     # -- layout --
 
@@ -227,6 +279,12 @@ class SdkView(View):
                 self.load_nix_versions()
         if self.focused is None or self not in self.focused.ancestors:
             self.toolchain_list.focus()
+        if not self._guided:
+            self._guided = True
+            if self.own_west and self._own_checked != self.own_west:
+                self._guide_waiting = True
+            else:
+                self.offer_guide()
 
     # -- state --
 
@@ -238,6 +296,10 @@ class SdkView(View):
             ),
         }
         self.pyenv = pyenv.inspect(self.topdir, self.zephyr_base) if self.topdir else None
+        self.own_west = self._own_west()
+        if self.own_west and self.own_west != self._own_checked:
+            self.own_missing = None
+            self.check_own_west(self.own_west)
         sdks = store_sdks(self.store)
         self.installed = next((s for s in sdks if s.version == self.version), None)
         self.others = [s for s in sdks if s is not self.installed] + elsewhere(self.store)
@@ -323,10 +385,8 @@ class SdkView(View):
             return None
         return backends.nix_attr_for(self.nix_versions, self.version)
 
-    def backend_problem(self, backend: str | None) -> str | None:
+    def backend_problem(self, backend: str) -> str | None:
         """Why this backend can't install the SDK now, or None."""
-        if backend is None:
-            return "choose how to install: Nix or west sdk (Install with, enter)"
         avail = self.availability.get(backend)
         if avail is None or not avail.ok:
             return avail.reason if avail else "unavailable"
@@ -346,6 +406,109 @@ class SdkView(View):
                 return "zephyr-nix's SDK versions aren't known yet (r: look again)"
         return None
 
+    # -- the setup steps --
+
+    def _own_west(self) -> str | None:
+        """west on the PATH from the user's own setup (a Nix shell, say), not our .venv."""
+        west = shutil.which("west")
+        if west is None:
+            return None
+        if self.pyenv is not None and Path(west).resolve().is_relative_to(
+            self.pyenv.path.resolve()
+        ):
+            return None
+        return west
+
+    @work(thread=True, exclusive=True, group="own-west")
+    def check_own_west(self, west: str) -> None:
+        names = pyenv.base_requirements(self.zephyr_base)
+        python = pyenv.python_beside(west)
+        missing = pyenv.missing_requirements(python, names) if names and python else None
+        self.call_from_thread(self._own_west_checked, west, missing)
+
+    def _own_west_checked(self, west: str, missing: list[str] | None) -> None:
+        self.own_missing, self._own_checked = missing, west
+        self.refresh_all()
+        if self._guide_waiting:  # the tab opened before this was known
+            self._guide_waiting = False
+            self.offer_guide()
+
+    def python_ready(self) -> bool:
+        active = os.environ.get("VIRTUAL_ENV")
+        if active and self.pyenv and Path(active).resolve() != self.pyenv.path.resolve():
+            return True  # the user's own virtualenv
+        if self.pyenv is not None and not self.pyenv.exists and self.own_west:
+            return not self.own_missing  # west of their own, with Zephyr's packages
+        return self.pyenv is not None and self.pyenv.ready
+
+    def sdk_ready(self) -> bool:
+        if self.installed is not None:
+            return True
+        return any(o.version == self.version for o in self.others)
+
+    def steps(self) -> list[tuple[str, bool, str, str]]:
+        """(key, done, title, detail) for each thing the workspace needs."""
+        if self.topdir is None or self.version is None:
+            return []
+        venv = home(self.pyenv.path) if self.pyenv else ".venv"
+        python = f"{venv} with west and Zephyr's Python packages (p)"
+        if self.own_west and self.pyenv is not None and not self.pyenv.exists:
+            if self.own_missing:
+                python = (
+                    f"your own west lacks {len(self.own_missing)} of Zephyr's packages: "
+                    f"p sets up {venv} with all of them"
+                )
+            else:
+                python = f"your own west ({home(self.own_west)}); p sets up {venv} instead"
+        installer = BACKEND_LABELS[self.settings.backend]
+        how = self.backend_problem(self.settings.backend) or (
+            f"toolchains and host tools, with {installer} (space, then i)"
+        )
+        return [
+            (
+                "python",
+                self.python_ready(),
+                "Python environment",
+                python,
+            ),
+            (
+                "sdk",
+                self.sdk_ready(),
+                f"Zephyr SDK {self.version}",
+                how,
+            ),
+        ]
+
+    def offer_guide(self, force: bool = False) -> None:
+        """Show the setup steps if something is missing (always when forced)."""
+        steps = self.steps()
+        todo = [k for k, done, _, _ in steps if not done]
+        if not steps or (not force and (not todo or not self.settings.guide)):
+            return
+        if isinstance(self.app.screen, ModalScreen):
+            return
+        labels = {"python": "set up the Python environment", "sdk": "choose the toolchains"}
+        screen = SetupScreen(
+            [(done, title, detail) for _, done, title, detail in steps],
+            labels[todo[0]] if todo else None,
+        )
+        self.app.push_screen(screen, lambda answer: self._guide_answered(answer, todo))
+
+    def _guide_answered(self, answer: str | None, todo: list[str]) -> None:
+        if answer == "never":
+            self.settings.guide = False
+            self.settings.save(self.store)
+            self.notify("g shows the setup steps again")
+        elif answer == "next" and todo[0] == "python":
+            self.action_setup_python()
+        elif answer == "next":
+            self.toolchain_list.focus()
+            if not self.selected:
+                self.notify("tick the toolchains your boards need with space, then press i")
+
+    def action_guide(self) -> None:
+        self.offer_guide(force=True)
+
     # -- rendering --
 
     def refresh_all(self) -> None:
@@ -357,47 +520,56 @@ class SdkView(View):
     def show_status(self) -> None:
         t = Text()
 
-        def row(label: str, value, style: str = "") -> None:
-            t.append(f"{label:<12}", style="bold")
+        def row(label: str, value, style: str = "", mark: bool | None = None) -> None:
+            if mark is None:
+                t.append("  ")
+            else:
+                t.append("✔ " if mark else "✗ ", style="green" if mark else "yellow")
+            t.append(f"{label:<11}", style="bold")
             t.append_text(value if isinstance(value, Text) else Text(str(value), style=style))
             t.append("\n")
+
+        def note(text: str) -> None:
+            t.append(" " * 13 + text + "\n", style="bright_black")
 
         if self.zephyr_base is None:
             row("Zephyr", "not found: run inside a west workspace or set ZEPHYR_BASE", "red")
         else:
             row("Zephyr", home(self.zephyr_base))
-        if self.zephyr_base is not None and self.version is None:
-            row("Needs", "unknown: this Zephyr has no SDK_VERSION file", "yellow")
-        elif self.version:
-            row("Needs", f"Zephyr SDK {self.version}", "cyan")
+            if self.version is None:
+                note("no SDK_VERSION file: the SDK version it needs is unknown")
+            else:
+                note(f"needs Zephyr SDK {self.version}")
+        t.append("\n")
         self._python_rows(row)
-        row("Folder", home(self.store))
-        t.append(" " * 12 + "shared by every workspace\n", style="bright_black")
         if self.installed:
-            what = Text(f"installed with {self.installed.backend}", style="green")
+            what = Text(f"{self.version} installed with {self.installed.backend}", style="green")
             n = len(self.installed.toolchains)
             what.append(f" · {n} toolchain{'s' if n != 1 else ''}")
             if self._hosttools_installed():
                 what.append(" · host tools")
-            row("This SDK", what)
+            row("SDK", what, mark=True)
         elif self.version:
-            row("This SDK", "not installed by lazyzephyr", "yellow")
+            other = next((o for o in self.others if o.version == self.version), None)
+            if other is not None:
+                row("SDK", f"{self.version} in {home(other.path)}", "green", mark=True)
+            else:
+                row(
+                    "SDK", f"{self.version} not installed: tick toolchains, then i", "yellow", False
+                )
+        t.append("\n")
         path, reason = active_sdk(self.zephyr_base, self.store)
+        row("Builds use", home(path) if path else reason, "green" if path else "bright_black")
         if path:
-            row("Builds use", home(path), "green")
-            t.append(" " * 12 + reason + "\n", style="bright_black")
-        else:
-            row("Builds use", reason, "bright_black")
-        row(
-            "u", f"builds use the .venv and SDK set up here: {'on' if self.settings.use else 'off'}"
-        )
+            note(reason)
+        note(f"u: {'stop using' if self.settings.use else 'use'} the .venv and SDK from here")
+        row("SDKs in", home(self.store))
+        note("shared by every workspace")
         problem = self.backend_problem(self.settings.backend) if self.version else None
         if problem:
-            t.append("\n")
-            t.append(problem + "\n", style="yellow")
+            t.append("\n" + problem + "\n", style="yellow")
         if self.release_error:
-            t.append("\n")
-            t.append(self.release_error + "\n", style="red")
+            t.append("\n" + self.release_error + "\n", style="red")
         if self.others:
             t.append("\nOther SDKs\n", style="bold")
             for sdk in self.others:
@@ -412,17 +584,30 @@ class SdkView(View):
             return
         active = os.environ.get("VIRTUAL_ENV")
         if active and Path(active).resolve() != env.path.resolve():
-            row("Python", f"your virtualenv {home(active)} (active, so it's used)", "green")
+            row("Python", f"your virtualenv {home(active)} (active, so it's used)", "green", True)
             return
         where = home(env.path)
-        if not env.exists:
-            row("Python", "no .venv in the workspace: p sets it up", "yellow")
+        if not env.exists and self.own_west:
+            where = home(self.own_west)
+            if self.own_missing:
+                shown = ", ".join(self.own_missing[:4])
+                more = f" and {len(self.own_missing) - 4} more" if len(self.own_missing) > 4 else ""
+                row("Python", f"your own west ({where}) lacks {shown}{more}", "yellow", False)
+                row("", "p sets up a workspace .venv with all of Zephyr's packages", "yellow")
+            elif self.own_missing == []:
+                row("Python", f"your own west ({where}), with Zephyr's packages", "green", True)
+            else:
+                row("Python", f"your own west ({where})", "green", True)
+                row("", "p sets up a workspace .venv with all of Zephyr's packages instead")
+        elif not env.exists:
+            row("Python", "no .venv in the workspace: p sets it up", "yellow", False)
         elif not env.python_ok:
             version = ".".join(map(str, env.python))
             row(
                 "Python",
                 f"{where} has Python {version}; Zephyr needs 3.12 or later. Delete it, then p",
                 "red",
+                False,
             )
         elif not env.ours:
             row(
@@ -430,14 +615,17 @@ class SdkView(View):
                 f"{where} (not set up by lazyzephyr): p installs west and Zephyr's "
                 "requirements into it",
                 "yellow",
+                env.ready,
             )
         elif not env.has_west:
-            row("Python", f"{where} has no west: p sets it up again", "yellow")
+            row("Python", f"{where} has no west: p sets it up again", "yellow", False)
         elif not env.up_to_date:
-            row("Python", f"{where}: Zephyr's requirements changed, p updates them", "yellow")
+            row(
+                "Python", f"{where}: Zephyr's requirements changed, p updates them", "yellow", False
+            )
         else:
             version = ".".join(map(str, env.python)) if env.python else "?"
-            row("Python", Text(f"{where} · Python {version} · ready", "green"))
+            row("Python", f"{where} · Python {version}", "green", True)
 
     def action_setup_python(self) -> None:
         if self._busy():
@@ -472,7 +660,7 @@ class SdkView(View):
         lst = self.backend_list
         highlighted = lst.highlighted
         lst.clear_options()
-        for name in ("nix", "west"):
+        for name in BACKENDS:
             avail = self.availability.get(name)
             chosen = self.settings.backend == name
             label = Text()
@@ -533,7 +721,7 @@ class SdkView(View):
     def update_statusbar(self) -> None:
         add, remove = self.changes()
         parts = [f"SDK {self.version}" if self.version else "no SDK version"]
-        parts.append(BACKEND_LABELS.get(self.settings.backend or "", "no installer chosen"))
+        parts.append(BACKEND_LABELS[self.settings.backend])
         parts.append(f"{len(self.selected)} toolchains")
         if add or remove:
             parts.append(f"+{len(add)} -{len(remove)}: i to install")
@@ -739,7 +927,10 @@ class SdkView(View):
             log.write(Text(f"{job.title}: {job.status}", style=f"bold {style}"))
             if job.status == "passed" and job.action == "python":
                 pyenv.mark_set_up(self.topdir, self.zephyr_base)
-            elif job.status == "passed":
+                self.rescan()
+                self.offer_guide()  # on to the SDK, if that's still missing
+                return
+            if job.status == "passed":
                 self._finished_settings()
                 if not sdk_path(self.store, self.version).exists():
                     log.write(

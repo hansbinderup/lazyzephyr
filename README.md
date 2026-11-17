@@ -11,7 +11,7 @@ A lazygit-style terminal UI for Zephyr work in a **west** workspace, with one ta
 - **Tests**: run **twister** tests from a live tree of scenarios, with a job queue and
   results that jump to the failing assert.
 - **SDK**: install the Zephyr SDK version your Zephyr needs, and just the toolchains you
-  pick, with Nix or `west sdk`. Builds started from lazyzephyr use it.
+  pick, with `west sdk` or Nix. Builds started from lazyzephyr use it.
 
 Zephyr only; not Linux devicetrees.
 

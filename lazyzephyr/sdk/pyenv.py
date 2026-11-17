@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -137,3 +138,74 @@ def venv_env(env: dict[str, str], topdir: Path | None) -> dict[str, str]:
     env["PATH"] = os.pathsep.join(p for p in (str(venv_bin(venv)), env.get("PATH", "")) if p)
     env.pop("PYTHONHOME", None)
     return env
+
+
+# -- a west of the user's own (a Nix shell, say) ------------------------------
+
+_CHECK = """\
+import sys
+from importlib import metadata
+for name in sys.argv[1:]:
+    try:
+        metadata.version(name)
+    except metadata.PackageNotFoundError:
+        print(name)
+"""
+
+
+def base_requirements(zephyr_base: Path | None) -> list[str] | None:
+    """The package names in Zephyr's requirements-base.txt, or None without one.
+
+    Lines with an environment marker (for one OS only, say) are left out.
+    """
+    if zephyr_base is None:
+        return None
+    try:
+        text = (Path(zephyr_base) / "scripts" / "requirements-base.txt").read_text()
+    except OSError:
+        return None
+    names = []
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line or line.startswith("-") or ";" in line:
+            continue
+        m = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", line)
+        if m:
+            names.append(m.group(0))
+    return names
+
+
+def python_beside(west: str) -> str | None:
+    """The Python that goes with a west on the PATH: one next to it, else its shebang's."""
+    for name in ("python3", "python"):
+        candidate = Path(west).parent / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    try:
+        with open(west, "rb") as f:
+            first = f.readline().decode(errors="replace")
+    except OSError:
+        return None
+    if first.startswith("#!") and "python" in first:
+        interpreter = first[2:].split()
+        if interpreter and Path(interpreter[0]).name == "env":
+            interpreter = interpreter[1:]
+        return interpreter[0] if interpreter else None
+    return None
+
+
+def missing_requirements(python: str, names: list[str], timeout: float = 20) -> list[str] | None:
+    """Which of `names` that Python doesn't have, or None if it can't be asked."""
+    try:
+        proc = subprocess.run(
+            [python, "-c", _CHECK, *names],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return [line for line in proc.stdout.splitlines() if line]

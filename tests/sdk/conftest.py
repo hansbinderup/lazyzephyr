@@ -10,7 +10,7 @@ import pytest
 from lazyzephyr.dts.workspace import Workspace
 from lazyzephyr.sdk import backends
 from lazyzephyr.sdk.app import SdkView, cache_dir
-from lazyzephyr.sdk.model import host_platform
+from lazyzephyr.sdk.model import Settings, host_platform
 
 HERE = Path(__file__).parent
 FAKE_WEST = [sys.executable, str(HERE / "fake_west.py")]
@@ -37,6 +37,7 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_NIX_STORE", str(tmp_path / "nix-store"))
     (tmp_path / "nix-store").mkdir()
     store = Path(os.environ["LAZYZEPHYR_SDK_DIR"])
+    Settings(guide=False).save(store)  # the setup steps have tests of their own
 
     def calls():
         return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []

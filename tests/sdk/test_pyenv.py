@@ -9,7 +9,7 @@ import pytest
 from lazyzephyr.builder import runner
 from lazyzephyr.dts.workspace import Workspace
 from lazyzephyr.sdk import pyenv
-from lazyzephyr.sdk.app import LazySdkApp, SdkView
+from lazyzephyr.sdk.app import LazySdkApp, SdkView, SetupScreen
 from lazyzephyr.sdk.model import Settings, sdk_env
 
 from .conftest import FAKE_NIX, HERE
@@ -127,13 +127,10 @@ async def test_set_up_python_then_install_with_its_west(setup, tmp_path, no_west
             ["python", "-m", "pip", "install"],
             ["west", "packages", "pip", "--install"],
         ]
-        assert ".venv · Python 3.12 · ready" in status(view)
+        assert ".venv · Python 3.12" in status(view)
         assert view.availability["west"].ok
 
-        # west sdk now runs from the venv.
-        view.backend_list.focus()
-        view.backend_list.highlighted = 1
-        await pilot.press("enter")
+        # west sdk (the default) now runs from the venv.
         view.toolchain_list.focus()
         view.toolchain_list.highlighted = view._rows.index("arm-zephyr-eabi")
         await pilot.press("space", "i")
@@ -172,3 +169,108 @@ async def test_an_existing_venv_is_reused_after_asking(setup, tmp_path, no_west)
         await pilot.press("y")
         await wait_for(lambda: view.pyenv.ready)
         assert calls()[0][:3] == ["python", "-m", "pip"]  # no new venv
+
+
+async def test_setup_steps_show_what_is_missing(setup, tmp_path, no_west):
+    zephyr, store, _, calls = setup
+    (zephyr / "scripts" / "requirements.txt").write_text("west\n")
+    Settings().save(store)  # the setup steps are on by default
+    view = SdkView(
+        Workspace(zephyr.parent, zephyr), nix=FAKE_NIX, python=fake_python(tmp_path), id="v"
+    )
+    async with LazySdkApp(view).run_test(size=(160, 45)) as pilot:
+        await wait_for(lambda: isinstance(pilot.app.screen, SetupScreen))
+        assert [done for done, _, _ in pilot.app.screen.steps] == [False, False]
+        assert pilot.app.screen.next_step == "set up the Python environment"
+        await pilot.press("enter")  # sets up the .venv
+        await wait_for(lambda: view.pyenv is not None and view.pyenv.ready)
+        assert calls()[0][1:3] == ["-m", "venv"]
+        # Then the overlay comes back for the SDK, which focuses the toolchains.
+        await wait_for(lambda: isinstance(pilot.app.screen, SetupScreen))
+        assert [done for done, _, _ in pilot.app.screen.steps] == [True, False]
+        await pilot.press("enter")
+        await pilot.pause()
+        assert pilot.app.focused is view.toolchain_list
+
+
+async def test_setup_steps_can_be_turned_off(setup):
+    _, store, make, _ = setup
+    Settings().save(store)
+    view = make()
+    async with LazySdkApp(view).run_test(size=(160, 45)) as pilot:
+        await wait_for(lambda: isinstance(pilot.app.screen, SetupScreen))
+        await pilot.press("n")
+        await pilot.pause()
+        assert not isinstance(pilot.app.screen, SetupScreen)
+        assert not Settings.load(store).guide
+        await pilot.press("g")  # still there on demand
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, SetupScreen)
+        await pilot.press("escape")
+
+
+def own_west(tmp_path, monkeypatch) -> Path:
+    """west on the PATH from a setup of the user's own, with a python3 beside it."""
+    bin_dir = tmp_path / "own-bin"
+    bin_dir.mkdir()
+    for name, body in (
+        ("west", "#!/bin/sh\n"),
+        ("python3", f'#!/bin/sh\nexec "{sys.executable}" "$@"\n'),
+    ):
+        (bin_dir / name).write_text(body)
+        (bin_dir / name).chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    return bin_dir / "west"
+
+
+async def test_west_of_your_own_needs_no_venv(setup, tmp_path, monkeypatch):
+    """A Nix shell (or any setup) with west and Zephyr's packages: nothing to set up."""
+    zephyr, store, make, _ = setup
+    (zephyr / "scripts" / "requirements-base.txt").write_text(
+        "# Zephyr's base packages\npytest>=7\nwindows-curses; sys_platform == 'win32'\n"
+    )
+    own_west(tmp_path, monkeypatch)
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    Settings().save(store)  # the setup steps on
+    view = make()
+    async with LazySdkApp(view).run_test(size=(160, 45)) as pilot:
+        await wait_for(lambda: view.available is not None and view.own_missing is not None)
+        assert view.own_missing == [] and view.python_ready()
+        assert "with Zephyr's packages" in status(view)
+        # The steps still come up for the SDK, but go straight to the toolchains.
+        await wait_for(lambda: isinstance(pilot.app.screen, SetupScreen))
+        assert [done for done, _, _ in pilot.app.screen.steps] == [True, False]
+        assert pilot.app.screen.next_step == "choose the toolchains"
+
+
+async def test_west_of_your_own_without_zephyrs_packages(setup, tmp_path, monkeypatch):
+    """west alone isn't enough: missing packages are named, and p still sets them up."""
+    zephyr, store, make, _ = setup
+    (zephyr / "scripts" / "requirements-base.txt").write_text("pytest\nno-such-package-here\n")
+    own_west(tmp_path, monkeypatch)
+    Settings().save(store)  # the setup steps on
+    view = make()
+    async with LazySdkApp(view).run_test(size=(160, 45)) as pilot:
+        await wait_for(lambda: view.own_missing is not None)
+        assert view.own_missing == ["no-such-package-here"] and not view.python_ready()
+        assert "lacks no-such-package-here" in status(view)
+        assert "p sets up a workspace .venv" in status(view)
+        # The steps waited for the check, so they ask for the .venv after all.
+        await wait_for(lambda: isinstance(pilot.app.screen, SetupScreen))
+        assert pilot.app.screen.next_step == "set up the Python environment"
+
+
+def test_base_requirements_and_the_python_beside_west(tmp_path):
+    base = tmp_path / "zephyr"
+    (base / "scripts").mkdir(parents=True)
+    (base / "scripts" / "requirements-base.txt").write_text(
+        "# comment\n-r other.txt\npyelftools>=0.29\nPyYAML>=6.0  # yaml\n"
+        "windows-curses; sys_platform == 'win32'\n\nwest\n"
+    )
+    assert pyenv.base_requirements(base) == ["pyelftools", "PyYAML", "west"]
+    assert pyenv.base_requirements(tmp_path) is None
+    west = tmp_path / "west"
+    west.write_text("#!/usr/bin/env python3.12\n")
+    assert pyenv.python_beside(str(west)) == "python3.12"
+    west.write_text("#!/bin/sh\n")
+    assert pyenv.python_beside(str(west)) is None

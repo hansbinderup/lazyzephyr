@@ -19,7 +19,7 @@ async def wait_for(predicate, timeout=15.0):
 
 async def choose(pilot, view, backend):
     view.backend_list.focus()
-    view.backend_list.highlighted = ["nix", "west"].index(backend)
+    view.backend_list.highlighted = ["west", "nix"].index(backend)
     await pilot.press("enter")
     view.toolchain_list.focus()
     await pilot.pause()
@@ -47,12 +47,11 @@ async def test_west_install_add_and_remove(setup):
             "riscv64-zephyr-elf",
             "x86_64-zephyr-elf",
         ]
-        await pilot.press("i")  # no installer chosen yet: nothing runs
+        await pilot.press("i")  # nothing ticked yet: nothing runs
         await pilot.pause()
         assert calls() == []
 
-        await choose(pilot, view, "west")
-        assert Settings.load(store).backend == "west"
+        assert view.settings.backend == "west"  # the default
         await tick(pilot, view, "arm-zephyr-eabi")
         await pilot.press("i")
         await wait_for(lambda: view.installed is not None)
@@ -112,7 +111,7 @@ async def test_nix_without_this_version_says_so(setup):
     (zephyr / "SDK_VERSION").write_text("1.0.2\n")
     cache = backends.release_cache(cache_dir(), "1.0.1")
     cache.rename(backends.release_cache(cache_dir(), "1.0.2"))
-    Settings(backend="nix", zephyr_nix="github:me/zephyr-nix/main").save(store)
+    Settings(backend="nix", zephyr_nix="github:me/zephyr-nix/main", guide=False).save(store)
     view = make()
     async with LazySdkApp(view).run_test(size=(160, 45)) as pilot:
         await wait_for(lambda: view.nix_versions is not None and view.available is not None)
@@ -134,7 +133,7 @@ async def test_remove_sdk_and_use_switch(setup):
         await pilot.press("i")
         await wait_for(lambda: view.installed is not None)
         await pilot.press("u")
-        assert not Settings.load(store).use and "set up here: off" in status(view)
+        assert not Settings.load(store).use and "u: use the .venv" in status(view)
         assert "ZEPHYR_SDK_INSTALL_DIR" not in sdk_env({}, zephyr, store)
         await pilot.press("u")
         await pilot.press("D")

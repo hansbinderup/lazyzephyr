@@ -79,7 +79,7 @@ def test_settings_round_trip_and_bad_files(tmp_path):
     )
     (tmp_path / "lazyzephyr-sdk.json").write_text('{"backend": "apt", "toolchains": 3}')
     bad = Settings.load(tmp_path)
-    assert bad.backend is None and bad.toolchains == [] and bad.use
+    assert bad.backend == "west" and bad.toolchains == [] and bad.use and bad.guide
 
 
 def test_builds_get_the_sdk_this_zephyr_needs(tmp_path):
