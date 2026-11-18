@@ -67,6 +67,18 @@ assistant working in this repository.
   nix develop -c python -m pytest -q
   ```
 
+- CI fails on any ruff lint or format issue. Before every commit, format
+  and lint the code, and fold any fixes into the commit they belong to:
+
+  ```sh
+  nix develop -c ruff format .
+  nix develop -c ruff check .
+  ```
+
+  The ruff version is pinned in three places that must agree: `flake.lock`,
+  `required-version` in `pyproject.toml` and the CI workflow. Bump them
+  together.
+
 - To try a branch as the installed `lazyzephyr`:
 
   ```sh
