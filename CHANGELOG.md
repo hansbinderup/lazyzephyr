@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/hansbinderup/lazyzephyr/compare/v0.2.0...v0.3.0) (2026-11-18)
+
+
+### Features
+
+* **sdk:** Add an SDK tab for the Zephyr SDK and Python environment ([#9](https://github.com/hansbinderup/lazyzephyr/issues/9)) ([91f99cd](https://github.com/hansbinderup/lazyzephyr/commit/91f99cd576811c8e2c55cc3c56578def7ce05798))
+* Select and copy text in the Output panels ([e711350](https://github.com/hansbinderup/lazyzephyr/commit/e711350aab918d9bd88f34c9fc4f09db5ddd29ef))
+* **tests:** Show each job's platforms in the Jobs panel ([ea0c364](https://github.com/hansbinderup/lazyzephyr/commit/ea0c3647ca046559877567d98d2fea560e490888))
+
+
+### Fixes
+
+* **dts:** Detect overlapping partitions on newer Zephyr ([03cfb35](https://github.com/hansbinderup/lazyzephyr/commit/03cfb35635e3c6bcc52aaba289dec8d6f68973fa))
+* **sdk:** Set ZEPHYR_TOOLCHAIN_VARIANT for west sdk install ([4635ce6](https://github.com/hansbinderup/lazyzephyr/commit/4635ce617600c04cd926d3a4d4ab658efbb365c8))
+* **tests:** Find ztest cases in wrapper macros ([f4b6461](https://github.com/hansbinderup/lazyzephyr/commit/f4b6461036a7f5706dca4abf1f724c9d01e667f9))
+
+
+### Documentation
+
+* Ask AI assistants to run ruff before committing ([ae5c8bc](https://github.com/hansbinderup/lazyzephyr/commit/ae5c8bc1dd1478188905ba0e0bf0d52290ca0662))
+
 ## [0.2.0](https://github.com/hansbinderup/lazyzephyr/compare/v0.1.0...v0.2.0) (2026-11-16)
 
 
