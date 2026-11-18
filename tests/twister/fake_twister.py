@@ -30,6 +30,9 @@ args = parser.parse_args()
 scenarios = args.s or [os.environ.get("FAKE_DEFAULT_SCENARIO", "drivers.beta")]
 fail = set(filter(None, os.environ.get("FAKE_FAIL", "").split(",")))
 delay = float(os.environ.get("FAKE_DELAY", "0"))
+# A test holds every run here until it creates this file, so a job stays
+# running for exactly as long as the test needs it to.
+gate = os.environ.get("FAKE_GATE")
 outdir = Path(args.O)
 outdir.mkdir(parents=True, exist_ok=True)
 (outdir / "argv.json").write_text(json.dumps(sys.argv[1:]))
@@ -37,6 +40,8 @@ outdir.mkdir(parents=True, exist_ok=True)
 suites = []
 for index, name in enumerate(scenarios, 1):
     time.sleep(delay)
+    while gate and not Path(gate).exists():
+        time.sleep(0.02)
     status = "failed" if name in fail else "passed"
     print(
         f"INFO    - {index}/{len(scenarios)} native_sim  {name}  {status.upper()} (native 0.01s)",

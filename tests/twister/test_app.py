@@ -56,7 +56,11 @@ async def test_tree_shows_scenarios_and_runs_one(test_tree, tmp_path, fake_twist
 async def test_marked_nodes_queue_as_one_job_and_enter_queues_more(
     test_tree, tmp_path, fake_twister, monkeypatch
 ):
-    monkeypatch.setenv("FAKE_DELAY", "1.0")
+    # The first job runs until the gate opens. If it finished while the test
+    # highlights a queued job, the Jobs panel would follow the next job as it
+    # starts, and `x` would cancel that one instead.
+    gate = tmp_path / "gate"
+    monkeypatch.setenv("FAKE_GATE", str(gate))
     app = make_app(test_tree, tmp_path, fake_twister)
     async with app.run_test(size=(160, 50)) as pilot:
         await wait_for(lambda: "s:drivers.beta" in app.node_index)
@@ -80,13 +84,14 @@ async def test_marked_nodes_queue_as_one_job_and_enter_queues_more(
         assert order[0] is app.jobs.current
         last = order[2]
         # As a real highlight does (via OptionHighlighted); otherwise a refresh tick
-        # in between restores the highlight to the job whose output is shown. Its
-        # row is looked up again: the first job may have finished meanwhile.
+        # in between restores the highlight to the job whose output is shown.
         app.viewed_job = last.id
-        app.query_one("#jobs").highlighted = app.job_order().index(last)
+        app.query_one("#jobs").highlighted = order.index(last)
         await pilot.press("x")
-        assert last.state == "cancelled" and len(app.jobs.queued()) <= 1
+        assert last.state == "cancelled" and len(app.jobs.queued()) == 1
+        assert app.jobs.current is order[0]
 
+        gate.touch()
         await wait_for(lambda: all(not j.active for j in app.jobs.jobs), timeout=15)
         assert [j.state for j in app.jobs.jobs] == ["passed", "passed", "cancelled"]
 
