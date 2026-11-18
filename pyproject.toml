@@ -54,6 +54,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
+# Must match the ruff in flake.lock and the pin in .github/workflows/ci.yml,
+# so local runs and CI format the same way.
+required-version = "==0.17.4"
 target-version = "py312"
 line-length = 100
 
