@@ -36,8 +36,11 @@ SKIP_PREFIXES = ("twister-out", "build-", "build_", ".")
 # Same source extensions twister scans for ztest cases.
 SOURCE_SUFFIXES = frozenset({".c", ".cpp", ".cxx", ".cc"})
 
-# ZTEST(suite, test), ZTEST_F, ZTEST_USER, ZTEST_USER_F
-_ZTEST_RE = re.compile(r"^[ \t]*ZTEST(?:_USER)?(?:_F)?\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)", re.MULTILINE)
+# ZTEST(suite, test), ZTEST_F, ZTEST_USER, ZTEST_USER_F, and project wrappers such as
+# MY_ZTEST(suite, test) that expand to them
+_ZTEST_RE = re.compile(
+    r"^[ \t]*(?:\w+_)?ZTEST(?:_USER)?(?:_F)?\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)", re.MULTILINE
+)
 
 
 @dataclass(frozen=True)

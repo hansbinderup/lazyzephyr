@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from lazyzephyr.twister.discovery import default_roots, discover, find_workspace
+from lazyzephyr.twister.discovery import default_roots, discover, find_workspace, find_ztest_cases
+
+from .conftest import write
 
 
 def test_discovers_scenarios_and_merges_common(test_tree: Path):
@@ -29,6 +31,21 @@ def test_ztest_cases_match_twister_ids(test_tree: Path):
     assert first.filter == "alpha_suite::test_adds"
     assert first.line == 3
     assert alpha.suites == ["alpha_suite", "alpha_user"]
+
+
+def test_ztest_wrapper_macros(tmp_path: Path):
+    write(
+        tmp_path / "src" / "main.cpp",
+        """
+        #define MY_ZTEST(suite, fn) ZTEST(suite, fn)
+        MY_ZTEST(wrapped_suite, test_wrapped) {}
+        MY_ZTEST_F(wrapped_suite, test_wrapped_fixture) {}
+        ZTEST_EXPECT_FAIL(wrapped_suite, test_wrapped);
+        ZTEST_SUITE(wrapped_suite, NULL, NULL, NULL, NULL, NULL);
+        """,
+    )
+    ids = [c.id for c in find_ztest_cases(tmp_path)]
+    assert ids == ["wrapped_suite.wrapped", "wrapped_suite.wrapped_fixture"]
 
 
 def test_under_and_platforms(test_tree: Path):

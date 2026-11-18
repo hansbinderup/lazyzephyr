@@ -3,7 +3,7 @@
 ## Features
 
 - **Discovery**: finds every `testcase.yaml` / `sample.yaml` scenario under the test
-  roots and every `ZTEST*()` case in their sources, shown as a folder → scenario → case tree.
+  roots and every `ZTEST*()` case in their sources (also wrapper macros like `MY_ZTEST()`), shown as a folder → scenario → case tree.
   Folders show `passed/failed/not run` counts in green/red/blue; "not run" covers
   skipped, filtered, build-only, queued and never-run scenarios.
   Big roots like `zephyr/tests` stay responsive: tests load in the background with a
