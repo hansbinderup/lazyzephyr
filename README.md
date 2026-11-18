@@ -1,5 +1,10 @@
 # lazyzephyr
 
+[![Nightly](https://github.com/hansbinderup/lazyzephyr/actions/workflows/nightly.yml/badge.svg?event=schedule)](https://github.com/hansbinderup/lazyzephyr/actions/workflows/nightly.yml?query=event%3Aschedule)
+[![PyPI](https://img.shields.io/pypi/v/lazyzephyr)](https://pypi.org/project/lazyzephyr/)
+[![Python](https://img.shields.io/pypi/pyversions/lazyzephyr)](https://pypi.org/project/lazyzephyr/)
+[![License](https://img.shields.io/pypi/l/lazyzephyr)](https://github.com/hansbinderup/lazyzephyr/blob/main/LICENSE)
+
 A lazygit-style terminal UI for Zephyr work in a **west** workspace, with one tab per tool:
 
 - **Build**: saved build configs to build, flash, run a serial monitor, menuconfig and
@@ -14,6 +19,8 @@ A lazygit-style terminal UI for Zephyr work in a **west** workspace, with one ta
   pick, with `west sdk` or Nix. Builds started from lazyzephyr use it.
 
 Zephyr only; not Linux devicetrees.
+
+![lazyzephyr building blinky for native_sim, opening the build's devicetree and turning on an option in the Kconfig tab](https://raw.githubusercontent.com/hansbinderup/lazyzephyr/main/docs/images/demo.gif)
 
 > **Disclaimer:** lazyzephyr is a side project, built mainly to find out what I can make
 > with [Claude Code](https://claude.com/claude-code). Nearly all of the code was written by
