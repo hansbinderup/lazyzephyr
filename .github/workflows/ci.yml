@@ -56,8 +56,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        # Pinned, so a new ruff release can't turn a passing PR red.
-        run: python -m pip install ruff==0.16.9
+        # Pinned, so a new ruff release can't turn a passing PR red. Keep it
+        # in step with the ruff from flake.lock and required-version in
+        # pyproject.toml.
+        run: python -m pip install ruff==0.17.4
       - name: Lint
         run: ruff check --output-format=github .
       - name: Format
