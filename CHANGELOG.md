@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.1](https://github.com/hansbinderup/lazyzephyr/compare/v0.3.0...v0.3.1) (2026-11-19)
+
+
+### Fixes
+
+* **tests:** Don't list a nested test app's cases twice ([4353e56](https://github.com/hansbinderup/lazyzephyr/commit/4353e56cef58a5095641f454ac3ddb75daecbe81))
+
+
+### Documentation
+
+* Add a nightly badge and a demo GIF to the README ([b3850a3](https://github.com/hansbinderup/lazyzephyr/commit/b3850a354776043c8b0c7028221bf1cf6051b961))
+
 ## [0.3.0](https://github.com/hansbinderup/lazyzephyr/compare/v0.2.0...v0.3.0) (2026-11-18)
 
 
