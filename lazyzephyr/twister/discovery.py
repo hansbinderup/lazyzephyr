@@ -188,12 +188,19 @@ def _skip_dir(name: str) -> bool:
     return name in SKIP_DIRS or name.startswith(SKIP_PREFIXES)
 
 
+def _is_test_app(path: Path) -> bool:
+    return any((path / name).is_file() for name in TESTCASE_FILES)
+
+
 def find_ztest_cases(directory: Path) -> list[ZtestCase]:
     """Scan a test directory's sources for ztest cases, like twister does."""
     cases: list[ZtestCase] = []
     seen: set[tuple[str, str]] = set()
     for dirpath, dirnames, filenames in os.walk(directory):
-        dirnames[:] = sorted(d for d in dirnames if not _skip_dir(d))
+        # A subfolder with its own testcase.yaml is another test app; its cases aren't ours.
+        dirnames[:] = sorted(
+            d for d in dirnames if not _skip_dir(d) and not _is_test_app(Path(dirpath) / d)
+        )
         for filename in sorted(filenames):
             path = Path(dirpath) / filename
             if path.suffix not in SOURCE_SUFFIXES:

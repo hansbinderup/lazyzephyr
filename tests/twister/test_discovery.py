@@ -48,6 +48,15 @@ def test_ztest_wrapper_macros(tmp_path: Path):
     assert ids == ["wrapped_suite.wrapped", "wrapped_suite.wrapped_fixture"]
 
 
+def test_ztest_cases_skip_nested_test_apps(tmp_path: Path):
+    write(tmp_path / "src" / "main.c", "ZTEST(outer_suite, test_outer) {}\n")
+    write(tmp_path / "nested" / "testcase.yaml", "tests:\n  nested.app: {}\n")
+    write(tmp_path / "nested" / "src" / "main.c", "ZTEST(nested_suite, test_nested) {}\n")
+
+    assert [c.id for c in find_ztest_cases(tmp_path)] == ["outer_suite.outer"]
+    assert [c.id for c in find_ztest_cases(tmp_path / "nested")] == ["nested_suite.nested"]
+
+
 def test_under_and_platforms(test_tree: Path):
     found = discover([test_tree])
     assert [s.name for s in found.under(test_tree / "drivers")] == ["drivers.beta"]
