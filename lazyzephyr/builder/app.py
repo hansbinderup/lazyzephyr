@@ -311,7 +311,8 @@ class HelpScreen(ModalScreen[None]):
   ctrl+o             back to the configs (the monitor keeps running)
   ctrl+z             full screen on/off (esc also leaves full screen)
   ctrl+x             close the monitor (ends the connection)
-  shift+pgup/pgdn    scroll back (or the mouse wheel)
+  shift+pgup/pgdn    scroll back (or the mouse wheel); a clear or a smaller
+                     panel moves the text there instead of dropping it
   drag the mouse     select text; ctrl+c then copies it (else ctrl+c goes to it)
 [b]Output[/b]
   drag the mouse     select text

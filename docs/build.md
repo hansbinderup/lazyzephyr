@@ -24,7 +24,9 @@
   `sh` in the workspace, with `$BUILD_DIR` and `$BOARD` set. While it has focus every key
   goes to it except `ctrl+o` (back to the configs; it keeps running), `ctrl+z` (full
   screen; `esc` also leaves it) and `ctrl+x` (close the connection). `shift+pgup` /
-  `shift+pgdn` or the mouse wheel scroll back. Drag with the mouse to select text, then
+  `shift+pgdn` or the mouse wheel scroll back through the last 10000 lines; text that
+  leaves the screen when the panel shrinks or the device clears the screen goes there
+  too, and comes back when the panel grows again. Drag with the mouse to select text, then
   `ctrl+c` copies it (with nothing selected, `ctrl+c` goes to the device as usual). From
   the configs list, `O` closes it. Running tests on a board on the same serial port
   (Tests tab) asks to close it first.
