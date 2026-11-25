@@ -19,7 +19,7 @@ import signal
 import struct
 import subprocess
 import termios
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
@@ -130,6 +130,28 @@ def char_style(
         return Style()
 
 
+_PLAIN = Style()
+
+
+class TermLine(pyte.screens.StaticDefaultDict):
+    """A screen line that remembers how it was drawn until pyte changes it
+    (pyte only writes lines with `line[x] = ...` and `line.pop()`)."""
+
+    drawn: tuple | None = None  # (what it was drawn for, the Strip)
+
+    def __setitem__(self, x, char) -> None:
+        self.drawn = None
+        super().__setitem__(x, char)
+
+    def pop(self, *args):
+        self.drawn = None
+        return super().pop(*args)
+
+    def __delitem__(self, x) -> None:
+        self.drawn = None
+        super().__delitem__(x)
+
+
 class TermScreen(pyte.Screen):
     """A pyte screen that keeps the lines scrolled off the top, and answers the
     terminal's queries (cursor position...) back to the command.
@@ -143,6 +165,7 @@ class TermScreen(pyte.Screen):
         self.scrolled = 0  # lines ever scrolled off the top
         self._reply = reply
         super().__init__(columns, lines)
+        self.buffer = defaultdict(lambda: TermLine(self.default_char))
 
     def _to_history(self, line) -> None:
         self.scrollback.append(line)
@@ -194,7 +217,7 @@ class TermScreen(pyte.Screen):
             default=-1,
         )
         for y in range(last + 1):
-            self._to_history(self.buffer.pop(y, None) or {})
+            self._to_history(self.buffer.pop(y, None) or TermLine(self.default_char))
 
     def erase_in_display(self, how: int = 0, *args, **kwargs) -> None:
         if how in (2, 3):  # clear: keep what it erases, like most terminals do
@@ -566,7 +589,7 @@ class MonitorTerminal(Widget, can_focus=True):
         row = y - self.scroll
         if row >= screen.lines:
             return Strip.blank(width)
-        line = screen.line_at(row) or {}
+        line = screen.line_at(row)
         # Selections use absolute line numbers, so they stay put as output scrolls.
         absolute = screen.scrolled + row
         span = None
@@ -574,25 +597,40 @@ class MonitorTerminal(Widget, can_focus=True):
             span = self.text_selection.get_span(absolute)
             if span is not None:
                 span = (span[0], screen.columns if span[1] == -1 else span[1])
-                # Only its background: its colour resolves to the same as the
-                # background here, which would hide the text.
-                selected = Style(
-                    bgcolor=self.screen.get_component_rich_style("screen--selection").bgcolor,
-                    reverse=False,
-                )
         show_cursor = (
             self.has_focus
             and self.scroll == 0
             and row == screen.cursor.y
             and not screen.cursor.hidden
         )
+        cursor = screen.cursor.x if show_cursor else None
+        if span is None and cursor is None and isinstance(line, TermLine):
+            # Output mostly moves lines up the screen: draw each one only once.
+            key = (width, screen.columns, self.rich_style)
+            if line.drawn is None or line.drawn[0] != key:
+                line.drawn = (key, self._draw_line(line, width, None, None))
+            strip = line.drawn[1]
+        else:
+            strip = self._draw_line(line or {}, width, cursor, span)
+        return strip.apply_offsets(0, absolute)
+
+    def _draw_line(
+        self, line: dict, width: int, cursor: int | None, span: tuple[int, int] | None
+    ) -> Strip:
+        if span is not None:
+            # Only its background: its colour resolves to the same as the
+            # background here, which would hide the text.
+            selected = Style(
+                bgcolor=self.screen.get_component_rich_style("screen--selection").bgcolor,
+                reverse=False,
+            )
         segments = []
         text, style = [], None
         wide = False  # the last character took two cells
-        for x in range(min(screen.columns, width)):
+        for x in range(min(self.screen_.columns, width)):
             ch = line.get(x) if line else None
             if ch is None:
-                data, st = " ", Style()
+                data, st = " ", _PLAIN
                 wide = False
             else:
                 # pyte leaves an empty cell after a wide character: it is
@@ -602,7 +640,7 @@ class MonitorTerminal(Widget, can_focus=True):
                 st = char_style(
                     ch.fg, ch.bg, ch.bold, ch.italics, ch.underscore, ch.strikethrough, ch.reverse
                 )
-            if show_cursor and x == screen.cursor.x:
+            if x == cursor:
                 st = st + Style(reverse=not st.reverse)
             if span is not None and span[0] <= x < span[1]:
                 st = st + selected
@@ -613,8 +651,7 @@ class MonitorTerminal(Widget, can_focus=True):
             text.append(data)
         if text:
             segments.append(Segment("".join(text), style))
-        strip = Strip(segments).adjust_cell_length(width).apply_style(self.rich_style)
-        return strip.apply_offsets(0, absolute)
+        return Strip(segments).adjust_cell_length(width).apply_style(self.rich_style)
 
     # -- mouse selection (Textual drives it: drag selects, ctrl+c copies) --
 

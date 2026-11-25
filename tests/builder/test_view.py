@@ -361,8 +361,8 @@ def test_monitor_clear_keeps_history():
 
 
 async def test_monitor_drawing():
-    """Wide characters take two cells, and the history view stays still while
-    output scrolls."""
+    """Lines redraw when they change, wide characters take two cells, and the
+    history view stays still while output scrolls."""
     from textual.app import App
 
     from lazyzephyr.builder import monitor
@@ -378,7 +378,11 @@ async def test_monitor_drawing():
     async with app.run_test(size=(20, 3)) as pilot:
         term = app.query_one(monitor.MonitorTerminal)
         await pilot.pause()
-        term._output("count 1\r\n中文 ok".encode())
+        term._output(b"count 1\r\nnext")
+        assert text(term, 0) == "count 1"
+        term._output(b"\x1b[A\rcount 2")  # rewritten in place
+        assert text(term, 0) == "count 2"
+        term._output("\r\n中文 ok".encode())  # over "next"
         assert text(term, 1) == "中文 ok"
         assert sum(seg.cell_length for seg in term.render_line(1)) == 20
         # Reading the history, with a full history: the view doesn't move.
