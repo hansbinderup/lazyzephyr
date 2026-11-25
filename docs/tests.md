@@ -151,6 +151,11 @@ When you queue a run:
 - With several boards enabled among the chosen platforms, lazyzephyr asks which one to
   run on. Repeat (`.`), auto-run and rerunning a job reuse the board you picked last.
 - With `--hardware-map` in the extra arguments, no serial port is needed.
+- If the Build tab's monitor has the board's serial port open, lazyzephyr asks to close
+  it first, since twister can't share the port. Yes closes the monitor and queues the
+  run once it has let go of the port; no queues nothing. A port counts as the monitor's
+  when its processes have it open, or when the monitor command names it
+  (`tio /dev/ttyACM0`), so a monitor waiting for an unplugged board counts too.
 
 The status bar shows `board: <port> · <runner>` for one enabled board, or
 `boards: <platforms>` for several.

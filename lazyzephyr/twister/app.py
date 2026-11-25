@@ -462,6 +462,7 @@ HELP_TEXT = """\
   a          queue all test roots        F   queue failed scenarios
   p          choose platforms            g   toggle integration mode (-G)
   d          the chosen platform's board: serial port, flash runner, probe, fixtures
+             (running on a board asks to close a Build tab monitor on its port)
   V          print every case's result in Output when a job ends
   w          toggle auto-run on change   ctrl+r  rediscover tests
   .          repeat the last run         ctrl+x  clear queue + stop running job
@@ -504,13 +505,13 @@ class ConfirmScreen(ModalScreen[bool]):
         Binding("n,escape,q", "answer(False)", "No"),
     ]
 
-    def __init__(self, question: str):
+    def __init__(self, question: str, title: str = "Quit?"):
         super().__init__()
-        self.question = question
+        self.question, self.title_text = question, title
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-dialog", classes="panel") as dialog:
-            dialog.border_title = "Quit?"
+            dialog.border_title = self.title_text
             dialog.border_subtitle = "y: yes · n: no"
             yield Static(self.question)
 
@@ -1482,8 +1483,8 @@ class TwisterView(View):
         self._queue_runs(target, plan_runs(self.options, platforms, self.board_choice))
 
     def _queue_runs(self, target: RunTarget, plans: list[list[str]] | None) -> None:
-        for platforms in plans or []:
-            options = RunOptions(
+        runs = [
+            RunOptions(
                 platforms=platforms,
                 integration=self.options.integration,
                 inline_logs=self.options.inline_logs,
@@ -1493,6 +1494,35 @@ class TwisterView(View):
                 boards={p: hw.copy() for p, hw in self.options.boards.items()},
                 case_results=self.options.case_results,
             )
+            for platforms in plans or []
+        ]
+        # Twister can't open a serial port the Build tab's monitor holds.
+        build = getattr(self.app, "build_view", None)
+        for options in runs if build is not None else []:
+            hw = options.hardware
+            config = build.monitor_holding(hw.serial) if hw.enabled and hw.serial else None
+            if config is None:
+                continue
+
+            def answered(yes: bool | None) -> None:
+                if yes:
+                    build.close_monitor(then=lambda: self._submit_runs(target, runs))
+
+            self.push_screen(
+                ConfirmScreen(
+                    f"The monitor in the Build tab ({config}) has {short_port(hw.serial)} "
+                    f"open, and twister needs it for {options.platforms[0]}.\n"
+                    "Close the monitor and run?",
+                    title="Close the monitor?",
+                ),
+                answered,
+            )
+            return
+        self._submit_runs(target, runs)
+
+    def _submit_runs(self, target: RunTarget, runs: list[RunOptions]) -> None:
+        for options in runs:
+            platforms = options.platforms
             problem = hardware_problem(options)
             if problem:
                 self.notify(problem, severity="error", timeout=5)

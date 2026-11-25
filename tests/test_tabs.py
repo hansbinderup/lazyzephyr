@@ -9,7 +9,7 @@ from lazyzephyr.dts.state import TargetChoice
 from lazyzephyr.dts.workspace import find_workspace
 from lazyzephyr.twister.app import AppConfig as TwisterConfig
 from lazyzephyr.twister.discovery import Workspace
-from lazyzephyr.twister.jobs import RunOptions
+from lazyzephyr.twister.jobs import Hardware, RunOptions
 
 
 async def wait_for(predicate, timeout=10.0):
@@ -150,3 +150,64 @@ async def test_drag_and_maximize_in_every_tab(workspace, tmp_path):
         await pilot.pause()
         assert app.screen.maximized is None
         await pilot.press("ctrl+x")
+
+
+async def test_running_on_a_board_asks_to_close_the_monitor_on_its_port(workspace, tmp_path):
+    tests = tmp_path / "tests" / "t"
+    tests.mkdir(parents=True)
+    (tests / "testcase.yaml").write_text("tests:\n  demo.one: {}\n")
+    dts = DtsConfig(
+        cwd=workspace / "app",
+        workspace=find_workspace(workspace),
+        choice=TargetChoice(board="native_sim/native", app=str(workspace / "app")),
+        work_dir=tmp_path / "work",
+    )
+    config = twister_config(tmp_path, [tmp_path / "tests"])
+    # /dev/zero stands in for the board's console UART.
+    board = Hardware(enabled=True, serial="/dev/zero")
+    config.options = RunOptions(platforms=["native_sim"], boards={"native_sim": board})
+    app = LazyZephyrApp(config, dts)
+    async with app.run_test(size=(180, 50)) as pilot:
+        twister = app.twister
+        await wait_for(lambda: "s:demo.one" in twister.node_index)
+        build = app.view("build")
+        build.store.configs.append(
+            BuildConfig(name="mon", app="app", board="native_sim", monitor="sleep 30 </dev/zero")
+        )
+        build.refresh_list(select="cfg:mon")
+        build.configs_list.focus()
+        await pilot.press("o")
+        await wait_for(lambda: build.monitor.process is not None and build.monitor.running)
+        proc = build.monitor.process.proc
+
+        def run_demo():
+            app.tabs.active = "tests"
+            ref = twister.node_index["s:demo.one"].data
+            twister.submit([ref])
+
+        # No: the monitor stays and nothing is queued.
+        run_demo()
+        await wait_for(lambda: app.screen.query("#confirm-dialog"))
+        assert "/dev/zero" in str(app.screen.query_one("#confirm-dialog Static").render())
+        await pilot.press("n")
+        await pilot.pause(0.2)
+        assert build.monitor.running and not twister.jobs.jobs
+        # Yes: the monitor closes, then the job is queued.
+        run_demo()
+        await wait_for(lambda: app.screen.query("#confirm-dialog"))
+        await pilot.press("y")
+        await wait_for(lambda: twister.jobs.jobs)
+        assert proc.poll() is not None
+        assert build.monitor_config is None and not build.has_class("-monitor")
+        # A monitor on another port doesn't ask.
+        build.store.configs[-1].monitor = "sleep 30 </dev/null"
+        build.configs_list.focus()
+        app.tabs.active = "build"
+        await pilot.pause(0.3)
+        build.open_monitor(build.store.configs[-1])
+        await wait_for(lambda: build.monitor.running)
+        count = len(twister.jobs.jobs)
+        run_demo()
+        await wait_for(lambda: len(twister.jobs.jobs) > count)
+        assert build.monitor.running
+        build.close_monitor()
