@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pyte
+from rich.cells import cell_len
 from rich.segment import Segment
 from rich.style import Style
 from textual import events
@@ -587,12 +588,17 @@ class MonitorTerminal(Widget, can_focus=True):
         )
         segments = []
         text, style = [], None
+        wide = False  # the last character took two cells
         for x in range(min(screen.columns, width)):
             ch = line.get(x) if line else None
             if ch is None:
                 data, st = " ", Style()
+                wide = False
             else:
-                data = ch.data or " "
+                # pyte leaves an empty cell after a wide character: it is
+                # already drawn, so it adds nothing.
+                data = ch.data or ("" if wide else " ")
+                wide = bool(data) and cell_len(data) == 2
                 st = char_style(
                     ch.fg, ch.bg, ch.bold, ch.italics, ch.underscore, ch.strikethrough, ch.reverse
                 )
