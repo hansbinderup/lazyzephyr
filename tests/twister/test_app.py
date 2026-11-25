@@ -78,6 +78,11 @@ async def test_marked_nodes_queue_as_one_job_and_enter_queues_more(
         await pilot.press("enter")
         assert len(app.jobs.queued()) == 2
 
+        # The Jobs panel follows each job as it starts. On a slow machine the
+        # first one may only report its start now, which would move the
+        # highlight off the queued job below.
+        await wait_for(lambda: app.view._followed_job == app.jobs.jobs[0].id)
+
         # Jobs panel: running first, then queue order. Cancel the last queued job.
         await pilot.press("3")
         order = app.job_order()
