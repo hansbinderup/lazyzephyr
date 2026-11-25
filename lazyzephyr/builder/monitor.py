@@ -131,7 +131,11 @@ def char_style(
 
 class TermScreen(pyte.Screen):
     """A pyte screen that keeps the lines scrolled off the top, and answers the
-    terminal's queries (cursor position...) back to the command."""
+    terminal's queries (cursor position...) back to the command.
+
+    Unlike pyte's, it doesn't lose text when it is resized or cleared: lines go
+    into the history, the way a terminal emulator keeps them.
+    """
 
     def __init__(self, columns: int, lines: int, reply: Callable[[str], None]):
         self.scrollback: deque = deque(maxlen=SCROLLBACK)
@@ -139,12 +143,66 @@ class TermScreen(pyte.Screen):
         self._reply = reply
         super().__init__(columns, lines)
 
+    def _to_history(self, line) -> None:
+        self.scrollback.append(line)
+        self.scrolled += 1
+
     def index(self) -> None:
         top, bottom = self.margins or pyte.screens.Margins(0, self.lines - 1)
         if self.cursor.y == bottom and top == 0:
-            self.scrollback.append(self.buffer[0])
-            self.scrolled += 1
+            self._to_history(self.buffer[0])
         super().index()
+
+    def resize(self, lines: int | None = None, columns: int | None = None) -> None:
+        # pyte drops rows from the top when the screen gets shorter, keeping
+        # stale rows and a cursor below the screen. Do what xterm does instead:
+        # rows go into the history only as far as the cursor needs to stay on
+        # screen, and come back from it when the screen grows again.
+        lines = lines or self.lines
+        columns = columns or self.columns
+        if (lines, columns) == (self.lines, self.columns):
+            return
+        rows = [self.buffer[y] for y in range(self.lines)]
+        if lines < self.lines:
+            drop = max(self.cursor.y + 1 - lines, 0)
+            for row in rows[:drop]:
+                self._to_history(row)
+            rows = rows[drop : drop + lines]
+            self.cursor.y -= drop
+        elif self.cursor.y == self.lines - 1:  # only when the text fills the screen
+            back = min(lines - self.lines, len(self.scrollback))
+            rows[:0] = [self.scrollback.pop() for _ in range(back)][::-1]
+            self.scrolled -= back
+            self.cursor.y += back
+        self.buffer.clear()
+        self.buffer.update(enumerate(rows))
+        self.dirty.update(range(lines))
+        self.lines = lines
+        if columns != self.columns:
+            super().resize(lines, columns)  # the lines match: only cuts the columns
+        self.set_margins()
+        self.ensure_hbounds()
+        self.ensure_vbounds()
+
+    def _screen_to_history(self) -> None:
+        """Move the screen's text into the history, before it is cleared."""
+        if getattr(self, "margins", None) is not None:  # pyte sets it up in reset()
+            return
+        last = max(
+            (y for y, row in self.buffer.items() if any(ch.data.strip() for ch in row.values())),
+            default=-1,
+        )
+        for y in range(last + 1):
+            self._to_history(self.buffer.pop(y, None) or {})
+
+    def erase_in_display(self, how: int = 0, *args, **kwargs) -> None:
+        if how in (2, 3):  # clear: keep what it erases, like most terminals do
+            self._screen_to_history()
+        super().erase_in_display(how, *args, **kwargs)
+
+    def reset(self) -> None:
+        self._screen_to_history()
+        super().reset()
 
     def write_process_input(self, data: str) -> None:
         self._reply(data)
@@ -451,10 +509,10 @@ class MonitorTerminal(Widget, can_focus=True):
             self.process.write(data.encode())
 
     def _output(self, data: bytes) -> None:
-        before = len(self.screen_.scrollback)
+        before = self.screen_.scrolled
         self.stream.feed(data)
         if self.scroll:  # keep the view still while reading history
-            grown = len(self.screen_.scrollback) - before
+            grown = self.screen_.scrolled - before
             self.scroll = min(self.scroll + grown, len(self.screen_.scrollback))
         if not self._pending:  # redraw at most once per frame
             self._pending = True
@@ -486,9 +544,12 @@ class MonitorTerminal(Widget, can_focus=True):
         if self._waiting is not None and event.size.width and event.size.height:
             self.start(*self._waiting)
             return
+        if not event.size.width or not event.size.height:
+            return  # hidden for now: keep the screen as it is
         cols, lines = self._term_size()
         if (cols, lines) != (self.screen_.columns, self.screen_.lines):
             self.screen_.resize(lines, cols)
+            self.scroll = min(self.scroll, len(self.screen_.scrollback))
             if self.process is not None:
                 self.process.resize(cols, lines)
         self.refresh()

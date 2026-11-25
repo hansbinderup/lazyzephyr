@@ -316,6 +316,77 @@ async def test_monitor_select_and_copy():
         assert sent == [b"\x03"]
 
 
+def term_screen(columns, lines):
+    import pyte
+
+    from lazyzephyr.builder.monitor import TermScreen
+
+    screen = TermScreen(columns, lines, lambda data: None)
+    return screen, pyte.ByteStream(screen)
+
+
+def history(screen):
+    return [screen.line_text(-i) for i in range(len(screen.scrollback), 0, -1)]
+
+
+def test_monitor_resize_keeps_text():
+    """A shorter screen moves lines into the history, a taller one brings them back."""
+    screen, stream = term_screen(20, 10)
+    stream.feed(b"".join(b"line%d\r\n" % i for i in range(9)) + b"uart:~$ ")
+    screen.resize(4, 20)
+    assert history(screen) == [f"line{i}" for i in range(6)]
+    assert [screen.line_text(r) for r in range(4)] == ["line6", "line7", "line8", "uart:~$"]
+    assert screen.cursor.y == 3 and screen.scrolled == 6
+    stream.feed(b"help")
+    assert screen.line_text(3) == "uart:~$ help"  # typing still shows
+    screen.resize(10, 20)
+    assert screen.line_text(0) == "line0" and screen.line_text(9) == "uart:~$ help"
+    assert history(screen) == [] and screen.scrolled == 0
+    # A few lines fit the shorter screen: none of them leave it.
+    screen, stream = term_screen(20, 10)
+    stream.feed(b"one\r\ntwo")
+    screen.resize(4, 20)
+    assert [screen.line_text(r) for r in range(2)] == ["one", "two"] and history(screen) == []
+
+
+def test_monitor_clear_keeps_history():
+    """Clearing the screen (or resetting the terminal) keeps its text in the history."""
+    screen, stream = term_screen(20, 5)
+    stream.feed(b"boot\r\nuart:~$ clear\r\n\x1b[H\x1b[2Juart:~$ ")
+    assert history(screen) == ["boot", "uart:~$ clear"] and screen.line_text(0) == "uart:~$"
+    stream.feed(b"\x1bc")
+    assert history(screen) == ["boot", "uart:~$ clear", "uart:~$"]
+    stream.feed(b"\x1b[2J")  # an empty screen adds nothing
+    assert len(screen.scrollback) == 3
+
+
+async def test_monitor_drawing():
+    """The history view stays still while output scrolls."""
+    from textual.app import App
+
+    from lazyzephyr.builder import monitor
+
+    class TermApp(App):
+        def compose(self):
+            yield monitor.MonitorTerminal()
+
+    def text(term, y):
+        return "".join(seg.text for seg in term.render_line(y)).rstrip()
+
+    app = TermApp()
+    async with app.run_test(size=(20, 3)) as pilot:
+        term = app.query_one(monitor.MonitorTerminal)
+        await pilot.pause()
+        # Reading the history, with a full history: the view doesn't move.
+        term.screen_.scrollback = monitor.deque(maxlen=2)
+        term._output(b"\r\na\r\nb\r\nc\r\nd")
+        term._scroll_by(1)
+        before = [text(term, y) for y in range(3)]
+        assert term.scroll == 1 and before == ["a", "b", "c"]
+        term._output(b"\r\ne")
+        assert [text(term, y) for y in range(3)] == before
+
+
 async def test_missing_west_gets_a_banner(workspace, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr("lazyzephyr.builder.app.west_command", lambda topdir: None)
