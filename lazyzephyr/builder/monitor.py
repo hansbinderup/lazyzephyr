@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import os
+import re
 import shutil
 import signal
 import struct
@@ -180,6 +181,7 @@ class MonitorProcess:
         self.command = command
         self.on_output, self.on_exit = on_output, on_exit
         self.returncode: int | None = None
+        self._waiters: list[Callable[[], None]] = []
         master, slave = os.openpty()
         self.fd = master
         self.resize(columns, lines)
@@ -226,6 +228,21 @@ class MonitorProcess:
         self.returncode = self.proc.returncode
         self._close_fd()
         self.on_exit(self.returncode)
+        waiters, self._waiters = self._waiters, []
+        for waiter in waiters:
+            waiter()
+
+    def when_exited(self, callback: Callable[[], None]) -> None:
+        """Call `callback` once the command has gone (now, if it already has)."""
+        if self.running:
+            self._waiters.append(callback)
+        else:
+            callback()
+
+    def devices(self) -> set[str]:
+        """The /dev files (serial ports...) the command holds or names, resolved."""
+        held = session_devices(self.proc.pid) if self.running else set()
+        return held | command_devices(self.command)
 
     def _close_fd(self) -> None:
         if self.fd >= 0:
@@ -263,6 +280,44 @@ class MonitorProcess:
     def _kill(self) -> None:
         if self.proc.poll() is None:
             _signal_group(self.proc.pid, signal.SIGKILL)
+
+
+def session_devices(sid: int, proc: Path = Path("/proc")) -> set[str]:
+    """The /dev files open in any process of session `sid` (Linux; empty elsewhere)."""
+    found: set[str] = set()
+    try:
+        pids = [d for d in os.listdir(proc) if d.isdigit()]
+    except OSError:
+        return found
+    for pid in pids:
+        try:
+            stat = (proc / pid / "stat").read_text()
+            # pid (comm) state ppid pgrp session ...; comm may hold spaces and parens.
+            if int(stat.rpartition(")")[2].split()[3]) != sid:
+                continue
+            fds = os.listdir(proc / pid / "fd")
+        except (OSError, ValueError, IndexError):
+            continue
+        for fd in fds:
+            try:
+                target = os.readlink(proc / pid / "fd" / fd)
+            except OSError:
+                continue
+            if target.startswith("/dev/") and not target.startswith("/dev/pts/"):
+                found.add(os.path.realpath(target))
+    return found
+
+
+_DEV_PATH = re.compile(r"/dev/[^\s'\";,]+")
+
+
+def command_devices(command: str) -> set[str]:
+    """The /dev paths a monitor command names, resolved (`tio /dev/ttyACM0`).
+
+    A monitor may not hold its port all the time (tio waits for a board that
+    was unplugged), but it takes it back as soon as it can.
+    """
+    return {os.path.realpath(m) for m in _DEV_PATH.findall(command)}
 
 
 def _take_terminal() -> None:
@@ -369,10 +424,23 @@ class MonitorTerminal(Widget, can_focus=True):
         self.process = proc
         self.refresh()
 
-    def stop(self) -> None:
+    def stop(self, then: Callable[[], None] | None = None) -> None:
+        """End the command; `then` is called once it has exited."""
         self._waiting = None
         if self.process is not None:
+            if then is not None:
+                self.process.when_exited(then)
             self.process.close()
+        elif then is not None:
+            then()
+
+    def devices(self) -> set[str]:
+        """The /dev files the running command holds or names (see MonitorProcess)."""
+        if self._waiting is not None:
+            return command_devices(self._waiting[0])
+        if self.process is not None and self.process.running:
+            return self.process.devices()
+        return set()
 
     @property
     def running(self) -> bool:

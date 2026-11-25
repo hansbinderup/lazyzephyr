@@ -26,7 +26,8 @@
   screen; `esc` also leaves it) and `ctrl+x` (close the connection). `shift+pgup` /
   `shift+pgdn` or the mouse wheel scroll back. Drag with the mouse to select text, then
   `ctrl+c` copies it (with nothing selected, `ctrl+c` goes to the device as usual). From
-  the configs list, `O` closes it.
+  the configs list, `O` closes it. Running tests on a board on the same serial port
+  (Tests tab) asks to close it first.
 - **Runners** come from the build's `runners.yaml` once built, before that from the
   board's `board.cmake`. **Probes** (J-Link, ST-Link, CMSIS-DAP, MCU-Link…) are read from
   USB, so you can pick the serial number of the one to flash.

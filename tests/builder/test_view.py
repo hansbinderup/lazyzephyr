@@ -221,6 +221,35 @@ def test_key_bytes():
     assert _color("default") is None
 
 
+def test_monitor_devices(tmp_path):
+    import os
+    import subprocess
+    import time
+
+    from lazyzephyr.builder.monitor import command_devices, session_devices
+
+    link = tmp_path / "port"
+    link.symlink_to("/dev/zero")
+    assert command_devices("tio /dev/ttyACM0 -b 115200") == {"/dev/ttyACM0"}
+    assert command_devices("west espressif monitor --port=/dev/ttyUSB1") == {"/dev/ttyUSB1"}
+    assert command_devices("west espressif monitor -d $BUILD_DIR") == set()
+    # The ports open in the session, even ones the command doesn't name.
+    proc = subprocess.Popen(
+        ["sh", "-c", 'exec 3<"$PORT"; exec sleep 30'],
+        env=dict(os.environ, PORT=str(link)),
+        start_new_session=True,
+    )
+    try:
+        for _ in range(100):
+            if "/dev/zero" in session_devices(proc.pid):
+                break
+            time.sleep(0.05)
+        assert "/dev/zero" in session_devices(proc.pid)
+    finally:
+        proc.kill()
+        proc.wait()
+
+
 def footer_keys(app):
     return {key for key, b in app.screen.active_bindings.items() if b.binding.show and b.enabled}
 

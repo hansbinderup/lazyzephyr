@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import ClassVar
@@ -1327,18 +1328,33 @@ class BuildView(View):
         self.update_status()
 
     def action_close_monitor(self) -> None:
-        mon = self.monitor
         if self.monitor_config is None:
             self.notify("no monitor is open")
             return
-        mon.stop()
         if self.screen.maximized is not None:
             self.screen.minimize()
+        self.close_monitor()
+        self.configs_list.focus()
+
+    def close_monitor(self, then: Callable[[], None] | None = None) -> None:
+        """End the monitor; `then` is called once its command has exited (and let
+        go of its serial port)."""
+        panel = self.query_one("#b-monitor-panel", Panel)
+        if self.screen.maximized is panel:
+            self.screen.minimize()
+        self.monitor.stop(then)
         self.remove_class("-monitor")
         self.call_after_refresh(self.apply_panel_layout)
         self.monitor_config = None
-        self.configs_list.focus()
         self.update_status()
+
+    def monitor_holding(self, port: str) -> str | None:
+        """The config whose open monitor holds (or names) serial `port`, if any."""
+        if self.monitor_config is None or not self.monitor.running:
+            return None
+        if os.path.realpath(port) in self.monitor.devices():
+            return self.monitor_config
+        return None
 
     def action_monitor_fullscreen(self) -> None:
         if self.screen.maximized is not None:
