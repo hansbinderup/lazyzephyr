@@ -263,6 +263,7 @@ class MonitorProcess:
         self.command = command
         self.on_output, self.on_exit = on_output, on_exit
         self.returncode: int | None = None
+        self._unsent = bytearray()  # what the terminal didn't take yet (a long paste)
         self._waiters: list[Callable[[], None]] = []
         master, slave = os.openpty()
         self.fd = master
@@ -330,18 +331,35 @@ class MonitorProcess:
         if self.fd >= 0:
             try:
                 self.loop.remove_reader(self.fd)
+                self.loop.remove_writer(self.fd)
             except (ValueError, RuntimeError):
                 pass
             os.close(self.fd)
+            self._unsent.clear()
             self.fd = -1
 
     def write(self, data: bytes) -> None:
-        if self.fd < 0:
+        """Send `data` to the command; what the terminal can't take yet is kept
+        and sent as it drains, in order."""
+        if self.fd < 0 or not data:
             return
+        if not self._unsent:
+            self._unsent += data
+            self.loop.add_writer(self.fd, self._send)
+            self._send()
+        else:
+            self._unsent += data
+
+    def _send(self) -> None:
         try:
-            os.write(self.fd, data)
-        except (BlockingIOError, OSError):
-            pass
+            sent = os.write(self.fd, self._unsent)
+        except BlockingIOError:
+            return
+        except OSError:  # the command has gone
+            sent = len(self._unsent)
+        del self._unsent[:sent]
+        if not self._unsent:
+            self.loop.remove_writer(self.fd)
 
     def resize(self, columns: int, lines: int) -> None:
         if self.fd >= 0:

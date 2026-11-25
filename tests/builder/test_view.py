@@ -395,6 +395,30 @@ async def test_monitor_drawing():
         assert [text(term, y) for y in range(3)] == before
 
 
+async def test_monitor_sends_a_long_paste(tmp_path):
+    """What the terminal can't take at once is sent as it drains, not dropped."""
+    import os
+
+    from lazyzephyr.builder.monitor import MonitorProcess
+
+    out = tmp_path / "out"
+    data = bytes(range(ord("a"), ord("z") + 1)) * 8000  # 208 kB, far over the pty buffer
+    ready, exited = asyncio.Event(), asyncio.Event()
+    proc = MonitorProcess(
+        f"stty raw -echo; echo ready; head -c {len(data)} > {out}",
+        tmp_path,
+        dict(os.environ),
+        80,
+        24,
+        lambda chunk: b"ready" in chunk and ready.set(),
+        lambda code: exited.set(),
+    )
+    await asyncio.wait_for(ready.wait(), 15)  # raw: no line length limit
+    proc.write(data)
+    await asyncio.wait_for(exited.wait(), 15)
+    assert out.read_bytes() == data
+
+
 async def test_missing_west_gets_a_banner(workspace, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr("lazyzephyr.builder.app.west_command", lambda topdir: None)
