@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.1](https://github.com/hansbinderup/lazyzephyr/compare/v0.3.0...v0.3.1) (2026-11-25)
+
+
+### Fixes
+
+* **build:** Draw wide characters two cells wide in the monitor ([df4896a](https://github.com/hansbinderup/lazyzephyr/commit/df4896a0fdaa94cb9b9e9fa845a28e0268fda5eb))
+* **build:** Keep monitor text when it is resized or cleared ([a927fa2](https://github.com/hansbinderup/lazyzephyr/commit/a927fa2bcb88bb1e9b1bf933ccba50bc28772750))
+* **build:** Send long pastes to the monitor in full ([dc9c0d5](https://github.com/hansbinderup/lazyzephyr/commit/dc9c0d5f3e4dd2c825a7e23265d8a901f230b60e))
+* **tests:** Ask to close the monitor on a board's serial port ([4e3fb2c](https://github.com/hansbinderup/lazyzephyr/commit/4e3fb2c7ff61f05723b3427a7d140a7c19c22f97))
+* **tests:** Don't list a nested test app's cases twice ([4353e56](https://github.com/hansbinderup/lazyzephyr/commit/4353e56cef58a5095641f454ac3ddb75daecbe81))
+
+
+### Performance
+
+* **build:** Draw each monitor line only once ([ca4a668](https://github.com/hansbinderup/lazyzephyr/commit/ca4a6682dc27090d9b84a48c17012e9faea271c3))
+
+
+### Documentation
+
+* Add a nightly badge and a demo GIF to the README ([b3850a3](https://github.com/hansbinderup/lazyzephyr/commit/b3850a354776043c8b0c7028221bf1cf6051b961))
+
 ## [0.3.0](https://github.com/hansbinderup/lazyzephyr/compare/v0.2.0...v0.3.0) (2026-11-18)
 
 
